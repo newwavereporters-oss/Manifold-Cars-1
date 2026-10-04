@@ -41,6 +41,7 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
   navigate,
 }) => {
   const [activeMediaTab, setActiveMediaTab] = useState<'video' | 'gallery1' | 'gallery2'>('video');
+  const [enlargedImage, setEnlargedImage] = useState<{ url: string; title: string } | null>(null);
   const [copiedShare, setCopiedShare] = useState(false);
 
   const handleShare = () => {
@@ -198,40 +199,112 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
             </div>
 
             {/* Media Selector Strip (Video First, Two Gallery Images Second) */}
-            <div className="p-3 bg-gray-50 border-t border-gray-200 flex items-center gap-3">
-              <button
-                onClick={() => setActiveMediaTab('video')}
-                className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition ${
-                  activeMediaTab === 'video'
-                    ? 'bg-[#EF233C] text-white shadow'
-                    : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Primary Video Review ({car.video.video_duration})</span>
-              </button>
+            <div className="p-3 bg-gray-50 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveMediaTab('video')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition ${
+                    activeMediaTab === 'video'
+                      ? 'bg-[#EF233C] text-white shadow'
+                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Primary Video Review ({car.video.video_duration})</span>
+                </button>
 
-              <button
-                onClick={() => setActiveMediaTab('gallery1')}
-                className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition ${
-                  activeMediaTab === 'gallery1'
-                    ? 'bg-[#071A2B] text-white shadow'
-                    : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <span>Gallery Photo 1</span>
-              </button>
+                <button
+                  onClick={() => setActiveMediaTab('gallery1')}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold uppercase tracking-wider transition ${
+                    activeMediaTab === 'gallery1'
+                      ? 'bg-[#071A2B] text-white shadow'
+                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <span>Photo 1</span>
+                </button>
 
-              <button
-                onClick={() => setActiveMediaTab('gallery2')}
-                className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition ${
-                  activeMediaTab === 'gallery2'
-                    ? 'bg-[#071A2B] text-white shadow'
-                    : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
-                }`}
+                <button
+                  onClick={() => setActiveMediaTab('gallery2')}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold uppercase tracking-wider transition ${
+                    activeMediaTab === 'gallery2'
+                      ? 'bg-[#071A2B] text-white shadow'
+                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <span>Photo 2</span>
+                </button>
+              </div>
+
+              {activeMediaTab !== 'video' && (
+                <button
+                  onClick={() =>
+                    setEnlargedImage({
+                      url:
+                        activeMediaTab === 'gallery1'
+                          ? car.gallery_image_1_url
+                          : car.gallery_image_2_url,
+                      title: `${car.title} - ${
+                        activeMediaTab === 'gallery1' ? 'Gallery Photo 1' : 'Gallery Photo 2'
+                      }`,
+                    })
+                  }
+                  className="text-xs font-bold text-[#071A2B] hover:text-[#EF233C] flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Enlarge Full Resolution</span>
+                </button>
+              )}
+            </div>
+
+            {/* PART 19: Gallery Two Images Preview Tiles (Click to enlarge) */}
+            <div className="p-3 bg-white border-t border-gray-100 grid grid-cols-2 gap-3">
+              <div
+                onClick={() =>
+                  setEnlargedImage({
+                    url: car.gallery_image_1_url,
+                    title: `${car.title} - Gallery Image 1`,
+                  })
+                }
+                className="relative aspect-video rounded-lg overflow-hidden border border-gray-200 cursor-pointer group bg-gray-100"
               >
-                <span>Gallery Photo 2</span>
-              </button>
+                <img
+                  src={car.gallery_image_1_url}
+                  alt={`${car.title} gallery 1`}
+                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                />
+                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center">
+                  <span className="opacity-0 group-hover:opacity-100 transition bg-black/75 text-white text-[10px] font-bold px-2 py-1 rounded">
+                    Click to Enlarge Photo 1
+                  </span>
+                </div>
+                <span className="absolute bottom-1.5 left-1.5 bg-[#071A2B]/85 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                  Gallery Photo 1
+                </span>
+              </div>
+
+              <div
+                onClick={() =>
+                  setEnlargedImage({
+                    url: car.gallery_image_2_url,
+                    title: `${car.title} - Gallery Image 2`,
+                  })
+                }
+                className="relative aspect-video rounded-lg overflow-hidden border border-gray-200 cursor-pointer group bg-gray-100"
+              >
+                <img
+                  src={car.gallery_image_2_url}
+                  alt={`${car.title} gallery 2`}
+                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                />
+                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center">
+                  <span className="opacity-0 group-hover:opacity-100 transition bg-black/75 text-white text-[10px] font-bold px-2 py-1 rounded">
+                    Click to Enlarge Photo 2
+                  </span>
+                </div>
+                <span className="absolute bottom-1.5 left-1.5 bg-[#071A2B]/85 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                  Gallery Photo 2
+                </span>
+              </div>
             </div>
           </div>
 
@@ -410,6 +483,34 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
           </div>
         )}
       </div>
+
+      {/* Lightbox Modal for Gallery Images */}
+      {enlargedImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setEnlargedImage(null)}
+        >
+          <div
+            className="relative max-w-5xl max-h-[90vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setEnlargedImage(null)}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300 text-xs font-bold uppercase tracking-wider py-1 px-3 bg-white/10 rounded cursor-pointer"
+            >
+              ✕ Close
+            </button>
+            <img
+              src={enlargedImage.url}
+              alt={enlargedImage.title}
+              className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl border border-white/15"
+            />
+            <p className="text-white text-xs font-semibold mt-3 text-center">
+              {enlargedImage.title}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

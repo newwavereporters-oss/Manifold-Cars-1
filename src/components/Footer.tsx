@@ -1,13 +1,14 @@
 import React from 'react';
 import { Youtube, Instagram, Facebook, Twitter, Phone, Mail, MapPin } from 'lucide-react';
-import footerCityscapeBg from '@/src/assets/images/Cinematic Luxury SUV Cityscape at Sunset.png';
+import footerCityscapeBg from '../assets/images/Cinematic Luxury SUV Cityscape at Sunset.png';
 
 interface FooterProps {
   navigate: (route: string) => void;
   onFilterBrand: (brandName: string) => void;
+  onOpenAdminLogin?: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand }) => {
+export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenAdminLogin }) => {
   const handleNav = (route: string) => {
     navigate(route);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -16,16 +17,29 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand }) => {
   return (
     <footer className="relative bg-[#071A2B] text-white border-t border-white/10 pt-16 pb-12 overflow-hidden">
       {/* Cinematic Luxury SUV Cityscape at Sunset Background */}
-      <div className="absolute inset-0 z-0 pointer-events-none">
+      <div
+        className="absolute inset-0 z-0 pointer-events-none bg-[#071A2B]"
+        style={{
+          backgroundImage: `url("${footerCityscapeBg}")`,
+          backgroundPosition: 'center bottom',
+          backgroundSize: 'cover',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
         <img
           src={footerCityscapeBg}
           alt="MANIFOLD Automotive Footer Background"
-          className="w-full h-full object-cover object-bottom filter brightness-50 contrast-125"
-          referrerPolicy="no-referrer"
+          className="w-full h-full object-cover object-bottom filter brightness-70 contrast-110"
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (target.src !== '/assets/images/Cinematic%20Luxury%20SUV%20Cityscape%20at%20Sunset.png') {
+              target.src = '/assets/images/Cinematic%20Luxury%20SUV%20Cityscape%20at%20Sunset.png';
+            }
+          }}
         />
-        {/* Deep navy overlays for legibility */}
-        <div className="absolute inset-0 bg-[#071A2B]/85" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#071A2B] via-[#071A2B]/80 to-[#071A2B]/95" />
+        {/* Deep navy overlays for legibility while keeping the cinematic cityscape at sunset vividly visible */}
+        <div className="absolute inset-0 bg-[#071A2B]/80" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#071A2B] via-[#071A2B]/55 to-[#071A2B]/85" />
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -264,6 +278,20 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand }) => {
               className="hover:text-white transition-colors"
             >
               Terms of Service
+            </button>
+            <span className="text-gray-600">·</span>
+            <button
+              onClick={() => {
+                if (onOpenAdminLogin) {
+                  onOpenAdminLogin();
+                } else {
+                  handleNav('/admin/login');
+                }
+              }}
+              className="text-[11px] text-gray-300 hover:text-white transition-colors cursor-pointer font-medium hover:underline"
+              title="MANIFOLD Operational Portal"
+            >
+              Admin Sign In
             </button>
           </div>
         </div>

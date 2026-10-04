@@ -1,14 +1,14 @@
 import { Car } from '../types';
-import imgHighlander from '@/src/assets/images/car_highlander_review_1791137926981.jpg';
-import imgLexusRx from '@/src/assets/images/car_lexus_rx_review_1791137937466.jpg';
-import imgMercedesGle from '@/src/assets/images/car_mercedes_gle_review_1791137948450.jpg';
-import imgRangeRover from '@/src/assets/images/car_range_rover_review_1791137958219.jpg';
-import imgCamry from '@/src/assets/images/car_camry_review_1791137989198.jpg';
-import imgLexusEs from '@/src/assets/images/car_es350_review_1791138000635.jpg';
-import imgAccord from '@/src/assets/images/car_accord_review_1791138021189.jpg';
-import imgPrado from '@/src/assets/images/car_prado_review_1791138011083.jpg';
-import imgGwagon from '@/src/assets/images/dark_gwagon_dusk_banner_1791137913608.jpg';
-import imgDealership from '@/src/assets/images/hero_manifold_dealership_1791137893826.jpg';
+import imgHighlander from '../assets/images/car_highlander_review_1791137926981.jpg';
+import imgLexusRx from '../assets/images/car_lexus_rx_review_1791137937466.jpg';
+import imgMercedesGle from '../assets/images/car_mercedes_gle_review_1791137948450.jpg';
+import imgRangeRover from '../assets/images/car_range_rover_review_1791137958219.jpg';
+import imgCamry from '../assets/images/car_camry_review_1791137989198.jpg';
+import imgLexusEs from '../assets/images/car_es350_review_1791138000635.jpg';
+import imgAccord from '../assets/images/car_accord_review_1791138021189.jpg';
+import imgPrado from '../assets/images/car_prado_review_1791138011083.jpg';
+import imgGwagon from '../assets/images/dark_gwagon_dusk_banner_1791137913608.jpg';
+import imgDealership from '../assets/images/hero_manifold_dealership_1791137893826.jpg';
 
 export const MOCK_CARS: Car[] = [
   {
@@ -36,6 +36,7 @@ export const MOCK_CARS: Car[] = [
     seats: 7,
     doors: 5,
     is_featured: true,
+    status: "PUBLISHED",
     views_count: 2480,
     created_at: '2026-09-28T10:00:00Z',
     description: 'Clean foreign-used 2021 Toyota Highlander XLE AWD thoroughly inspected by MANIFOLD. Immaculate blizzard pearl exterior with pristine 7-passenger black leather interior. Equipped with Toyota Safety Sense 2.5+, blind-spot monitoring, moonroof, heated front seats, tri-zone automatic climate control, and factory alloy rims. Customs duty fully cleared and verified.',
@@ -105,6 +106,7 @@ export const MOCK_CARS: Car[] = [
     seats: 5,
     doors: 5,
     is_featured: true,
+    status: "PUBLISHED",
     views_count: 3120,
     created_at: '2026-09-29T14:30:00Z',
     description: 'Stunning 2020 Lexus RX 350 F-Sport in Caviar Black with desirable Circuit Red leather interior. Features adaptive variable suspension, 20-inch dark alloy wheels, Mark Levinson premium surround sound, panoramic 360-degree camera, and heated/ventilated front sports seats. Tested and approved by MANIFOLD technicians in Abuja.',
@@ -175,6 +177,7 @@ export const MOCK_CARS: Car[] = [
     seats: 5,
     doors: 5,
     is_featured: true,
+    status: "PUBLISHED",
     views_count: 4890,
     created_at: '2026-10-01T09:15:00Z',
     description: 'High-spec 2019 Mercedes-Benz GLE 43 AMG Coupe finished in Obsidian Black over two-tone Designo Porcelain Nappa leather. Fitted with AIRMATIC sport suspension, AMG performance exhaust, 21-inch AMG twin 5-spoke wheels, Harman Kardon Logic 7 sound, and active LED lighting. Vehicle test driven and verified by MANIFOLD.',
@@ -243,6 +246,7 @@ export const MOCK_CARS: Car[] = [
     seats: 5,
     doors: 5,
     is_featured: true,
+    status: "PUBLISHED",
     views_count: 5120,
     created_at: '2026-10-02T11:45:00Z',
     description: 'Pristine 2022 Range Rover Sport HSE Dynamic with P400 powertrain delivering 395 horsepower. Hakuba Silver exterior with black contrast floating roof and 22-inch Gloss Black wheels. Equipped with Meridian 825W Surround Sound, panoramic glass roof, configurable ambient lighting, and electronic air suspension. Verified and documented by MANIFOLD.',
@@ -311,6 +315,7 @@ export const MOCK_CARS: Car[] = [
     seats: 5,
     doors: 4,
     is_featured: false,
+    status: "PUBLISHED",
     views_count: 1870,
     created_at: '2026-10-03T08:20:00Z',
     description: 'Top-of-the-line 2020 Toyota Camry XSE V6 in Wind Chill Pearl with black contrast roof and head-turning Cockpit Red leather seats. Produces 301 horsepower while maintaining exceptional everyday reliability. Includes panoramic glass moonroof, JBL 9-speaker audio, 19-inch black machined finish alloys, and quad chrome exhaust tips.',
@@ -381,6 +386,7 @@ export const MOCK_CARS: Car[] = [
     seats: 5,
     doors: 4,
     is_featured: false,
+    status: "PUBLISHED",
     views_count: 2240,
     created_at: '2026-10-03T11:00:00Z',
     description: 'Immaculate 2021 Lexus ES 350 F-Sport. Smooth and authoritative 3.5L V6 power coupled with the F-Sport mesh spindle grille, sport suspension tuning, digital LFA-style instrument cluster, and Mark Levinson sound system. Verified through MANIFOLD\'s multi-point physical check.',
@@ -449,6 +455,7 @@ export const MOCK_CARS: Car[] = [
     seats: 5,
     doors: 4,
     is_featured: false,
+    status: "PUBLISHED",
     views_count: 1410,
     created_at: '2026-10-02T16:10:00Z',
     description: 'Enthusiast-favourite 2019 Honda Accord Sport with the potent Civic Type-R derived 2.0L VTEC Turbo engine and smooth 10-speed automatic transmission. Features Honda Sensing suite, Apple CarPlay, paddle shifters, sport pedals, and factory 19-inch diamond-cut alloys.',
@@ -517,6 +524,7 @@ export const MOCK_CARS: Car[] = [
     seats: 7,
     doors: 5,
     is_featured: false,
+    status: "PUBLISHED",
     views_count: 3670,
     created_at: '2026-10-03T15:40:00Z',
     description: 'Rugged and commanding 2020 Toyota Land Cruiser Prado TXL. The gold standard for Nigerian roads, inter-state travel, and VIP convoy capability. Equipped with full-time 4WD, KDSS suspension, rear entertainment screens, coolbox in center console, and 7-passenger capability.',
@@ -585,6 +593,7 @@ export const MOCK_CARS: Car[] = [
     seats: 5,
     doors: 5,
     is_featured: true,
+    status: "PUBLISHED",
     views_count: 8940,
     created_at: '2026-10-04T07:30:00Z',
     description: 'Iconic 2021 Mercedes-AMG G63 in ultra-desirable factory Matte Night Black Magno with AMG Night Package II. Handcrafted 577-hp V8 BiTurbo with dual side-exit sport exhaust. Features Exclusive Interior Plus, Burmester surround sound, diamond-quilted seats, AMG carbon fiber trim, and 22-inch forged cross-spoke wheels.',

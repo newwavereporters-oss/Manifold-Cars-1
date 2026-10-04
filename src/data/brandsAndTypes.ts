@@ -1,8 +1,8 @@
 import { BodyTypeCategory, CarBrand } from '../types';
-import imgHighlander from '@/src/assets/images/car_highlander_review_1791137926981.jpg';
-import imgLexusRx from '@/src/assets/images/car_lexus_rx_review_1791137937466.jpg';
-import imgDealership from '@/src/assets/images/hero_manifold_dealership_1791137893826.jpg';
-import imgMercedesGle from '@/src/assets/images/car_mercedes_gle_review_1791137948450.jpg';
+import imgHighlander from '../assets/images/car_highlander_review_1791137926981.jpg';
+import imgLexusRx from '../assets/images/car_lexus_rx_review_1791137937466.jpg';
+import imgDealership from '../assets/images/hero_manifold_dealership_1791137893826.jpg';
+import imgMercedesGle from '../assets/images/car_mercedes_gle_review_1791137948450.jpg';
 
 export const BODY_TYPES: BodyTypeCategory[] = [
   {

@@ -54,11 +54,11 @@ export const HeroSearchBox: React.FC<HeroSearchBoxProps> = ({
   return (
     <div className="w-full max-w-5xl mx-auto bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden transform -translate-y-6 md:-translate-y-12 relative z-20">
       {/* Top Tabs */}
-      <div className="flex border-b border-gray-200 bg-gray-50/70">
+      <div className="flex border-b border-gray-200 bg-gray-50/70 overflow-x-auto no-scrollbar">
         <button
           type="button"
           onClick={() => setActiveTab('buy')}
-          className={`flex-1 sm:flex-none px-6 py-3.5 text-xs sm:text-sm font-bold tracking-wider uppercase transition-colors relative ${
+          className={`shrink-0 px-4 sm:px-6 py-3 sm:py-3.5 text-xs sm:text-sm font-bold tracking-wider uppercase transition-colors relative whitespace-nowrap ${
             activeTab === 'buy'
               ? 'text-[#071A2B] bg-white border-r border-gray-200'
               : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'
@@ -73,7 +73,7 @@ export const HeroSearchBox: React.FC<HeroSearchBoxProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('hunt')}
-          className={`flex-1 sm:flex-none px-6 py-3.5 text-xs sm:text-sm font-bold tracking-wider uppercase transition-colors relative ${
+          className={`shrink-0 px-4 sm:px-6 py-3 sm:py-3.5 text-xs sm:text-sm font-bold tracking-wider uppercase transition-colors relative whitespace-nowrap ${
             activeTab === 'hunt'
               ? 'text-[#071A2B] bg-white border-x border-gray-200'
               : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'
@@ -88,7 +88,7 @@ export const HeroSearchBox: React.FC<HeroSearchBoxProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('sell')}
-          className={`flex-1 sm:flex-none px-6 py-3.5 text-xs sm:text-sm font-bold tracking-wider uppercase transition-colors relative ${
+          className={`shrink-0 px-4 sm:px-6 py-3 sm:py-3.5 text-xs sm:text-sm font-bold tracking-wider uppercase transition-colors relative whitespace-nowrap ${
             activeTab === 'sell'
               ? 'text-[#071A2B] bg-white border-l border-gray-200'
               : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/50'

@@ -104,21 +104,21 @@ export const BrowseByType: React.FC<BrowseByTypeProps> = ({ onSelectType, onView
           </button>
         </div>
 
-        {/* Horizontal Scrollable Types Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-3.5">
+        {/* Horizontal Snap Scrollable Types on Mobile, Grid on Tablet/Desktop */}
+        <div className="flex sm:grid sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-3.5 overflow-x-auto no-scrollbar snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0 py-1">
           {BODY_TYPES.map((type) => (
             <button
               key={type.id}
               onClick={() => onSelectType(type.name)}
-              className="flex flex-col items-center justify-center p-4 rounded-lg border border-gray-200 bg-white hover:border-[#071A2B] hover:shadow-md transition-all duration-150 group text-center cursor-pointer"
+              className="min-w-[130px] sm:min-w-0 snap-start shrink-0 sm:shrink flex flex-col items-center justify-center p-3.5 sm:p-4 rounded-lg border border-gray-200 bg-white hover:border-[#071A2B] hover:shadow-md transition-all duration-150 group text-center cursor-pointer"
             >
               <div className="h-10 flex items-center justify-center mb-2">
                 {renderSilhouette(type.name)}
               </div>
-              <span className="text-sm font-bold text-[#071A2B] group-hover:text-[#EF233C] transition-colors">
+              <span className="text-xs sm:text-sm font-bold text-[#071A2B] group-hover:text-[#EF233C] transition-colors whitespace-nowrap">
                 {type.name}
               </span>
-              <span className="text-[11px] font-medium text-gray-400 mt-0.5 tabular-nums">
+              <span className="text-[10px] sm:text-[11px] font-medium text-gray-400 mt-0.5 tabular-nums whitespace-nowrap">
                 {FORMAT_NUMBER(type.car_count)} cars
               </span>
             </button>

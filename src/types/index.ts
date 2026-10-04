@@ -1,3 +1,16 @@
+export type ListingStatus = 'PUBLISHED' | 'DRAFT' | 'PENDING' | 'ARCHIVED' | 'SOLD' | 'RESERVED';
+
+export type UserRole = 'ADMIN' | 'EDITOR' | 'INSPECTOR' | 'CONTENT_MANAGER';
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  avatar_url?: string;
+  last_sign_in?: string;
+}
+
 export interface CarVideo {
   youtube_video_id: string;
   youtube_url: string;
@@ -50,11 +63,13 @@ export interface Car {
   fuel_type: 'Petrol' | 'Diesel' | 'Hybrid' | 'Electric';
   drive_type: 'AWD' | '4WD' | 'FWD' | 'RWD';
   engine: string;
+  horsepower?: number;
   exterior_color: string;
   interior_color: string;
   seats: number;
   doors: number;
   is_featured: boolean;
+  status: ListingStatus;
   views_count: number;
   created_at: string;
   description: string;
@@ -78,6 +93,19 @@ export interface CarBrand {
   car_count: number;
   popular_models: string[];
   country: string;
+  logo_url?: string;
+  is_active?: boolean;
+  is_featured?: boolean;
+}
+
+export interface CarModelRecord {
+  id: string;
+  brand_id: string;
+  brand_name: string;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  created_at: string;
 }
 
 export interface BodyTypeCategory {
@@ -86,6 +114,8 @@ export interface BodyTypeCategory {
   slug: string;
   car_count: number;
   description: string;
+  image_url?: string;
+  is_active?: boolean;
 }
 
 export interface FilterState {
@@ -105,7 +135,10 @@ export interface FilterState {
   searchQuery: string;
 }
 
+export type InquiryStatus = 'NEW' | 'CONTACTED' | 'VIEWING_SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+
 export interface BuyerInquiry {
+  id?: string;
   car_id: string;
   car_title: string;
   car_price: number;
@@ -117,6 +150,8 @@ export interface BuyerInquiry {
   needs_financing: boolean;
   needs_inspection: boolean;
   notes?: string;
+  status?: InquiryStatus;
+  created_at?: string;
 }
 
 export interface CarHuntSubmission {
@@ -134,3 +169,4 @@ export interface CarHuntSubmission {
   timeframe: string;
   notes?: string;
 }
+

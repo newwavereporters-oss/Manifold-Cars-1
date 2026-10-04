@@ -1,8 +1,8 @@
 import React from 'react';
 import { Video, ShieldCheck, Headphones, Key, Play } from 'lucide-react';
 import { HeroSearchBox } from './HeroSearchBox';
-import heroDealershipBanner from '@/src/assets/images/hero_manifold_dealership_1791137893826.jpg';
-import presenterShowcaseImg from '@/src/assets/images/manifold_presenter_showcase_1791137904318.jpg';
+import heroDealershipBanner from '../assets/images/hero_manifold_dealership_1791137893826.jpg';
+import presenterShowcaseImg from '../assets/images/manifold_presenter_showcase_1791137904318.jpg';
 
 interface HeroProps {
   onSearch: (filters: {
@@ -26,16 +26,29 @@ export const Hero: React.FC<HeroProps> = ({
   return (
     <section className="relative bg-[#071A2B] pt-24 pb-12 sm:pt-28 md:pt-32 lg:pt-36 overflow-hidden">
       {/* Background Cinematic Image with Deep Gradients */}
-      <div className="absolute inset-0 z-0">
+      <div
+        className="absolute inset-0 z-0 bg-[#071A2B]"
+        style={{
+          backgroundImage: `url(${heroDealershipBanner})`,
+          backgroundPosition: 'center',
+          backgroundSize: 'cover',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
         <img
           src={heroDealershipBanner}
           alt="MANIFOLD Luxury Dealership Sunset Showroom in Lagos"
-          className="w-full h-full object-cover object-center scale-105 filter brightness-90 transform duration-1000 ease-out"
-          referrerPolicy="no-referrer"
+          className="w-full h-full object-cover object-center filter brightness-95"
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (target.src !== '/assets/images/hero_manifold_dealership_1791137893826.jpg') {
+              target.src = '/assets/images/hero_manifold_dealership_1791137893826.jpg';
+            }
+          }}
         />
-        {/* Measured Scrim & Gradients */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#071A2B]/95 via-[#071A2B]/75 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#071A2B] via-transparent to-[#071A2B]/60" />
+        {/* Measured Scrim & Gradients: Kept transparent enough so the dealership showroom and sunset cars are clearly visible */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#071A2B]/85 via-[#071A2B]/55 to-[#071A2B]/30" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#071A2B] via-transparent to-[#071A2B]/45" />
       </div>
 
       {/* Hero Content Container */}
@@ -95,7 +108,12 @@ export const Hero: React.FC<HeroProps> = ({
                   src={presenterShowcaseImg}
                   alt="MANIFOLD Presenter Automotive Video Review"
                   className="w-full h-full object-cover filter brightness-90 group-hover:scale-105 transition-transform duration-300"
-                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (target.src !== '/assets/images/manifold_presenter_showcase_1791137904318.jpg') {
+                      target.src = '/assets/images/manifold_presenter_showcase_1791137904318.jpg';
+                    }
+                  }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-between p-3.5">
                   <div className="flex items-center justify-between">

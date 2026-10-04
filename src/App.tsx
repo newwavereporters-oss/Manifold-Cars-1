@@ -9,6 +9,11 @@ import { ReviewsPage } from './pages/ReviewsPage';
 import { SellCarPage } from './pages/SellCarPage';
 import { ServicesPage } from './pages/ServicesPage';
 import { AboutPage } from './pages/AboutPage';
+import { AdminLoginPage } from './pages/admin/AdminLoginPage';
+import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+import { AdminEditCarPage } from './pages/admin/AdminEditCarPage';
+import { AdminLoginModal } from './components/AdminLoginModal';
+import { carService } from './services/carService';
 import { InquiryModal } from './components/InquiryModal';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
 import { FavoritesDrawer } from './components/FavoritesDrawer';
@@ -78,6 +83,7 @@ export function App() {
 
   const [favoritesDrawerOpen, setFavoritesDrawerOpen] = useState(false);
   const [advancedSearchModalOpen, setAdvancedSearchModalOpen] = useState(false);
+  const [adminLoginModalOpen, setAdminLoginModalOpen] = useState(false);
 
   // Client-side Navigation routing
   const navigate = (path: string) => {
@@ -178,6 +184,24 @@ export function App() {
     ? cars.find((c) => c.slug === selectedCarSlug) || cars[0]
     : cars[0];
 
+  const isAdminRoute = currentRoute === '/admin' || currentRoute === '/admin/login';
+
+  if (currentRoute === '/admin/login') {
+    return (
+      <div className="min-h-screen bg-[#071A2B]">
+        <AdminLoginPage navigate={navigate} />
+      </div>
+    );
+  }
+
+  if (currentRoute === '/admin') {
+    return (
+      <div className="min-h-screen bg-[#F7F8FA]">
+        <AdminDashboardPage navigate={navigate} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen text-[#111827]">
       {/* Sticky Header with Signature Lockup & Brand Actions */}
@@ -188,6 +212,7 @@ export function App() {
         onOpenFavorites={() => setFavoritesDrawerOpen(true)}
         onOpenInquiry={() => handleOpenInquiry()}
         onOpenSearch={() => setAdvancedSearchModalOpen(true)}
+        onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
       />
 
       {/* Main View Router */}
@@ -262,6 +287,14 @@ export function App() {
           setFilters((prev) => ({ ...prev, make: brand }));
           navigate(`/cars?make=${encodeURIComponent(brand)}`);
         }}
+        onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
+      />
+
+      {/* Admin Sign In Neat Modal */}
+      <AdminLoginModal
+        isOpen={adminLoginModalOpen}
+        onClose={() => setAdminLoginModalOpen(false)}
+        onSuccessNavigate={(route) => navigate(route)}
       />
 
       {/* Inquiry Concierge Modal ("I'm Interested" / "Talk to MANIFOLD") */}

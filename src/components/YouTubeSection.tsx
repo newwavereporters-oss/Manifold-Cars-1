@@ -1,7 +1,7 @@
 import React from 'react';
 import { Play, Youtube, ArrowRight } from 'lucide-react';
 import { MEDIA_REVIEWS, YouTubeMediaItem } from '../data/brandsAndTypes';
-import presenterShowcaseImg from '@/src/assets/images/manifold_presenter_showcase_1791137904318.jpg';
+import presenterShowcaseImg from '../assets/images/manifold_presenter_showcase_1791137904318.jpg';
 
 interface YouTubeSectionProps {
   onPlayMedia: (item: YouTubeMediaItem) => void;
@@ -19,14 +19,26 @@ export const YouTubeSection: React.FC<YouTubeSectionProps> = ({ onPlayMedia }) =
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
             {/* Left: MANIFOLD Presenter Portrait & Editorial Branding */}
             <div className="lg:col-span-4 flex flex-col sm:flex-row lg:flex-col items-center sm:items-start lg:items-center text-center sm:text-left lg:text-center gap-6">
-              <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl sm:rounded-3xl overflow-hidden border-3 border-[#EF233C] shadow-xl shrink-0">
+              <div
+                className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl sm:rounded-3xl overflow-hidden border-2 border-[#EF233C] shadow-2xl shrink-0 bg-[#071A2B]"
+                style={{
+                  backgroundImage: `url(${presenterShowcaseImg})`,
+                  backgroundPosition: 'top center',
+                  backgroundSize: 'cover',
+                }}
+              >
                 <img
                   src={presenterShowcaseImg}
                   alt="MANIFOLD Automotive Video Presenter"
                   className="w-full h-full object-cover object-top"
-                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (target.src !== '/assets/images/manifold_presenter_showcase_1791137904318.jpg') {
+                      target.src = '/assets/images/manifold_presenter_showcase_1791137904318.jpg';
+                    }
+                  }}
                 />
-                <div className="absolute bottom-1 right-2 bg-[#EF233C] text-white p-1 rounded-full shadow">
+                <div className="absolute bottom-2 right-2 bg-[#EF233C] text-white p-1.5 rounded-full shadow-lg">
                   <Youtube className="w-4 h-4" />
                 </div>
               </div>

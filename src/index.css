@@ -6,6 +6,19 @@
     --deep-navy: #071A2B;
     --dark-navy: #0B2239;
     --charcoal: #151B24;
+    --header-height: 76px;
+  }
+
+  @media (max-width: 1024px) {
+    :root {
+      --header-height: 72px;
+    }
+  }
+
+  @media (max-width: 640px) {
+    :root {
+      --header-height: 68px;
+    }
   }
 
   body {
@@ -17,7 +30,21 @@
   }
 }
 
-/* Custom scrollbars for horizontal car lists */
+/* Enforce strict single-line buttons across mobile and desktop */
+button, .btn {
+  white-space: nowrap;
+}
+
+/* Hide scrollbars for clean horizontal snap lists */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom scrollbars for desktop panels */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

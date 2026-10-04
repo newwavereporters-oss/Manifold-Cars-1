@@ -25,11 +25,22 @@ export const VideoCarCard: React.FC<VideoCarCardProps> = ({
       {/* 16:9 DOMINANT VIDEO-FIRST MEDIA CONTAINER */}
       <div className="relative aspect-[16/9] w-full bg-gray-900 overflow-hidden cursor-pointer">
         <img
-          src={car.video.youtube_thumbnail_url}
+          src={
+            car.video?.youtube_thumbnail_url ||
+            (car.video?.youtube_video_id
+              ? `https://img.youtube.com/vi/${car.video.youtube_video_id}/hqdefault.jpg`
+              : car.gallery_image_1_url)
+          }
           alt={car.title}
           className="w-full h-full object-cover filter brightness-[0.92] group-hover:scale-105 transition-transform duration-300 ease-out"
           onClick={() => onPlayVideo(car)}
-          referrerPolicy="no-referrer"
+          onError={(e) => {
+            if (car.video?.youtube_video_id) {
+              e.currentTarget.src = `https://img.youtube.com/vi/${car.video.youtube_video_id}/hqdefault.jpg`;
+            } else if (car.gallery_image_1_url) {
+              e.currentTarget.src = car.gallery_image_1_url;
+            }
+          }}
         />
 
         {/* Video Scrim & Overlays */}
@@ -107,17 +118,17 @@ export const VideoCarCard: React.FC<VideoCarCardProps> = ({
         </div>
 
         {/* Price & Primary Action Row */}
-        <div className="pt-2 border-t border-gray-100 flex items-end justify-between">
-          <div>
-            <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+        <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[10px] sm:text-[11px] font-semibold text-gray-400 uppercase tracking-wider truncate">
               {car.condition}
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-lg sm:text-xl font-extrabold text-[#071A2B] tabular-nums font-display">
+            <div className="flex items-baseline gap-1.5 sm:gap-2">
+              <span className="text-base sm:text-xl font-extrabold text-[#071A2B] tabular-nums font-display whitespace-nowrap">
                 {FORMAT_CURRENCY(car.price)}
               </span>
               {car.original_price && car.original_price > car.price && (
-                <span className="text-xs text-gray-400 line-through tabular-nums">
+                <span className="text-[11px] sm:text-xs text-gray-400 line-through tabular-nums whitespace-nowrap hidden min-[400px]:inline">
                   {FORMAT_CURRENCY(car.original_price)}
                 </span>
               )}
@@ -125,10 +136,10 @@ export const VideoCarCard: React.FC<VideoCarCardProps> = ({
           </div>
 
           {/* Actions: Favorite & Primary 'I'm Interested' */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={() => onToggleFavorite(car.id)}
-              className={`p-2 rounded border transition-colors ${
+              className={`p-2 rounded border transition-colors shrink-0 ${
                 isFavorite
                   ? 'bg-red-50 border-red-200 text-[#EF233C]'
                   : 'bg-gray-50 border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-100'
@@ -141,7 +152,7 @@ export const VideoCarCard: React.FC<VideoCarCardProps> = ({
 
             <button
               onClick={() => onInterested(car)}
-              className="px-3.5 py-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded shadow-sm hover:shadow transition-all whitespace-nowrap active:scale-95"
+              className="px-2.5 sm:px-3.5 py-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-[11px] sm:text-xs font-bold uppercase tracking-wider rounded shadow-sm hover:shadow transition-all whitespace-nowrap shrink-0 active:scale-95"
             >
               I'm Interested
             </button>

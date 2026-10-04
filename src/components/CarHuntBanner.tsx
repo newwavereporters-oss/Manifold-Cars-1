@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowRight, Compass, ShieldCheck } from 'lucide-react';
-import gwagonBanner from '@/src/assets/images/dark_gwagon_dusk_banner_1791137913608.jpg';
+import gwagonBanner from '../assets/images/dark_gwagon_dusk_banner_1791137913608.jpg';
 
 interface CarHuntBannerProps {
   onStartHunt: () => void;
@@ -44,12 +44,17 @@ export const CarHuntBanner: React.FC<CarHuntBannerProps> = ({
   return (
     <section className="relative py-20 lg:py-24 bg-[#071A2B] text-white overflow-hidden">
       {/* Background Dark G-Wagon Banner */}
-      <div className="absolute inset-0 z-0">
+      <div className="absolute inset-0 z-0 bg-[#071A2B]">
         <img
           src={gwagonBanner}
           alt="MANIFOLD Car Hunt Sourcing Concierge"
           className="w-full h-full object-cover object-center filter brightness-50"
-          referrerPolicy="no-referrer"
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (target.src !== '/assets/images/dark_gwagon_dusk_banner_1791137913608.jpg') {
+              target.src = '/assets/images/dark_gwagon_dusk_banner_1791137913608.jpg';
+            }
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#071A2B] via-[#071A2B]/85 to-transparent" />
         <div className="absolute inset-0 bg-[#071A2B]/40" />

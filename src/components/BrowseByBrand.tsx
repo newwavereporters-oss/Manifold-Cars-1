@@ -34,13 +34,13 @@ export const BrowseByBrand: React.FC<BrowseByBrandProps> = ({
           </button>
         </div>
 
-        {/* Brand Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-3.5">
+        {/* Brand Snap Scrollable Row on Mobile, Grid on Tablet/Desktop */}
+        <div className="flex sm:grid sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-3.5 overflow-x-auto no-scrollbar snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0 py-1">
           {CAR_BRANDS.map((brand) => (
             <button
               key={brand.id}
               onClick={() => onSelectBrand(brand.name)}
-              className="flex flex-col items-center justify-center p-4 rounded-lg border border-gray-200 bg-white hover:border-[#071A2B] hover:shadow-md transition-all duration-150 group text-center cursor-pointer"
+              className="min-w-[120px] sm:min-w-0 snap-start shrink-0 sm:shrink flex flex-col items-center justify-center p-3.5 sm:p-4 rounded-lg border border-gray-200 bg-white hover:border-[#071A2B] hover:shadow-md transition-all duration-150 group text-center cursor-pointer"
             >
               {/* Brand Initial Badge */}
               <div className="w-10 h-10 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center mb-2 group-hover:border-[#EF233C]/40 group-hover:bg-red-50/50 transition-colors">
@@ -49,11 +49,11 @@ export const BrowseByBrand: React.FC<BrowseByBrandProps> = ({
                 </span>
               </div>
 
-              <span className="text-sm font-bold text-[#071A2B] group-hover:text-[#EF233C] transition-colors truncate w-full">
+              <span className="text-xs sm:text-sm font-bold text-[#071A2B] group-hover:text-[#EF233C] transition-colors truncate w-full">
                 {brand.name}
               </span>
 
-              <span className="text-[11px] font-medium text-gray-400 mt-0.5 tabular-nums">
+              <span className="text-[10px] sm:text-[11px] font-medium text-gray-400 mt-0.5 tabular-nums whitespace-nowrap">
                 {FORMAT_NUMBER(brand.car_count)} cars
               </span>
             </button>
