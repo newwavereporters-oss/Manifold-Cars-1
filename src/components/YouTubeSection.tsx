@@ -1,6 +1,7 @@
 import React from 'react';
 import { Play, Youtube, ArrowRight } from 'lucide-react';
 import { MEDIA_REVIEWS, YouTubeMediaItem } from '../data/brandsAndTypes';
+import presenterShowcaseImg from '@/src/assets/images/manifold_presenter_showcase_1791137904318.jpg';
 
 interface YouTubeSectionProps {
   onPlayMedia: (item: YouTubeMediaItem) => void;
@@ -18,9 +19,9 @@ export const YouTubeSection: React.FC<YouTubeSectionProps> = ({ onPlayMedia }) =
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
             {/* Left: MANIFOLD Presenter Portrait & Editorial Branding */}
             <div className="lg:col-span-4 flex flex-col sm:flex-row lg:flex-col items-center sm:items-start lg:items-center text-center sm:text-left lg:text-center gap-6">
-              <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-full overflow-hidden border-3 border-[#EF233C] shadow-xl shrink-0">
+              <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl sm:rounded-3xl overflow-hidden border-3 border-[#EF233C] shadow-xl shrink-0">
                 <img
-                  src="/src/assets/images/manifold_presenter_showcase_1791137904318.jpg"
+                  src={presenterShowcaseImg}
                   alt="MANIFOLD Automotive Video Presenter"
                   className="w-full h-full object-cover object-top"
                   referrerPolicy="no-referrer"

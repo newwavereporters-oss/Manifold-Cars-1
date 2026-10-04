@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowRight, Compass, ShieldCheck } from 'lucide-react';
+import gwagonBanner from '@/src/assets/images/dark_gwagon_dusk_banner_1791137913608.jpg';
 
 interface CarHuntBannerProps {
   onStartHunt: () => void;
@@ -45,7 +46,7 @@ export const CarHuntBanner: React.FC<CarHuntBannerProps> = ({
       {/* Background Dark G-Wagon Banner */}
       <div className="absolute inset-0 z-0">
         <img
-          src="/src/assets/images/dark_gwagon_dusk_banner_1791137913608.jpg"
+          src={gwagonBanner}
           alt="MANIFOLD Car Hunt Sourcing Concierge"
           className="w-full h-full object-cover object-center filter brightness-50"
           referrerPolicy="no-referrer"

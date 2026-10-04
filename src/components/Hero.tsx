@@ -1,6 +1,8 @@
 import React from 'react';
 import { Video, ShieldCheck, Headphones, Key, Play } from 'lucide-react';
 import { HeroSearchBox } from './HeroSearchBox';
+import heroDealershipBanner from '@/src/assets/images/hero_manifold_dealership_1791137893826.jpg';
+import presenterShowcaseImg from '@/src/assets/images/manifold_presenter_showcase_1791137904318.jpg';
 
 interface HeroProps {
   onSearch: (filters: {
@@ -26,7 +28,7 @@ export const Hero: React.FC<HeroProps> = ({
       {/* Background Cinematic Image with Deep Gradients */}
       <div className="absolute inset-0 z-0">
         <img
-          src="/src/assets/images/hero_manifold_dealership_1791137893826.jpg"
+          src={heroDealershipBanner}
           alt="MANIFOLD Luxury Dealership Sunset Showroom in Lagos"
           className="w-full h-full object-cover object-center scale-105 filter brightness-90 transform duration-1000 ease-out"
           referrerPolicy="no-referrer"
@@ -90,7 +92,7 @@ export const Hero: React.FC<HeroProps> = ({
                 className="relative rounded-lg overflow-hidden group cursor-pointer aspect-video bg-black/60 border border-white/10"
               >
                 <img
-                  src="/src/assets/images/manifold_presenter_showcase_1791137904318.jpg"
+                  src={presenterShowcaseImg}
                   alt="MANIFOLD Presenter Automotive Video Review"
                   className="w-full h-full object-cover filter brightness-90 group-hover:scale-105 transition-transform duration-300"
                   referrerPolicy="no-referrer"

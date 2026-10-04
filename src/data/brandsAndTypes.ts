@@ -1,4 +1,8 @@
 import { BodyTypeCategory, CarBrand } from '../types';
+import imgHighlander from '@/src/assets/images/car_highlander_review_1791137926981.jpg';
+import imgLexusRx from '@/src/assets/images/car_lexus_rx_review_1791137937466.jpg';
+import imgDealership from '@/src/assets/images/hero_manifold_dealership_1791137893826.jpg';
+import imgMercedesGle from '@/src/assets/images/car_mercedes_gle_review_1791137948450.jpg';
 
 export const BODY_TYPES: BodyTypeCategory[] = [
   {
@@ -145,7 +149,7 @@ export const MEDIA_REVIEWS: YouTubeMediaItem[] = [
     category: 'Car Hunt',
     duration: '18:45',
     views: '84K views',
-    thumbnail_url: '/src/assets/images/car_highlander_review_1791137926981.jpg',
+    thumbnail_url: imgHighlander,
     youtube_video_id: 'w4-z4_h1wR0',
     youtube_url: 'https://www.youtube.com/watch?v=w4-z4_h1wR0',
     description: 'We tested 5 top SUVs you can comfortably buy in Nigeria right now under 20 Million Naira. Which one won the durability test?'
@@ -156,7 +160,7 @@ export const MEDIA_REVIEWS: YouTubeMediaItem[] = [
     category: 'Buying Tips',
     duration: '14:20',
     views: '112K views',
-    thumbnail_url: '/src/assets/images/car_lexus_rx_review_1791137937466.jpg',
+    thumbnail_url: imgLexusRx,
     youtube_video_id: 'dQw4w9WgXcQ',
     youtube_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     description: 'Common transmission flaws, VIN verification mistakes, and flood damage tricks used by rogue dealers in Lagos.'
@@ -167,7 +171,7 @@ export const MEDIA_REVIEWS: YouTubeMediaItem[] = [
     category: 'Market Insights',
     duration: '22:15',
     views: '67K views',
-    thumbnail_url: '/src/assets/images/hero_manifold_dealership_1791137893826.jpg',
+    thumbnail_url: imgDealership,
     youtube_video_id: 'lJIrF4YjGf0',
     youtube_url: 'https://www.youtube.com/watch?v=lJIrF4YjGf0',
     description: 'MANIFOLD goes behind the scenes at partner dealerships in Lekki Phase 1 to verify customs documents and condition.'
@@ -178,7 +182,7 @@ export const MEDIA_REVIEWS: YouTubeMediaItem[] = [
     category: 'Car Review',
     duration: '16:50',
     views: '93K views',
-    thumbnail_url: '/src/assets/images/car_mercedes_gle_review_1791137948450.jpg',
+    thumbnail_url: imgMercedesGle,
     youtube_video_id: 'e-ORhEE9VVg',
     youtube_url: 'https://www.youtube.com/watch?v=e-ORhEE9VVg',
     description: 'Parts availability, premium fuel requirements, mechanic expertise, and resale value comparison for Nigerian car buyers.'

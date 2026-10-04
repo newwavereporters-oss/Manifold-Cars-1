@@ -1,4 +1,14 @@
 import { Car } from '../types';
+import imgHighlander from '@/src/assets/images/car_highlander_review_1791137926981.jpg';
+import imgLexusRx from '@/src/assets/images/car_lexus_rx_review_1791137937466.jpg';
+import imgMercedesGle from '@/src/assets/images/car_mercedes_gle_review_1791137948450.jpg';
+import imgRangeRover from '@/src/assets/images/car_range_rover_review_1791137958219.jpg';
+import imgCamry from '@/src/assets/images/car_camry_review_1791137989198.jpg';
+import imgLexusEs from '@/src/assets/images/car_es350_review_1791138000635.jpg';
+import imgAccord from '@/src/assets/images/car_accord_review_1791138021189.jpg';
+import imgPrado from '@/src/assets/images/car_prado_review_1791138011083.jpg';
+import imgGwagon from '@/src/assets/images/dark_gwagon_dusk_banner_1791137913608.jpg';
+import imgDealership from '@/src/assets/images/hero_manifold_dealership_1791137893826.jpg';
 
 export const MOCK_CARS: Car[] = [
   {
@@ -43,15 +53,15 @@ export const MOCK_CARS: Car[] = [
     video: {
       youtube_video_id: 'w4-z4_h1wR0',
       youtube_url: 'https://www.youtube.com/watch?v=w4-z4_h1wR0',
-      youtube_thumbnail_url: '/src/assets/images/car_highlander_review_1791137926981.jpg',
+      youtube_thumbnail_url: imgHighlander,
       video_title: '2021 Toyota Highlander XLE In-Depth Nigerian Market Review',
       video_duration: '14:32',
       video_type: 'full_review',
       is_primary: true,
       presenter_name: 'MANIFOLD Presenter'
     },
-    gallery_image_1_url: '/src/assets/images/car_highlander_review_1791137926981.jpg',
-    gallery_image_2_url: '/src/assets/images/hero_manifold_dealership_1791137893826.jpg',
+    gallery_image_1_url: imgHighlander,
+    gallery_image_2_url: imgDealership,
     verification: {
       is_verified: true,
       dealer_verified: true,
@@ -111,15 +121,15 @@ export const MOCK_CARS: Car[] = [
     video: {
       youtube_video_id: 'dQw4w9WgXcQ',
       youtube_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-      youtube_thumbnail_url: '/src/assets/images/car_lexus_rx_review_1791137937466.jpg',
+      youtube_thumbnail_url: imgLexusRx,
       video_title: 'Is the 2020 Lexus RX 350 Still Nigeria\'s Luxury King? Real Review',
       video_duration: '12:20',
       video_type: 'full_review',
       is_primary: true,
       presenter_name: 'MANIFOLD Presenter'
     },
-    gallery_image_1_url: '/src/assets/images/car_lexus_rx_review_1791137937466.jpg',
-    gallery_image_2_url: '/src/assets/images/hero_manifold_dealership_1791137893826.jpg',
+    gallery_image_1_url: imgLexusRx,
+    gallery_image_2_url: imgDealership,
     verification: {
       is_verified: true,
       dealer_verified: true,
@@ -181,15 +191,15 @@ export const MOCK_CARS: Car[] = [
     video: {
       youtube_video_id: 'lJIrF4YjGf0',
       youtube_url: 'https://www.youtube.com/watch?v=lJIrF4YjGf0',
-      youtube_thumbnail_url: '/src/assets/images/car_mercedes_gle_review_1791137948450.jpg',
+      youtube_thumbnail_url: imgMercedesGle,
       video_title: 'Mercedes-Benz GLE 43 AMG Coupe Walkaround & Lagos Road Test',
       video_duration: '16:15',
       video_type: 'full_review',
       is_primary: true,
       presenter_name: 'MANIFOLD Presenter'
     },
-    gallery_image_1_url: '/src/assets/images/car_mercedes_gle_review_1791137948450.jpg',
-    gallery_image_2_url: '/src/assets/images/dark_gwagon_dusk_banner_1791137913608.jpg',
+    gallery_image_1_url: imgMercedesGle,
+    gallery_image_2_url: imgGwagon,
     verification: {
       is_verified: true,
       dealer_verified: true,
@@ -249,15 +259,15 @@ export const MOCK_CARS: Car[] = [
     video: {
       youtube_video_id: 'e-ORhEE9VVg',
       youtube_url: 'https://www.youtube.com/watch?v=e-ORhEE9VVg',
-      youtube_thumbnail_url: '/src/assets/images/car_range_rover_review_1791137958219.jpg',
+      youtube_thumbnail_url: imgRangeRover,
       video_title: '2022 Range Rover Sport HSE Dynamic — The Ultimate Lagos Status Symbol?',
       video_duration: '17:40',
       video_type: 'full_review',
       is_primary: true,
       presenter_name: 'MANIFOLD Presenter'
     },
-    gallery_image_1_url: '/src/assets/images/car_range_rover_review_1791137958219.jpg',
-    gallery_image_2_url: '/src/assets/images/hero_manifold_dealership_1791137893826.jpg',
+    gallery_image_1_url: imgRangeRover,
+    gallery_image_2_url: imgDealership,
     verification: {
       is_verified: true,
       dealer_verified: true,
@@ -317,15 +327,15 @@ export const MOCK_CARS: Car[] = [
     video: {
       youtube_video_id: 'tAGnKpE4NCI',
       youtube_url: 'https://www.youtube.com/watch?v=tAGnKpE4NCI',
-      youtube_thumbnail_url: '/src/assets/images/car_camry_review_1791137989198.jpg',
+      youtube_thumbnail_url: imgCamry,
       video_title: '2020 Toyota Camry XSE V6 Video Walkaround & Honest Assessment',
       video_duration: '11:10',
       video_type: 'walkaround',
       is_primary: true,
       presenter_name: 'MANIFOLD Presenter'
     },
-    gallery_image_1_url: '/src/assets/images/car_camry_review_1791137989198.jpg',
-    gallery_image_2_url: '/src/assets/images/hero_manifold_dealership_1791137893826.jpg',
+    gallery_image_1_url: imgCamry,
+    gallery_image_2_url: imgDealership,
     verification: {
       is_verified: true,
       dealer_verified: true,
@@ -387,15 +397,15 @@ export const MOCK_CARS: Car[] = [
     video: {
       youtube_video_id: 'eVTXPUF4Oz4',
       youtube_url: 'https://www.youtube.com/watch?v=eVTXPUF4Oz4',
-      youtube_thumbnail_url: '/src/assets/images/car_es350_review_1791138000635.jpg',
+      youtube_thumbnail_url: imgLexusEs,
       video_title: '2021 Lexus ES 350 F-Sport — Executive Comfort Meets Sporty Aggression',
       video_duration: '15:20',
       video_type: 'full_review',
       is_primary: true,
       presenter_name: 'MANIFOLD Presenter'
     },
-    gallery_image_1_url: '/src/assets/images/car_es350_review_1791138000635.jpg',
-    gallery_image_2_url: '/src/assets/images/hero_manifold_dealership_1791137893826.jpg',
+    gallery_image_1_url: imgLexusEs,
+    gallery_image_2_url: imgDealership,
     verification: {
       is_verified: true,
       dealer_verified: true,
@@ -455,15 +465,15 @@ export const MOCK_CARS: Car[] = [
     video: {
       youtube_video_id: 'kJQP7kiw5Fk',
       youtube_url: 'https://www.youtube.com/watch?v=kJQP7kiw5Fk',
-      youtube_thumbnail_url: '/src/assets/images/car_accord_review_1791138021189.jpg',
+      youtube_thumbnail_url: imgAccord,
       video_title: 'Why the 2019 Honda Accord 2.0T is the Best Value Sedan in Nigeria',
       video_duration: '10:45',
       video_type: 'full_review',
       is_primary: true,
       presenter_name: 'MANIFOLD Presenter'
     },
-    gallery_image_1_url: '/src/assets/images/car_accord_review_1791138021189.jpg',
-    gallery_image_2_url: '/src/assets/images/hero_manifold_dealership_1791137893826.jpg',
+    gallery_image_1_url: imgAccord,
+    gallery_image_2_url: imgDealership,
     verification: {
       is_verified: true,
       dealer_verified: true,
@@ -523,15 +533,15 @@ export const MOCK_CARS: Car[] = [
     video: {
       youtube_video_id: '9bZkp7q19f0',
       youtube_url: 'https://www.youtube.com/watch?v=9bZkp7q19f0',
-      youtube_thumbnail_url: '/src/assets/images/car_prado_review_1791138011083.jpg',
+      youtube_thumbnail_url: imgPrado,
       video_title: '2020 Toyota Prado TXL Walkaround — The Undisputed King of Nigeria\'s Highways',
       video_duration: '14:50',
       video_type: 'full_review',
       is_primary: true,
       presenter_name: 'MANIFOLD Presenter'
     },
-    gallery_image_1_url: '/src/assets/images/car_prado_review_1791138011083.jpg',
-    gallery_image_2_url: '/src/assets/images/hero_manifold_dealership_1791137893826.jpg',
+    gallery_image_1_url: imgPrado,
+    gallery_image_2_url: imgDealership,
     verification: {
       is_verified: true,
       dealer_verified: true,
@@ -591,15 +601,15 @@ export const MOCK_CARS: Car[] = [
     video: {
       youtube_video_id: 'JGwWNGJdvx8',
       youtube_url: 'https://www.youtube.com/watch?v=JGwWNGJdvx8',
-      youtube_thumbnail_url: '/src/assets/images/dark_gwagon_dusk_banner_1791137913608.jpg',
+      youtube_thumbnail_url: imgGwagon,
       video_title: '2021 Mercedes-AMG G63 Magno Night Review — Is It Worth N145 Million in Nigeria?',
       video_duration: '19:12',
       video_type: 'full_review',
       is_primary: true,
       presenter_name: 'MANIFOLD Presenter'
     },
-    gallery_image_1_url: '/src/assets/images/dark_gwagon_dusk_banner_1791137913608.jpg',
-    gallery_image_2_url: '/src/assets/images/hero_manifold_dealership_1791137893826.jpg',
+    gallery_image_1_url: imgGwagon,
+    gallery_image_2_url: imgDealership,
     verification: {
       is_verified: true,
       dealer_verified: true,
