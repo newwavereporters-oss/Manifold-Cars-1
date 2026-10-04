@@ -1,0 +1,6 @@
+{
+  "name": "MANIFOLD — Find · Verify · Drive",
+  "description": "Nigeria's premium car discovery and buying concierge. Verified cars with real video reviews, expert guidance, and no dealer hassle.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
