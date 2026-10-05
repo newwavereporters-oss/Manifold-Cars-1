@@ -1,30 +1,103 @@
 -- ==============================================================================
--- MANIFOLD Automotive Marketplace — Supabase PostgreSQL Database Schema
--- Run this script in your Supabase SQL Editor (Dashboard > SQL Editor > New query)
+-- MANIFOLD Automotive Marketplace — Supabase Authoritative PostgreSQL Schema
+-- Section 7: All 20 tables with Row Level Security (RLS) & Performance Indexes
 -- ==============================================================================
 
--- 1. Enable UUID Extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. Create Cars Table
+-- 1. Profiles Table (linked to Supabase auth.users)
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  full_name TEXT,
+  phone TEXT,
+  avatar_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Admin Users Table (Section 2: Authorization Gate)
+CREATE TABLE IF NOT EXISTS public.admin_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT DEFAULT 'MANIFOLD Administrator',
+  role TEXT NOT NULL DEFAULT 'admin', -- 'admin', 'editor', 'inspector'
+  status TEXT NOT NULL DEFAULT 'active', -- 'active', 'inactive', 'suspended'
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. Car Brands (Section 14)
+CREATE TABLE IF NOT EXISTS public.car_brands (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  slug TEXT NOT NULL UNIQUE,
+  country TEXT DEFAULT 'Japan',
+  logo_url TEXT,
+  car_count INTEGER DEFAULT 0,
+  popular_models JSONB DEFAULT '[]'::jsonb,
+  is_active BOOLEAN DEFAULT true,
+  is_featured BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Car Models (Section 15)
+CREATE TABLE IF NOT EXISTS public.car_models (
+  id TEXT PRIMARY KEY,
+  brand_id TEXT REFERENCES public.car_brands(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. Car Types / Categories (Section 16)
+CREATE TABLE IF NOT EXISTS public.car_types (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  slug TEXT NOT NULL UNIQUE,
+  description TEXT,
+  image_url TEXT,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 6. Dealers (Section 17 - Private contact info restricted to admins)
+CREATE TABLE IF NOT EXISTS public.dealers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  city TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'Lagos',
+  address TEXT,
+  phone TEXT, -- NEVER exposed to public visitors
+  email TEXT, -- NEVER exposed to public visitors
+  is_verified BOOLEAN DEFAULT true,
+  joined_year INTEGER DEFAULT 2024,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 7. Cars Inventory (Sections 9 & 10)
 CREATE TABLE IF NOT EXISTS public.cars (
   id TEXT PRIMARY KEY,
   slug TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
+  brand_id TEXT REFERENCES public.car_brands(id) ON DELETE SET NULL,
+  model_id TEXT,
+  type_id TEXT,
+  dealer_id TEXT REFERENCES public.dealers(id) ON DELETE SET NULL,
+  variant TEXT,
+  trim TEXT,
   year INTEGER NOT NULL,
-  make TEXT NOT NULL,
-  model TEXT NOT NULL,
-  trim TEXT DEFAULT '',
-  body_type TEXT NOT NULL DEFAULT 'SUV',
-  condition TEXT NOT NULL DEFAULT 'Foreign Used',
   price BIGINT NOT NULL,
+  previous_price BIGINT,
   original_price BIGINT,
-  is_price_reduced BOOLEAN DEFAULT false,
-  location TEXT NOT NULL,
-  state TEXT NOT NULL DEFAULT 'Lagos',
+  currency TEXT DEFAULT 'NGN',
   mileage INTEGER NOT NULL DEFAULT 0,
-  transmission TEXT NOT NULL DEFAULT 'Automatic',
+  condition TEXT NOT NULL DEFAULT 'Foreign Used',
   fuel_type TEXT NOT NULL DEFAULT 'Petrol',
+  transmission TEXT NOT NULL DEFAULT 'Automatic',
   drive_type TEXT NOT NULL DEFAULT 'AWD',
   engine TEXT DEFAULT '3.5L V6',
   horsepower INTEGER,
@@ -32,68 +105,93 @@ CREATE TABLE IF NOT EXISTS public.cars (
   interior_color TEXT NOT NULL DEFAULT 'Black Leather',
   seats INTEGER DEFAULT 5,
   doors INTEGER DEFAULT 4,
-  is_featured BOOLEAN DEFAULT false,
-  status TEXT NOT NULL DEFAULT 'DRAFT', -- 'PUBLISHED', 'DRAFT', 'ARCHIVED', 'SOLD'
-  views_count INTEGER DEFAULT 0,
+  location TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'Lagos',
   description TEXT,
+  status TEXT NOT NULL DEFAULT 'DRAFT', -- 'PUBLISHED', 'DRAFT', 'ARCHIVED', 'SOLD'
+  is_featured BOOLEAN DEFAULT false,
+  is_verified BOOLEAN DEFAULT true,
+  views_count INTEGER DEFAULT 0,
   features JSONB DEFAULT '[]'::jsonb,
   
-  -- Primary Media Architecture
+  -- Denormalized media fallbacks
   youtube_video_id TEXT,
   youtube_url TEXT,
   youtube_thumbnail_url TEXT,
-  video_title TEXT,
-  video_duration TEXT DEFAULT '12:00',
-  video_type TEXT DEFAULT 'full_review',
-  video_presenter TEXT DEFAULT 'MANIFOLD Presenter',
-  
-  -- Two Gallery Images (Mandatory for Live Publishing)
   gallery_image_1_url TEXT,
   gallery_image_2_url TEXT,
-  additional_images JSONB DEFAULT '[]'::jsonb,
-  
-  -- Inspection Verification
-  is_verified BOOLEAN DEFAULT true,
-  inspection_score INTEGER DEFAULT 95,
-  verified_date TEXT,
-  verified_by TEXT DEFAULT 'MANIFOLD Field Unit',
-  
-  -- Dealership Information
-  dealer_id TEXT DEFAULT 'dlr-partner-01',
-  dealer_name TEXT DEFAULT 'Prestige Motors Lekki',
-  dealer_city TEXT DEFAULT 'Lekki',
-  dealer_state TEXT DEFAULT 'Lagos',
   
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Create Media & Reviews CMS Table
-CREATE TABLE IF NOT EXISTS public.media_reviews (
+-- 8. Car Media (Section 11: YouTube Video Reviews CMS)
+CREATE TABLE IF NOT EXISTS public.car_media (
   id TEXT PRIMARY KEY,
+  car_id TEXT REFERENCES public.cars(id) ON DELETE CASCADE,
+  media_type TEXT NOT NULL DEFAULT 'youtube_video', -- 'youtube_video'
+  video_type TEXT NOT NULL DEFAULT 'full_review', -- 'full_review', 'walkaround', 'car_hunt', 'buying_guide'
   title TEXT NOT NULL,
-  video_type TEXT NOT NULL DEFAULT 'Car Review', -- 'Car Review', 'Car Walkaround', 'Car Hunt', 'Buying Guide', 'Market Insight', 'Other'
   youtube_url TEXT NOT NULL,
   youtube_video_id TEXT NOT NULL,
   youtube_thumbnail_url TEXT,
-  car_id TEXT REFERENCES public.cars(id) ON DELETE SET NULL,
-  car_title TEXT,
   description TEXT,
-  status TEXT NOT NULL DEFAULT 'Published',
-  is_featured BOOLEAN DEFAULT false,
   is_primary BOOLEAN DEFAULT false,
+  status TEXT NOT NULL DEFAULT 'published', -- 'published', 'draft', 'archived'
+  sort_order INTEGER DEFAULT 0,
   duration TEXT DEFAULT '12:00',
-  views_count TEXT DEFAULT '1.2k views',
-  presenter TEXT DEFAULT 'MANIFOLD Media Team',
+  presenter TEXT DEFAULT 'MANIFOLD Presenter',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. Create Concierge Buyer Inquiries Table
+-- 9. Car Images (Section 12: Gallery Image 1 & 2)
+CREATE TABLE IF NOT EXISTS public.car_images (
+  id TEXT PRIMARY KEY,
+  car_id TEXT NOT NULL REFERENCES public.cars(id) ON DELETE CASCADE,
+  image_url TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 1, -- 1 for Gallery 1, 2 for Gallery 2
+  is_primary BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 10. Vehicle Verifications
+CREATE TABLE IF NOT EXISTS public.vehicle_verifications (
+  id TEXT PRIMARY KEY,
+  car_id TEXT NOT NULL REFERENCES public.cars(id) ON DELETE CASCADE,
+  is_verified BOOLEAN DEFAULT true,
+  dealer_verified BOOLEAN DEFAULT true,
+  vehicle_physically_seen BOOLEAN DEFAULT true,
+  video_reviewed BOOLEAN DEFAULT true,
+  price_confirmed BOOLEAN DEFAULT true,
+  vin_checked BOOLEAN DEFAULT true,
+  inspection_score INTEGER DEFAULT 95,
+  verified_date TEXT,
+  verified_by TEXT DEFAULT 'MANIFOLD Field Inspection Unit',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 11. Vehicle Inspections
+CREATE TABLE IF NOT EXISTS public.vehicle_inspections (
+  id TEXT PRIMARY KEY,
+  car_id TEXT NOT NULL REFERENCES public.cars(id) ON DELETE CASCADE,
+  inspector_name TEXT,
+  inspection_date TIMESTAMPTZ DEFAULT NOW(),
+  overall_score INTEGER DEFAULT 95,
+  engine_score INTEGER DEFAULT 95,
+  transmission_score INTEGER DEFAULT 95,
+  electrical_score INTEGER DEFAULT 95,
+  body_frame_score INTEGER DEFAULT 95,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 12. Buyer Inquiries (Section 18)
 CREATE TABLE IF NOT EXISTS public.buyer_inquiries (
   id TEXT PRIMARY KEY,
   car_id TEXT REFERENCES public.cars(id) ON DELETE SET NULL,
   car_title TEXT,
+  car_price BIGINT,
   full_name TEXT NOT NULL,
   phone_number TEXT NOT NULL,
   email TEXT NOT NULL,
@@ -102,47 +200,180 @@ CREATE TABLE IF NOT EXISTS public.buyer_inquiries (
   needs_financing BOOLEAN DEFAULT false,
   needs_inspection BOOLEAN DEFAULT false,
   notes TEXT,
-  status TEXT DEFAULT 'NEW', -- 'NEW', 'CONTACTED', 'INSPECTION_SET', 'COMPLETED'
+  status TEXT NOT NULL DEFAULT 'new', -- 'new', 'contacted', 'qualified', 'viewing_scheduled', 'negotiating', 'won', 'lost', 'closed'
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. Create Row Level Security (RLS) Policies
+-- 13. Car Hunt Requests
+CREATE TABLE IF NOT EXISTS public.car_hunt_requests (
+  id TEXT PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT NOT NULL,
+  make TEXT NOT NULL,
+  model TEXT,
+  year_min INTEGER,
+  year_max INTEGER,
+  budget_max BIGINT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 14. Viewings
+CREATE TABLE IF NOT EXISTS public.viewings (
+  id TEXT PRIMARY KEY,
+  inquiry_id TEXT REFERENCES public.buyer_inquiries(id) ON DELETE SET NULL,
+  car_id TEXT REFERENCES public.cars(id) ON DELETE SET NULL,
+  viewing_date TIMESTAMPTZ NOT NULL,
+  location TEXT NOT NULL,
+  supervised_by TEXT DEFAULT 'MANIFOLD Field Unit',
+  status TEXT DEFAULT 'scheduled', -- 'scheduled', 'completed', 'cancelled'
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 15. Sales (Section 19)
+CREATE TABLE IF NOT EXISTS public.sales (
+  id TEXT PRIMARY KEY,
+  car_id TEXT REFERENCES public.cars(id) ON DELETE SET NULL,
+  dealer_id TEXT REFERENCES public.dealers(id) ON DELETE SET NULL,
+  buyer_name TEXT NOT NULL,
+  buyer_phone TEXT,
+  buyer_email TEXT,
+  sale_price BIGINT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'completed', -- 'pending', 'completed', 'cancelled'
+  sale_date TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 16. Commissions (Section 20)
+CREATE TABLE IF NOT EXISTS public.commissions (
+  id TEXT PRIMARY KEY,
+  sale_id TEXT REFERENCES public.sales(id) ON DELETE CASCADE,
+  dealer_id TEXT REFERENCES public.dealers(id) ON DELETE SET NULL,
+  commission_type TEXT NOT NULL DEFAULT 'percentage', -- 'percentage', 'fixed'
+  commission_rate NUMERIC DEFAULT 2.5,
+  commission_amount BIGINT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'NGN',
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'paid', 'cancelled'
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 17. Favorites
+CREATE TABLE IF NOT EXISTS public.favorites (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  car_id TEXT REFERENCES public.cars(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, car_id)
+);
+
+-- 18. Saved Searches
+CREATE TABLE IF NOT EXISTS public.saved_searches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  name TEXT,
+  criteria JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 19. Notifications
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  is_read BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 20. Audit Logs
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT,
+  details JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ==============================================================================
+-- Initial Administrator Setup (Section 1 & 2)
+-- Authorizes newwavereporters@gmail.com as the active admin
+-- ==============================================================================
+INSERT INTO public.admin_users (email, name, role, status)
+VALUES ('newwavereporters@gmail.com', 'MANIFOLD Lead Administrator', 'admin', 'active')
+ON CONFLICT (email) DO UPDATE SET status = 'active', role = 'admin';
+
+-- ==============================================================================
+-- Row Level Security (RLS) Configuration (Section 22)
+-- ==============================================================================
 ALTER TABLE public.cars ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.media_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.car_media ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.car_images ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.car_brands ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.car_models ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.car_types ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dealers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.buyer_inquiries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.commissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 
--- Allow public read access to published vehicles and reviews
-CREATE POLICY "Allow public read access for published cars"
-  ON public.cars FOR SELECT
-  USING (true);
+-- Helper function to check if requesting user is active admin
+CREATE OR REPLACE FUNCTION public.is_active_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.admin_users
+    WHERE (user_id = auth.uid() OR email = auth.jwt()->>'email')
+      AND status = 'active'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE POLICY "Allow authenticated or admin write to cars"
-  ON public.cars FOR ALL
-  USING (true)
-  WITH CHECK (true);
+-- Public can read published vehicles and media
+CREATE POLICY "Public read published cars" ON public.cars FOR SELECT USING (status = 'PUBLISHED' OR public.is_active_admin());
+CREATE POLICY "Admins full access cars" ON public.cars FOR ALL USING (public.is_active_admin());
 
-CREATE POLICY "Allow public read access for media reviews"
-  ON public.media_reviews FOR SELECT
-  USING (true);
+CREATE POLICY "Public read car media" ON public.car_media FOR SELECT USING (status = 'published' OR public.is_active_admin());
+CREATE POLICY "Admins full access car media" ON public.car_media FOR ALL USING (public.is_active_admin());
 
-CREATE POLICY "Allow public write access for media reviews"
-  ON public.media_reviews FOR ALL
-  USING (true)
-  WITH CHECK (true);
+CREATE POLICY "Public read car images" ON public.car_images FOR SELECT USING (true);
+CREATE POLICY "Admins full access car images" ON public.car_images FOR ALL USING (public.is_active_admin());
 
-CREATE POLICY "Allow public insert for buyer inquiries"
-  ON public.buyer_inquiries FOR INSERT
-  WITH CHECK (true);
+CREATE POLICY "Public read active brands" ON public.car_brands FOR SELECT USING (is_active = true OR public.is_active_admin());
+CREATE POLICY "Admins full access brands" ON public.car_brands FOR ALL USING (public.is_active_admin());
 
-CREATE POLICY "Allow read and update for buyer inquiries"
-  ON public.buyer_inquiries FOR ALL
-  USING (true)
-  WITH CHECK (true);
+CREATE POLICY "Public read active models" ON public.car_models FOR SELECT USING (is_active = true OR public.is_active_admin());
+CREATE POLICY "Admins full access models" ON public.car_models FOR ALL USING (public.is_active_admin());
 
--- 6. Indexes for High-Performance Queries
+CREATE POLICY "Public read active types" ON public.car_types FOR SELECT USING (is_active = true OR public.is_active_admin());
+CREATE POLICY "Admins full access types" ON public.car_types FOR ALL USING (public.is_active_admin());
+
+-- Dealers: Public can read basic non-confidential info; Admins have full access
+CREATE POLICY "Public read dealers" ON public.dealers FOR SELECT USING (true);
+CREATE POLICY "Admins full access dealers" ON public.dealers FOR ALL USING (public.is_active_admin());
+
+-- Inquiries: Public can submit; Admins can read & update
+CREATE POLICY "Public insert inquiries" ON public.buyer_inquiries FOR INSERT WITH CHECK (true);
+CREATE POLICY "Admins full access inquiries" ON public.buyer_inquiries FOR ALL USING (public.is_active_admin());
+
+-- Sales & Commissions: Admin only
+CREATE POLICY "Admins full access sales" ON public.sales FOR ALL USING (public.is_active_admin());
+CREATE POLICY "Admins full access commissions" ON public.commissions FOR ALL USING (public.is_active_admin());
+
+-- Admin Users table: authenticated users can read their own authorization row; admins can manage
+CREATE POLICY "Self read admin authorization" ON public.admin_users FOR SELECT USING (user_id = auth.uid() OR email = auth.jwt()->>'email');
+CREATE POLICY "Admins manage admin users" ON public.admin_users FOR ALL USING (public.is_active_admin());
+
+-- Indexes for lightning queries
 CREATE INDEX IF NOT EXISTS idx_cars_slug ON public.cars(slug);
 CREATE INDEX IF NOT EXISTS idx_cars_status ON public.cars(status);
-CREATE INDEX IF NOT EXISTS idx_cars_make_model ON public.cars(make, model);
-CREATE INDEX IF NOT EXISTS idx_cars_price ON public.cars(price);
-CREATE INDEX IF NOT EXISTS idx_media_car_id ON public.media_reviews(car_id);
-CREATE INDEX IF NOT EXISTS idx_media_status ON public.media_reviews(status);
+CREATE INDEX IF NOT EXISTS idx_cars_brand_id ON public.cars(brand_id);
+CREATE INDEX IF NOT EXISTS idx_car_media_car_id ON public.car_media(car_id);
+CREATE INDEX IF NOT EXISTS idx_car_images_car_id ON public.car_images(car_id);
+CREATE INDEX IF NOT EXISTS idx_admin_users_email ON public.admin_users(email);
+CREATE INDEX IF NOT EXISTS idx_admin_users_uid ON public.admin_users(user_id);

@@ -12,15 +12,16 @@ import { AboutPage } from './pages/AboutPage';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { AdminEditCarPage } from './pages/admin/AdminEditCarPage';
+import { AdminGuard } from './components/AdminGuard';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { carService } from './services/carService';
 import { InquiryModal } from './components/InquiryModal';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
 import { FavoritesDrawer } from './components/FavoritesDrawer';
 import { AdvancedSearchModal } from './components/AdvancedSearchModal';
-import { MOCK_CARS } from './data/mockCars';
 import { Car, FilterState } from './types';
 import { YouTubeMediaItem } from './data/brandsAndTypes';
+import { Loader2 } from 'lucide-react';
 
 export function App() {
   const [currentRoute, setCurrentRoute] = useState<string>(() => {
@@ -30,6 +31,8 @@ export function App() {
   const [cars, setCars] = useState<Car[]>(() => carService.getCarsSync());
   const [selectedCarSlug, setSelectedCarSlug] = useState<string | null>(null);
   const [editingCarId, setEditingCarId] = useState<string | null>(null);
+  const [slugCar, setSlugCar] = useState<Car | null>(null);
+  const [slugCarLoading, setSlugCarLoading] = useState(false);
 
   useEffect(() => {
     const unsub = carService.subscribe((updated) => {
@@ -38,7 +41,7 @@ export function App() {
     return () => unsub();
   }, []);
 
-  // Favorites state with localStorage persistence
+  // Favorites state with localStorage persistence (harmless UI preference)
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('manifold_favorites');
@@ -101,6 +104,7 @@ export function App() {
   };
 
   const parseRoute = (path: string) => {
+    // 1. Admin Edit Car Route
     if (path.startsWith('/admin/cars/') && path.endsWith('/edit')) {
       const id = path.replace('/admin/cars/', '').replace('/edit', '').split('?')[0];
       setEditingCarId(id);
@@ -109,12 +113,14 @@ export function App() {
       return;
     }
 
-    if (path.startsWith('/admin/cars')) {
+    // 2. Admin Protected Routes (Section 3: Route Protection)
+    if (path.startsWith('/admin')) {
       setSelectedCarSlug(null);
-      setCurrentRoute('/admin');
+      setCurrentRoute(path.split('?')[0] || '/admin');
       return;
     }
 
+    // 3. Vehicle Detail Route (Section 13: Live Car Detail)
     if (path.startsWith('/cars/')) {
       const slug = path.replace('/cars/', '').split('?')[0];
       setSelectedCarSlug(slug);
@@ -123,7 +129,6 @@ export function App() {
     }
 
     if (path.startsWith('/cars')) {
-      // Parse query params if any
       const searchParams = new URLSearchParams(window.location.search);
       const makeParam = searchParams.get('make');
       const typeParam = searchParams.get('type');
@@ -150,6 +155,30 @@ export function App() {
     parseRoute(window.location.pathname);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  // Live Vehicle Resolution for /cars/:slug
+  useEffect(() => {
+    if (selectedCarSlug) {
+      const foundInList = cars.find(
+        (c) => c.slug === selectedCarSlug || c.id === selectedCarSlug
+      );
+      if (foundInList) {
+        setSlugCar(foundInList);
+      } else {
+        setSlugCarLoading(true);
+        carService
+          .getCarBySlug(selectedCarSlug)
+          .then((car) => {
+            setSlugCar(car);
+            setSlugCarLoading(false);
+          })
+          .catch(() => {
+            setSlugCar(null);
+            setSlugCarLoading(false);
+          });
+      }
+    }
+  }, [selectedCarSlug, cars]);
 
   // Action handlers
   const handleOpenInquiry = (car?: Car) => {
@@ -198,19 +227,12 @@ export function App() {
     navigate('/cars');
   };
 
-  // Compute favorite car objects
   const favoriteCars = cars.filter((c) => favorites.includes(c.id));
 
-  // Find car by slug
-  const activeCar = selectedCarSlug
-    ? cars.find((c) => c.slug === selectedCarSlug) || cars[0]
-    : cars[0];
+  // Determine active car for details page
+  const activeCar = slugCar || cars.find((c) => c.slug === selectedCarSlug) || cars[0];
 
-  const isAdminRoute =
-    currentRoute === '/admin' ||
-    currentRoute === '/admin/login' ||
-    currentRoute === '/admin/cars/:id/edit';
-
+  // Section 3: Admin Route Protection
   if (currentRoute === '/admin/login') {
     return (
       <div className="min-h-screen bg-[#071A2B]">
@@ -219,19 +241,19 @@ export function App() {
     );
   }
 
-  if (currentRoute === '/admin/cars/:id/edit' && editingCarId) {
+  if (currentRoute.startsWith('/admin')) {
     return (
-      <div className="min-h-screen bg-[#F7F8FA]">
-        <AdminEditCarPage carId={editingCarId} navigate={navigate} />
-      </div>
-    );
-  }
-
-  if (currentRoute === '/admin') {
-    return (
-      <div className="min-h-screen bg-[#F7F8FA]">
-        <AdminDashboardPage navigate={navigate} />
-      </div>
+      <AdminGuard navigate={navigate}>
+        {currentRoute === '/admin/cars/:id/edit' && editingCarId ? (
+          <div className="min-h-screen bg-[#F7F8FA]">
+            <AdminEditCarPage carId={editingCarId} navigate={navigate} />
+          </div>
+        ) : (
+          <div className="min-h-screen bg-[#F7F8FA]">
+            <AdminDashboardPage navigate={navigate} activeRoute={currentRoute} />
+          </div>
+        )}
+      </AdminGuard>
     );
   }
 
@@ -279,16 +301,38 @@ export function App() {
         )}
 
         {currentRoute === '/cars/:slug' && (
-          <CarDetailPage
-            car={activeCar}
-            allCars={cars}
-            isFavorite={favorites.includes(activeCar.id)}
-            onToggleFavorite={toggleFavorite}
-            onInterested={(car) => handleOpenInquiry(car)}
-            onPlayVideo={handlePlayCarVideo}
-            onSelectCar={handleSelectCar}
-            navigate={navigate}
-          />
+          slugCarLoading ? (
+            <div className="min-h-screen bg-[#F7F8FA] pt-32 pb-20 flex flex-col items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-[#EF233C] mb-3" />
+              <p className="text-xs uppercase tracking-widest font-bold text-gray-500">
+                Retrieving Verified Vehicle from Supabase...
+              </p>
+            </div>
+          ) : activeCar ? (
+            <CarDetailPage
+              car={activeCar}
+              allCars={cars}
+              isFavorite={favorites.includes(activeCar.id)}
+              onToggleFavorite={toggleFavorite}
+              onInterested={(car) => handleOpenInquiry(car)}
+              onPlayVideo={handlePlayCarVideo}
+              onSelectCar={handleSelectCar}
+              navigate={navigate}
+            />
+          ) : (
+            <div className="min-h-screen bg-[#F7F8FA] pt-32 pb-20 text-center px-4">
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Vehicle Not Found</h2>
+              <p className="text-xs text-gray-500 mb-4">
+                The requested vehicle record could not be found in the live MANIFOLD inventory.
+              </p>
+              <button
+                onClick={() => navigate('/cars')}
+                className="px-4 py-2 bg-[#071A2B] text-white text-xs font-bold uppercase rounded-lg"
+              >
+                Browse All Vehicles
+              </button>
+            </div>
+          )
         )}
 
         {currentRoute === '/car-hunt' && <CarHuntPage navigate={navigate} />}
@@ -323,14 +367,14 @@ export function App() {
         onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
       />
 
-      {/* Admin Sign In Neat Modal */}
+      {/* Admin Sign In Modal */}
       <AdminLoginModal
         isOpen={adminLoginModalOpen}
         onClose={() => setAdminLoginModalOpen(false)}
         onSuccessNavigate={(route) => navigate(route)}
       />
 
-      {/* Inquiry Concierge Modal ("I'm Interested" / "Talk to MANIFOLD") */}
+      {/* Inquiry Concierge Modal */}
       <InquiryModal
         isOpen={inquiryModalOpen}
         onClose={() => setInquiryModalOpen(false)}
@@ -338,7 +382,7 @@ export function App() {
         generalInquiry={isGeneralInquiry}
       />
 
-      {/* YouTube / Video Walkaround Player Modal */}
+      {/* Video Walkaround Player Modal */}
       <VideoPlayerModal
         isOpen={videoModalOpen}
         onClose={() => setVideoModalOpen(false)}
@@ -348,7 +392,7 @@ export function App() {
         onViewDetails={(car) => handleSelectCar(car)}
       />
 
-      {/* Saved Vehicles (Favorites) Drawer */}
+      {/* Saved Vehicles Drawer */}
       <FavoritesDrawer
         isOpen={favoritesDrawerOpen}
         onClose={() => setFavoritesDrawerOpen(false)}
@@ -358,7 +402,7 @@ export function App() {
         onInterested={(car) => handleOpenInquiry(car)}
       />
 
-      {/* SaaS Advanced Filter Modal */}
+      {/* Advanced Filter Modal */}
       <AdvancedSearchModal
         isOpen={advancedSearchModalOpen}
         onClose={() => setAdvancedSearchModalOpen(false)}

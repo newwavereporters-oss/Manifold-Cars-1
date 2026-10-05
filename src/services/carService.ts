@@ -1,447 +1,500 @@
 import { Car } from '../types';
-import { MOCK_CARS } from '../data/mockCars';
-import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
-
-const CARS_STORAGE_KEY = 'manifold_inventory_cars_v1';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { extractYouTubeVideoId, getYouTubeThumbnailUrl, formatStandardYouTubeUrl } from '../utils/youtube';
 
 type CarChangeListener = (cars: Car[]) => void;
 
-function carToSupabaseRow(car: Car) {
-  return {
-    id: car.id,
-    slug: car.slug,
-    title: car.title,
-    year: car.year,
-    make: car.make,
-    model: car.model,
-    trim: car.trim,
-    body_type: car.body_type,
-    condition: car.condition,
-    price: car.price,
-    original_price: car.original_price,
-    is_price_reduced: car.is_price_reduced,
-    location: car.location,
-    state: car.state,
-    mileage: car.mileage,
-    transmission: car.transmission,
-    fuel_type: car.fuel_type,
-    drive_type: car.drive_type,
-    engine: car.engine,
-    horsepower: car.horsepower,
-    exterior_color: car.exterior_color,
-    interior_color: car.interior_color,
-    seats: car.seats,
-    doors: car.doors,
-    is_featured: car.is_featured,
-    status: car.status,
-    views_count: car.views_count,
-    description: car.description,
-    features: car.features,
-    youtube_video_id: car.video?.youtube_video_id,
-    youtube_url: car.video?.youtube_url,
-    youtube_thumbnail_url: car.video?.youtube_thumbnail_url,
-    video_title: car.video?.video_title,
-    video_duration: car.video?.video_duration,
-    video_type: car.video?.video_type,
-    video_presenter: car.video?.presenter_name,
-    gallery_image_1_url: car.gallery_image_1_url,
-    gallery_image_2_url: car.gallery_image_2_url,
-    is_verified: car.verification?.is_verified,
-    inspection_score: car.verification?.inspection_score,
-    verified_date: car.verification?.verified_date,
-    verified_by: car.verification?.verified_by,
-    dealer_id: car.dealer?.id,
-    dealer_name: car.dealer?.name,
-    dealer_city: car.dealer?.city,
-    dealer_state: car.dealer?.state,
+function mapSupabaseToCar(row: any): Car {
+  // 1. Resolve Primary Video from joined car_media or fallback columns
+  let videoObj = {
+    youtube_video_id: row.youtube_video_id || '',
+    youtube_url: row.youtube_url || '',
+    youtube_thumbnail_url: row.youtube_thumbnail_url || '',
+    video_title: row.video_title || row.title,
+    video_duration: row.video_duration || '12:00',
+    video_type: (row.video_type || 'full_review') as 'full_review' | 'walkaround' | 'car_hunt',
+    is_primary: true,
+    presenter_name: row.video_presenter || 'MANIFOLD Presenter',
   };
-}
 
-function supabaseRowToCar(row: any): Car {
+  if (Array.isArray(row.car_media) && row.car_media.length > 0) {
+    const primaryMedia = row.car_media.find((m: any) => m.is_primary) || row.car_media[0];
+    if (primaryMedia) {
+      videoObj = {
+        youtube_video_id: primaryMedia.youtube_video_id || extractYouTubeVideoId(primaryMedia.youtube_url) || '',
+        youtube_url: primaryMedia.youtube_url || '',
+        youtube_thumbnail_url: primaryMedia.youtube_thumbnail_url || getYouTubeThumbnailUrl(primaryMedia.youtube_video_id || ''),
+        video_title: primaryMedia.title || row.title,
+        video_duration: primaryMedia.duration || '12:00',
+        video_type: (primaryMedia.video_type === 'walkaround' ? 'walkaround' : 'full_review') as 'full_review' | 'walkaround' | 'car_hunt',
+        is_primary: true,
+        presenter_name: primaryMedia.presenter || 'MANIFOLD Presenter',
+      };
+    }
+  }
+
+  // 2. Resolve Gallery Images from joined car_images (position 1 & 2)
+  let gallery1 = row.gallery_image_1_url || '';
+  let gallery2 = row.gallery_image_2_url || '';
+
+  if (Array.isArray(row.car_images) && row.car_images.length > 0) {
+    const img1 = row.car_images.find((img: any) => img.position === 1);
+    const img2 = row.car_images.find((img: any) => img.position === 2);
+    if (img1 && img1.image_url) gallery1 = img1.image_url;
+    if (img2 && img2.image_url) gallery2 = img2.image_url;
+  }
+
+  // 3. Resolve Dealer info
+  const dealerObj = row.dealers
+    ? {
+        id: row.dealers.id || row.dealer_id || 'dlr-partner-01',
+        name: row.dealers.name || row.dealer_name || 'MANIFOLD Verified Partner',
+        city: row.dealers.city || row.dealer_city || 'Lekki',
+        state: row.dealers.state || row.dealer_state || 'Lagos',
+        verified_partner: row.dealers.is_verified ?? true,
+        joined_year: row.dealers.joined_year || 2024,
+      }
+    : {
+        id: row.dealer_id || 'dlr-partner-01',
+        name: row.dealer_name || 'MANIFOLD Verified Partner',
+        city: row.dealer_city || 'Lekki',
+        state: row.dealer_state || 'Lagos',
+        verified_partner: true,
+        joined_year: 2024,
+      };
+
   return {
     id: row.id,
     slug: row.slug,
     title: row.title,
-    year: row.year,
-    make: row.make,
-    model: row.model,
-    trim: row.trim || '',
-    body_type: row.body_type || 'SUV',
+    year: Number(row.year) || 2024,
+    make: row.make || row.car_brands?.name || 'Vehicle',
+    model: row.model || 'Model',
+    trim: row.trim || row.variant || '',
+    body_type: row.body_type || row.car_types?.name || 'SUV',
     condition: row.condition || 'Foreign Used',
-    price: Number(row.price),
-    original_price: row.original_price ? Number(row.original_price) : undefined,
-    is_price_reduced: !!row.is_price_reduced,
-    location: row.location,
+    price: Number(row.price) || 0,
+    original_price: row.original_price || row.previous_price ? Number(row.original_price || row.previous_price) : undefined,
+    is_price_reduced: Boolean(row.is_price_reduced || (row.previous_price && Number(row.previous_price) > Number(row.price))),
+    location: row.location || 'Lagos',
     state: row.state || 'Lagos',
     mileage: Number(row.mileage) || 0,
     transmission: row.transmission || 'Automatic',
     fuel_type: row.fuel_type || 'Petrol',
     drive_type: row.drive_type || 'AWD',
-    engine: row.engine || '',
+    engine: row.engine || '3.5L V6',
     horsepower: row.horsepower ? Number(row.horsepower) : undefined,
-    exterior_color: row.exterior_color || '',
-    interior_color: row.interior_color || '',
+    exterior_color: row.exterior_color || 'Metallic Black',
+    interior_color: row.interior_color || 'Black Leather',
     seats: Number(row.seats) || 5,
     doors: Number(row.doors) || 4,
-    is_featured: !!row.is_featured,
-    status: row.status || 'PUBLISHED',
+    is_featured: Boolean(row.is_featured),
+    status: row.status || 'DRAFT',
     views_count: Number(row.views_count) || 0,
     created_at: row.created_at || new Date().toISOString(),
     description: row.description || '',
     features: Array.isArray(row.features) ? row.features : [],
-    video: {
-      youtube_video_id: row.youtube_video_id || '',
-      youtube_url: row.youtube_url || '',
-      youtube_thumbnail_url: row.youtube_thumbnail_url || '',
-      video_title: row.video_title || row.title,
-      video_duration: row.video_duration || '12:00',
-      video_type: row.video_type || 'full_review',
-      is_primary: true,
-      presenter_name: row.video_presenter || 'MANIFOLD Presenter',
-    },
-    gallery_image_1_url: row.gallery_image_1_url || '',
-    gallery_image_2_url: row.gallery_image_2_url || '',
+    video: videoObj,
+    gallery_image_1_url: gallery1,
+    gallery_image_2_url: gallery2,
     verification: {
-      is_verified: !!row.is_verified,
-      dealer_verified: !!row.is_verified,
-      vehicle_physically_seen: !!row.is_verified,
-      video_reviewed: !!row.youtube_video_id,
+      is_verified: Boolean(row.is_verified ?? true),
+      dealer_verified: true,
+      vehicle_physically_seen: true,
+      video_reviewed: Boolean(videoObj.youtube_video_id),
       price_confirmed: true,
-      vin_checked: !!row.is_verified,
+      vin_checked: true,
       inspection_score: Number(row.inspection_score) || 95,
       verified_date: row.verified_date || 'Oct 2026',
       verified_by: row.verified_by || 'MANIFOLD Field Unit',
     },
-    dealer: {
-      id: row.dealer_id || 'dlr-partner-01',
-      name: row.dealer_name || 'MANIFOLD Partner Dealer',
-      city: row.dealer_city || 'Lekki',
-      state: row.dealer_state || 'Lagos',
-      verified_partner: true,
-      joined_year: 2023,
-    },
+    dealer: dealerObj,
   };
 }
 
 class CarService {
-  private cars: Car[] = [];
+  private cache: Car[] = [];
   private listeners: Set<CarChangeListener> = new Set();
-  private initialized = false;
-
-  constructor() {
-    this.init();
-  }
-
-  private async init() {
-    if (this.initialized) return;
-
-    // 1. Try local storage cache first for instant UI response
-    try {
-      const stored = localStorage.getItem(CARS_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          this.cars = parsed;
-          this.initialized = true;
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load cars from localStorage', e);
-    }
-
-    if (!this.initialized) {
-      this.cars = [...MOCK_CARS];
-      this.saveToStorage();
-      this.initialized = true;
-    }
-
-    // 2. If Supabase is configured, sync in background
-    if (isSupabaseConfigured()) {
-      this.syncFromSupabase();
-    }
-  }
-
-  public async syncFromSupabase(): Promise<boolean> {
-    const supabase = getSupabaseClient();
-    if (!supabase) return false;
-
-    try {
-      const { data, error } = await supabase
-        .from('cars')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.warn('Supabase car fetch error:', error.message);
-        return false;
-      }
-
-      if (data && data.length > 0) {
-        this.cars = data.map(supabaseRowToCar);
-        this.saveToStorage();
-        return true;
-      } else if (data && data.length === 0 && this.cars.length > 0) {
-        // Table exists but is empty - push local cars to seed Supabase
-        await this.pushAllToSupabase();
-        return true;
-      }
-    } catch (e) {
-      console.warn('Failed to sync from Supabase', e);
-    }
-    return false;
-  }
-
-  public async pushAllToSupabase(): Promise<void> {
-    const supabase = getSupabaseClient();
-    if (!supabase || this.cars.length === 0) return;
-
-    try {
-      const rows = this.cars.map(carToSupabaseRow);
-      await supabase.from('cars').upsert(rows, { onConflict: 'id' });
-    } catch (e) {
-      console.warn('Failed to push seed to Supabase', e);
-    }
-  }
-
-  private saveToStorage() {
-    try {
-      localStorage.setItem(CARS_STORAGE_KEY, JSON.stringify(this.cars));
-    } catch (e) {
-      console.warn('Failed to save cars to localStorage', e);
-    }
-    this.notify();
-  }
-
-  private notify() {
-    this.listeners.forEach((listener) => {
-      try {
-        listener([...this.cars]);
-      } catch (e) {
-        console.error('CarService listener error', e);
-      }
-    });
-  }
+  private hasLoaded = false;
 
   public async getCars(): Promise<Car[]> {
-    this.init();
-    return [...this.cars];
+    if (!isSupabaseConfigured) {
+      throw new Error(
+        'Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.'
+      );
+    }
+
+    const { data, error } = await supabase
+      .from('cars')
+      .select(`
+        *,
+        car_media (*),
+        car_images (*),
+        dealers (*)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Unable to load MANIFOLD data: ${error.message}`);
+    }
+
+    this.cache = (data || []).map(mapSupabaseToCar);
+    this.hasLoaded = true;
+    this.notify();
+    return [...this.cache];
   }
 
   public getCarsSync(): Car[] {
-    this.init();
-    return [...this.cars];
+    return [...this.cache];
   }
 
   public async getCarById(id: string): Promise<Car | null> {
-    this.init();
-    const found = this.cars.find((c) => c.id === id);
-    return found ? { ...found } : null;
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.');
+    }
+
+    const { data, error } = await supabase
+      .from('cars')
+      .select(`
+        *,
+        car_media (*),
+        car_images (*),
+        dealers (*)
+      `)
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to load vehicle from Supabase: ${error.message}`);
+    }
+
+    return data ? mapSupabaseToCar(data) : null;
   }
 
   public async getCarBySlug(slug: string): Promise<Car | null> {
-    this.init();
-    const found = this.cars.find((c) => c.slug === slug);
-    return found ? { ...found } : null;
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.');
+    }
+
+    const { data, error } = await supabase
+      .from('cars')
+      .select(`
+        *,
+        car_media (*),
+        car_images (*),
+        dealers (*)
+      `)
+      .eq('slug', slug)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to load vehicle from Supabase: ${error.message}`);
+    }
+
+    return data ? mapSupabaseToCar(data) : null;
   }
 
+  /**
+   * Section 9 & 10: CREATE CAR in Supabase
+   * Saves to public.cars, public.car_media, public.car_images
+   */
   public async createCar(carData: Partial<Car>): Promise<Car> {
-    this.init();
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured. Unable to persist vehicle.');
+    }
 
-    const title = carData.title || `${carData.year || 2024} ${carData.make || 'Toyota'} ${carData.model || 'Model'}`;
     const id = carData.id || `car-${Date.now()}`;
+    const title = carData.title || `${carData.year || 2024} ${carData.make || 'Toyota'} ${carData.model || 'Model'}`;
     const slugBase = (carData.slug || title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const slug = `${slugBase}-${Date.now().toString(36).substring(0, 4)}`;
 
-    const newCar: Car = {
+    const carInsertRow = {
       id,
-      slug: carData.slug || slug,
+      slug,
       title,
       year: carData.year || 2024,
       make: carData.make || 'Toyota',
       model: carData.model || 'Model',
+      variant: carData.trim || 'Standard',
       trim: carData.trim || 'Standard',
       body_type: carData.body_type || 'SUV',
       condition: carData.condition || 'Foreign Used',
       price: carData.price || 0,
-      original_price: carData.original_price,
-      is_price_reduced: !!carData.is_price_reduced,
-      location: carData.location || 'Lekki Phase 1, Lagos',
-      state: carData.state || 'Lagos',
+      previous_price: carData.original_price || null,
+      original_price: carData.original_price || null,
+      currency: 'NGN',
       mileage: carData.mileage || 0,
       transmission: carData.transmission || 'Automatic',
       fuel_type: carData.fuel_type || 'Petrol',
       drive_type: carData.drive_type || 'AWD',
       engine: carData.engine || '3.5L V6',
-      horsepower: carData.horsepower,
+      horsepower: carData.horsepower || null,
       exterior_color: carData.exterior_color || 'Metallic Black',
       interior_color: carData.interior_color || 'Black Leather',
       seats: carData.seats || 5,
       doors: carData.doors || 4,
-      is_featured: !!carData.is_featured,
-      status: carData.status || 'DRAFT',
-      views_count: carData.views_count || 0,
-      created_at: carData.created_at || new Date().toISOString(),
+      location: carData.location || 'Lagos',
+      state: carData.state || 'Lagos',
       description: carData.description || '',
-      features: carData.features || [],
-      video: carData.video || {
-        youtube_video_id: '',
-        youtube_url: '',
-        youtube_thumbnail_url: '',
-        video_title: '',
-        video_duration: '',
-        video_type: 'full_review',
-        is_primary: true,
-        presenter_name: 'MANIFOLD Presenter',
-      },
+      status: carData.status || 'DRAFT',
+      is_featured: Boolean(carData.is_featured),
+      is_verified: Boolean(carData.verification?.is_verified ?? true),
+      inspection_score: carData.verification?.inspection_score || 95,
+      verified_date: carData.verification?.verified_date || 'Oct 2026',
+      verified_by: carData.verification?.verified_by || 'MANIFOLD Field Unit',
+      dealer_id: carData.dealer?.id || 'dlr-partner-01',
+      dealer_name: carData.dealer?.name || 'Prestige Motors Lekki',
+      dealer_city: carData.dealer?.city || 'Lekki',
+      dealer_state: carData.dealer?.state || 'Lagos',
+      youtube_video_id: carData.video?.youtube_video_id || extractYouTubeVideoId(carData.video?.youtube_url || '') || '',
+      youtube_url: carData.video?.youtube_url || '',
+      youtube_thumbnail_url: carData.video?.youtube_thumbnail_url || '',
       gallery_image_1_url: carData.gallery_image_1_url || '',
       gallery_image_2_url: carData.gallery_image_2_url || '',
-      additional_images: carData.additional_images || [],
-      verification: carData.verification || {
-        is_verified: true,
-        dealer_verified: true,
-        vehicle_physically_seen: true,
-        video_reviewed: true,
-        price_confirmed: true,
-        vin_checked: true,
-        inspection_score: 95,
-        verified_date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        verified_by: 'MANIFOLD Field Unit',
-      },
-      dealer: carData.dealer || {
-        id: 'dlr-partner-01',
-        name: 'MANIFOLD Verified Partner Dealership',
-        city: 'Lekki',
-        state: 'Lagos',
-        verified_partner: true,
-        joined_year: 2024,
-      },
     };
 
-    this.cars.unshift(newCar);
-    this.saveToStorage();
+    // 1. Insert into public.cars
+    const { error: carError } = await supabase.from('cars').insert(carInsertRow);
+    if (carError) {
+      throw new Error(`Failed to create car in Supabase: ${carError.message}`);
+    }
 
-    // Persist to Supabase if configured
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        await supabase.from('cars').insert(carToSupabaseRow(newCar));
-      } catch (e) {
-        console.warn('Failed to insert car to Supabase', e);
+    // 2. Section 11: Save YouTube video to public.car_media
+    if (carData.video?.youtube_url) {
+      const vidId = carData.video.youtube_video_id || extractYouTubeVideoId(carData.video.youtube_url) || '';
+      const thumb = carData.video.youtube_thumbnail_url || (vidId ? getYouTubeThumbnailUrl(vidId) : '');
+
+      const { error: mediaErr } = await supabase.from('car_media').insert({
+        id: `media-${id}-${Date.now()}`,
+        car_id: id,
+        media_type: 'youtube_video',
+        video_type: carData.video.video_type || 'full_review',
+        title: carData.video.video_title || `${title} Full Walkaround Review`,
+        youtube_url: carData.video.youtube_url,
+        youtube_video_id: vidId,
+        youtube_thumbnail_url: thumb,
+        description: carData.description || '',
+        is_primary: true,
+        status: 'published',
+        sort_order: 1,
+        duration: carData.video.video_duration || '12:00',
+        presenter: carData.video.presenter_name || 'MANIFOLD Presenter',
+      });
+      if (mediaErr) {
+        console.warn('Warning: car_media insert error:', mediaErr.message);
       }
     }
 
-    return { ...newCar };
+    // 3. Section 12: Save Gallery Images to public.car_images
+    if (carData.gallery_image_1_url) {
+      const { error: img1Err } = await supabase.from('car_images').insert({
+        id: `img1-${id}-${Date.now()}`,
+        car_id: id,
+        image_url: carData.gallery_image_1_url,
+        position: 1,
+        is_primary: false,
+      });
+      if (img1Err) console.warn('Warning: car_images 1 insert error:', img1Err.message);
+    }
+
+    if (carData.gallery_image_2_url) {
+      const { error: img2Err } = await supabase.from('car_images').insert({
+        id: `img2-${id}-${Date.now()}`,
+        car_id: id,
+        image_url: carData.gallery_image_2_url,
+        position: 2,
+        is_primary: false,
+      });
+      if (img2Err) console.warn('Warning: car_images 2 insert error:', img2Err.message);
+    }
+
+    // Refresh database list
+    await this.getCars();
+    const created = await this.getCarById(id);
+    if (!created) {
+      throw new Error('Vehicle was created but could not be re-fetched from Supabase.');
+    }
+    return created;
   }
 
+  /**
+   * Section 9 & 10: UPDATE CAR in Supabase
+   */
   public async updateCar(id: string, updates: Partial<Car>): Promise<Car> {
-    this.init();
-    const index = this.cars.findIndex((c) => c.id === id);
-    if (index === -1) {
-      throw new Error(`Vehicle with ID ${id} not found.`);
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured. Unable to update vehicle.');
     }
 
-    const existing = this.cars[index];
-    const updated: Car = {
-      ...existing,
-      ...updates,
-      id: existing.id, // prevent ID change
-      video: {
-        ...existing.video,
-        ...(updates.video || {}),
-      },
-      verification: {
-        ...existing.verification,
-        ...(updates.verification || {}),
-      },
-      dealer: {
-        ...existing.dealer,
-        ...(updates.dealer || {}),
-      },
+    const carUpdateRow: any = {
+      updated_at: new Date().toISOString(),
     };
 
-    this.cars[index] = updated;
-    this.saveToStorage();
+    if (updates.title !== undefined) carUpdateRow.title = updates.title;
+    if (updates.year !== undefined) carUpdateRow.year = updates.year;
+    if (updates.make !== undefined) carUpdateRow.make = updates.make;
+    if (updates.model !== undefined) carUpdateRow.model = updates.model;
+    if (updates.trim !== undefined) {
+      carUpdateRow.trim = updates.trim;
+      carUpdateRow.variant = updates.trim;
+    }
+    if (updates.body_type !== undefined) carUpdateRow.body_type = updates.body_type;
+    if (updates.condition !== undefined) carUpdateRow.condition = updates.condition;
+    if (updates.price !== undefined) carUpdateRow.price = updates.price;
+    if (updates.original_price !== undefined) {
+      carUpdateRow.original_price = updates.original_price;
+      carUpdateRow.previous_price = updates.original_price;
+    }
+    if (updates.mileage !== undefined) carUpdateRow.mileage = updates.mileage;
+    if (updates.transmission !== undefined) carUpdateRow.transmission = updates.transmission;
+    if (updates.fuel_type !== undefined) carUpdateRow.fuel_type = updates.fuel_type;
+    if (updates.drive_type !== undefined) carUpdateRow.drive_type = updates.drive_type;
+    if (updates.engine !== undefined) carUpdateRow.engine = updates.engine;
+    if (updates.horsepower !== undefined) carUpdateRow.horsepower = updates.horsepower;
+    if (updates.exterior_color !== undefined) carUpdateRow.exterior_color = updates.exterior_color;
+    if (updates.interior_color !== undefined) carUpdateRow.interior_color = updates.interior_color;
+    if (updates.seats !== undefined) carUpdateRow.seats = updates.seats;
+    if (updates.doors !== undefined) carUpdateRow.doors = updates.doors;
+    if (updates.location !== undefined) carUpdateRow.location = updates.location;
+    if (updates.state !== undefined) carUpdateRow.state = updates.state;
+    if (updates.description !== undefined) carUpdateRow.description = updates.description;
+    if (updates.status !== undefined) carUpdateRow.status = updates.status;
+    if (updates.is_featured !== undefined) carUpdateRow.is_featured = updates.is_featured;
+    if (updates.verification?.is_verified !== undefined) carUpdateRow.is_verified = updates.verification.is_verified;
+    if (updates.gallery_image_1_url !== undefined) carUpdateRow.gallery_image_1_url = updates.gallery_image_1_url;
+    if (updates.gallery_image_2_url !== undefined) carUpdateRow.gallery_image_2_url = updates.gallery_image_2_url;
 
-    // Persist to Supabase if configured
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        await supabase.from('cars').upsert(carToSupabaseRow(updated));
-      } catch (e) {
-        console.warn('Failed to update car in Supabase', e);
+    if (updates.video) {
+      const vidId = updates.video.youtube_video_id || extractYouTubeVideoId(updates.video.youtube_url || '') || '';
+      carUpdateRow.youtube_video_id = vidId;
+      carUpdateRow.youtube_url = updates.video.youtube_url;
+      carUpdateRow.youtube_thumbnail_url = updates.video.youtube_thumbnail_url || (vidId ? getYouTubeThumbnailUrl(vidId) : '');
+    }
+
+    // 1. Update public.cars
+    const { error: carErr } = await supabase.from('cars').update(carUpdateRow).eq('id', id);
+    if (carErr) {
+      throw new Error(`Failed to update car in Supabase: ${carErr.message}`);
+    }
+
+    // 2. Section 11: Update or Insert into public.car_media
+    if (updates.video?.youtube_url) {
+      const vidId = updates.video.youtube_video_id || extractYouTubeVideoId(updates.video.youtube_url) || '';
+      const thumb = updates.video.youtube_thumbnail_url || (vidId ? getYouTubeThumbnailUrl(vidId) : '');
+
+      // Delete existing primary video and insert clean record
+      await supabase.from('car_media').delete().eq('car_id', id).eq('media_type', 'youtube_video');
+      await supabase.from('car_media').insert({
+        id: `media-${id}-${Date.now()}`,
+        car_id: id,
+        media_type: 'youtube_video',
+        video_type: updates.video.video_type || 'full_review',
+        title: updates.video.video_title || 'Vehicle Full Review',
+        youtube_url: updates.video.youtube_url,
+        youtube_video_id: vidId,
+        youtube_thumbnail_url: thumb,
+        description: updates.description || '',
+        is_primary: true,
+        status: 'published',
+        sort_order: 1,
+        duration: updates.video.video_duration || '12:00',
+        presenter: updates.video.presenter_name || 'MANIFOLD Presenter',
+      });
+    }
+
+    // 3. Section 12: Update Gallery Images (Position 1 & 2) in public.car_images
+    if (updates.gallery_image_1_url !== undefined) {
+      await supabase.from('car_images').delete().eq('car_id', id).eq('position', 1);
+      if (updates.gallery_image_1_url) {
+        await supabase.from('car_images').insert({
+          id: `img1-${id}-${Date.now()}`,
+          car_id: id,
+          image_url: updates.gallery_image_1_url,
+          position: 1,
+          is_primary: false,
+        });
       }
     }
 
-    return { ...updated };
+    if (updates.gallery_image_2_url !== undefined) {
+      await supabase.from('car_images').delete().eq('car_id', id).eq('position', 2);
+      if (updates.gallery_image_2_url) {
+        await supabase.from('car_images').insert({
+          id: `img2-${id}-${Date.now()}`,
+          car_id: id,
+          image_url: updates.gallery_image_2_url,
+          position: 2,
+          is_primary: false,
+        });
+      }
+    }
+
+    // Refresh database list
+    await this.getCars();
+    const updated = await this.getCarById(id);
+    if (!updated) {
+      throw new Error(`Vehicle ${id} updated, but could not be reloaded.`);
+    }
+    return updated;
   }
 
+  /**
+   * Section 9: DELETE / ARCHIVE CAR
+   */
   public async deleteCar(id: string): Promise<boolean> {
-    this.init();
-    const index = this.cars.findIndex((c) => c.id === id);
-    if (index === -1) return false;
-    this.cars.splice(index, 1);
-    this.saveToStorage();
-
-    // Persist to Supabase if configured
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        await supabase.from('cars').delete().eq('id', id);
-      } catch (e) {
-        console.warn('Failed to delete car from Supabase', e);
-      }
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.');
     }
 
+    const { error } = await supabase.from('cars').delete().eq('id', id);
+    if (error) {
+      throw new Error(`Failed to delete car from Supabase: ${error.message}`);
+    }
+
+    await this.getCars();
     return true;
   }
 
+  public async archiveCar(id: string): Promise<Car> {
+    return this.updateCar(id, { status: 'ARCHIVED' });
+  }
+
   public async duplicateCar(id: string): Promise<Car> {
-    this.init();
-    const source = this.cars.find((c) => c.id === id);
+    const source = await this.getCarById(id);
     if (!source) {
-      throw new Error(`Vehicle with ID ${id} not found.`);
+      throw new Error(`Source vehicle ${id} not found in Supabase.`);
     }
 
-    const duplicateTitle = `${source.title} (Copy)`;
-    const newId = `car-${Date.now()}`;
-    const slugBase = duplicateTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const slug = `${slugBase}-${Date.now().toString(36).substring(0, 4)}`;
-
-    const duplicated: Car = {
-      ...JSON.parse(JSON.stringify(source)),
-      id: newId,
-      slug,
-      title: duplicateTitle,
-      status: 'DRAFT', // Always DRAFT on duplicate
+    const duplicateData: Partial<Car> = {
+      ...source,
+      id: `car-${Date.now()}`,
+      title: `${source.title} (Copy)`,
+      status: 'DRAFT',
       is_featured: false,
-      created_at: new Date().toISOString(),
       views_count: 0,
     };
 
-    this.cars.unshift(duplicated);
-    this.saveToStorage();
-
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        await supabase.from('cars').insert(carToSupabaseRow(duplicated));
-      } catch (e) {
-        console.warn('Failed to insert duplicated car to Supabase', e);
-      }
-    }
-
-    return { ...duplicated };
+    return this.createCar(duplicateData);
   }
 
   public subscribe(listener: CarChangeListener): () => void {
     this.listeners.add(listener);
-    listener([...this.cars]);
+    if (this.hasLoaded) {
+      listener([...this.cache]);
+    } else {
+      this.getCars().catch(() => {});
+    }
     return () => this.listeners.delete(listener);
   }
 
-  public resetToDefault(): void {
-    this.cars = [...MOCK_CARS];
-    this.saveToStorage();
+  private notify(): void {
+    const list = [...this.cache];
+    this.listeners.forEach((listener) => {
+      try {
+        listener(list);
+      } catch (e) {
+        console.error('CarService subscriber error:', e);
+      }
+    });
   }
 }
 

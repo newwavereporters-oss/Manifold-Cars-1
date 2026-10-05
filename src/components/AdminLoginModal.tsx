@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, Eye, EyeOff, ShieldCheck, ArrowRight, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { X, Lock, Mail, Eye, EyeOff, ShieldCheck, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface AdminLoginModalProps {
@@ -14,26 +14,17 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   onSuccessNavigate,
 }) => {
   const { signIn } = useAuth();
-  const [email, setEmail] = useState('admin@manifold.ng');
-  const [password, setPassword] = useState('manifold2026');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
-
-  const handleFillDemo = () => {
-    setEmail('admin@manifold.ng');
-    setPassword('manifold2026');
-    setError(null);
-    setInfoMessage('Demo credentials filled. Click "Sign In to Dashboard" to proceed.');
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setInfoMessage(null);
     setLoading(true);
 
     try {
@@ -93,33 +84,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 
         {/* Content Body */}
         <div className="p-6 sm:p-7">
-          {/* Quick Demo Fill Pill */}
-          <div className="mb-5 p-3 bg-[#071A2B]/5 border border-[#071A2B]/10 rounded-xl flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-[#EF233C]" />
-              <div className="text-[11px] text-gray-700 font-medium">
-                Admin test account: <span className="font-semibold text-gray-900">admin@manifold.ng</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleFillDemo}
-              className="text-[10px] font-bold text-[#EF233C] hover:text-[#d91b32] uppercase tracking-wider underline cursor-pointer"
-            >
-              Fill Demo
-            </button>
-          </div>
-
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2.5 text-xs text-red-700">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#EF233C]" />
               <div className="flex-1">{error}</div>
-            </div>
-          )}
-
-          {infoMessage && (
-            <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-medium">
-              {infoMessage}
             </div>
           )}
 
@@ -136,7 +104,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@manifold.ng"
+                  placeholder="admin@company.com"
                   className="w-full h-11 pl-9 pr-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 focus:bg-white focus:border-[#071A2B] focus:ring-1 focus:ring-[#071A2B] outline-none transition"
                 />
               </div>
@@ -147,13 +115,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-700">
                   Password
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setInfoMessage('For this demo portal, use the password: manifold2026')}
-                  className="text-[11px] text-gray-500 hover:text-[#EF233C] transition"
-                >
-                  Forgot password?
-                </button>
               </div>
               <div className="relative">
                 <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-3.5" />

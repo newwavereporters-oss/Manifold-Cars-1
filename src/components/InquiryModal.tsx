@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, ShieldCheck, CheckCircle2, Phone, MessageSquare, Mail } from 'lucide-react';
+import { X, ShieldCheck, CheckCircle2, Phone, MessageSquare, Mail, Loader2, AlertCircle } from 'lucide-react';
 import { Car } from '../types';
 import { FORMAT_CURRENCY } from '../data/mockCars';
+import { inquiryService } from '../services/inquiryService';
 
 interface InquiryModalProps {
   isOpen: boolean;
@@ -24,14 +25,38 @@ export const InquiryModal: React.FC<InquiryModalProps> = ({
   const [needsFinancing, setNeedsFinancing] = useState(false);
   const [needsInspection, setNeedsInspection] = useState(true);
   const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName || !phone) return;
-    setSubmitted(true);
+    setErrorMsg(null);
+    setSubmitting(true);
+
+    try {
+      await inquiryService.createInquiry({
+        car_id: car?.id,
+        car_title: car?.title || (generalInquiry ? 'General Vehicle Concierge' : 'Vehicle Assistance'),
+        car_price: car?.price || 0,
+        full_name: fullName.trim(),
+        phone_number: phone.trim(),
+        email: email.trim() || 'concierge-lead@manifold.ng',
+        location: location.trim(),
+        preferred_contact: contactMethod,
+        needs_financing: needsFinancing,
+        needs_inspection: needsInspection,
+        notes: notes.trim(),
+      });
+      setSubmitting(false);
+      setSubmitted(true);
+    } catch (err: any) {
+      setSubmitting(false);
+      setErrorMsg(err.message || 'Failed to submit enquiry to MANIFOLD database.');
+    }
   };
 
   const handleReset = () => {
@@ -95,6 +120,13 @@ export const InquiryModal: React.FC<InquiryModalProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            {errorMsg && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-xs text-red-700">
+                <AlertCircle className="w-4 h-4 text-[#EF233C] shrink-0 mt-0.5" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
             {/* Target Car Summary or General Concierge */}
             {car ? (
               <div className="bg-gray-50 rounded-lg p-3.5 border border-gray-200 flex items-center justify-between gap-3">
@@ -274,9 +306,17 @@ export const InquiryModal: React.FC<InquiryModalProps> = ({
             <div className="pt-2">
               <button
                 type="submit"
-                className="w-full h-12 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded shadow transition duration-150 flex items-center justify-center gap-2"
+                disabled={submitting}
+                className="w-full h-12 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded shadow transition duration-150 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
-                <span>Submit Enquiry to MANIFOLD</span>
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Submitting to Database...</span>
+                  </>
+                ) : (
+                  <span>Submit Enquiry to MANIFOLD</span>
+                )}
               </button>
             </div>
           </form>

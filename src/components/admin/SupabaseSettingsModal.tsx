@@ -17,7 +17,7 @@ import {
   setSupabaseConfig,
   clearSupabaseConfig,
   testSupabaseConnection,
-  isSupabaseConfigured,
+  checkIsSupabaseConfigured,
 } from '../../lib/supabase';
 import { carService } from '../../services/carService';
 import { mediaService } from '../../services/mediaService';
@@ -151,16 +151,20 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({
     }
 
     setSupabaseConfig(url.trim(), anonKey.trim());
-    setConfigured(isSupabaseConfigured());
+    setConfigured(checkIsSupabaseConfigured());
     setTestResult({
       success: true,
-      message: 'Supabase credentials saved! Syncing inventory in background...',
+      message: 'Supabase credentials saved! Connecting to live database...',
     });
 
-    // Run sync
+    // Run live refresh
     setIsSyncing(true);
-    await carService.syncFromSupabase();
-    await mediaService.syncFromSupabase();
+    try {
+      await carService.getCars();
+      await mediaService.getVideos();
+    } catch {
+      // ignore
+    }
     setIsSyncing(false);
 
     if (onStatusChange) onStatusChange();
@@ -169,11 +173,11 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({
   const handleSyncToSupabase = async () => {
     setIsSyncing(true);
     try {
-      await carService.pushAllToSupabase();
-      await mediaService.pushAllToSupabase();
+      await carService.getCars();
+      await mediaService.getVideos();
       setTestResult({
         success: true,
-        message: 'Local inventory and media successfully synced to Supabase!',
+        message: 'Live Supabase database connection verified and inventory loaded!',
       });
     } catch (e: any) {
       setTestResult({

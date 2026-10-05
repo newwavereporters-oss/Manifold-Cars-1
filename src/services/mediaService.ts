@@ -1,7 +1,5 @@
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl, formatStandardYouTubeUrl } from '../utils/youtube';
-import { carService } from './carService';
-import { MEDIA_REVIEWS } from '../data/brandsAndTypes';
-import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export type MediaVideoType =
   | 'Car Review'
@@ -30,362 +28,245 @@ export interface MediaVideoItem {
   created_at: string;
 }
 
-const MEDIA_STORAGE_KEY = 'manifold_media_videos_v1';
-
 type MediaChangeListener = (videos: MediaVideoItem[]) => void;
 
-function videoToSupabaseRow(video: MediaVideoItem) {
-  return {
-    id: video.id,
-    title: video.title,
-    video_type: video.video_type,
-    youtube_url: video.youtube_url,
-    youtube_video_id: video.youtube_video_id,
-    youtube_thumbnail_url: video.youtube_thumbnail_url,
-    car_id: video.car_id || null,
-    car_title: video.car_title || null,
-    description: video.description || null,
-    status: video.status,
-    is_featured: video.is_featured,
-    is_primary: video.is_primary,
-    duration: video.duration || '12:00',
-    views_count: video.views_count || '1.2k views',
-    presenter: video.presenter || 'MANIFOLD Media Team',
-    created_at: video.created_at,
-  };
-}
+function mapSupabaseToMediaItem(row: any): MediaVideoItem {
+  const vidId = row.youtube_video_id || extractYouTubeVideoId(row.youtube_url) || '';
+  const thumb = row.youtube_thumbnail_url || (vidId ? getYouTubeThumbnailUrl(vidId) : '');
 
-function supabaseRowToVideo(row: any): MediaVideoItem {
+  let vType: MediaVideoType = 'Car Review';
+  if (row.video_type === 'walkaround' || row.video_type === 'Car Walkaround') vType = 'Car Walkaround';
+  else if (row.video_type === 'car_hunt' || row.video_type === 'Car Hunt') vType = 'Car Hunt';
+  else if (row.video_type === 'buying_guide' || row.video_type === 'Buying Guide') vType = 'Buying Guide';
+  else if (row.video_type === 'market_insight' || row.video_type === 'Market Insight') vType = 'Market Insight';
+  else if (row.video_type === 'Other') vType = 'Other';
+
   return {
     id: row.id,
-    title: row.title,
-    video_type: row.video_type || 'Car Review',
+    title: row.title || 'Vehicle Video Review',
+    video_type: vType,
     youtube_url: row.youtube_url,
-    youtube_video_id: row.youtube_video_id,
-    youtube_thumbnail_url: row.youtube_thumbnail_url,
+    youtube_video_id: vidId,
+    youtube_thumbnail_url: thumb,
     car_id: row.car_id || undefined,
-    car_title: row.car_title || undefined,
+    car_title: row.cars?.title || row.car_title || undefined,
     description: row.description || '',
-    status: row.status || 'Published',
-    is_featured: !!row.is_featured,
-    is_primary: !!row.is_primary,
+    status: (row.status === 'published' || row.status === 'Published') ? 'Published' : (row.status === 'archived' || row.status === 'Archived') ? 'Archived' : 'Draft',
+    is_featured: Boolean(row.is_featured),
+    is_primary: Boolean(row.is_primary),
     duration: row.duration || '12:00',
     views_count: row.views_count || '1.2k views',
-    presenter: row.presenter || 'MANIFOLD Media Team',
+    presenter: row.presenter || 'MANIFOLD Presenter',
     created_at: row.created_at || new Date().toISOString(),
   };
 }
 
 class MediaService {
-  private videos: MediaVideoItem[] = [];
+  private cache: MediaVideoItem[] = [];
   private listeners: Set<MediaChangeListener> = new Set();
-  private initialized = false;
-
-  constructor() {
-    this.init();
-  }
-
-  private async init() {
-    if (this.initialized) return;
-
-    try {
-      const stored = localStorage.getItem(MEDIA_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          this.videos = parsed;
-          this.initialized = true;
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load media videos from localStorage', e);
-    }
-
-    if (!this.initialized) {
-      // Seed from existing car videos and MEDIA_REVIEWS
-      const cars = carService.getCarsSync();
-      const initialVideos: MediaVideoItem[] = [];
-
-      cars.forEach((car, index) => {
-        if (car.video && car.video.youtube_url) {
-          initialVideos.push({
-            id: `media-car-${car.id}`,
-            title: car.video.video_title || `${car.title} Full Review`,
-            video_type: car.video.video_type === 'walkaround' ? 'Car Walkaround' : 'Car Review',
-            youtube_url: car.video.youtube_url,
-            youtube_video_id: car.video.youtube_video_id,
-            youtube_thumbnail_url: car.video.youtube_thumbnail_url || getYouTubeThumbnailUrl(car.video.youtube_video_id),
-            car_id: car.id,
-            car_title: car.title,
-            description: car.description?.substring(0, 150) || `Official MANIFOLD verified inspection review for ${car.title}`,
-            status: 'Published',
-            is_featured: index < 3,
-            is_primary: true,
-            duration: car.video.video_duration || '12:30',
-            views_count: `${car.views_count || 1200} views`,
-            presenter: car.video.presenter_name || 'MANIFOLD Media Team',
-            created_at: car.created_at || new Date().toISOString(),
-          });
-        }
-      });
-
-      // Add media reviews from brandsAndTypes
-      MEDIA_REVIEWS.forEach((mr, idx) => {
-        if (!initialVideos.some((v) => v.youtube_url === mr.youtube_url)) {
-          const vidId = extractYouTubeVideoId(mr.youtube_url) || `sample-${idx}`;
-          initialVideos.push({
-            id: `media-editorial-${mr.id}`,
-            title: mr.title,
-            video_type: (mr.category === 'Car Hunt' ? 'Car Hunt' : mr.category === 'Buying Tips' ? 'Buying Guide' : 'Car Review') as MediaVideoType,
-            youtube_url: mr.youtube_url,
-            youtube_video_id: vidId,
-            youtube_thumbnail_url: mr.thumbnail_url || getYouTubeThumbnailUrl(vidId),
-            description: mr.description,
-            status: 'Published',
-            is_featured: true,
-            is_primary: false,
-            duration: mr.duration,
-            views_count: mr.views,
-            presenter: 'MANIFOLD Editorial',
-            created_at: new Date(Date.now() - idx * 86400000).toISOString(),
-          });
-        }
-      });
-
-      this.videos = initialVideos;
-      this.saveToStorage();
-      this.initialized = true;
-    }
-
-    if (isSupabaseConfigured()) {
-      this.syncFromSupabase();
-    }
-  }
-
-  public async syncFromSupabase(): Promise<boolean> {
-    const supabase = getSupabaseClient();
-    if (!supabase) return false;
-
-    try {
-      const { data, error } = await supabase
-        .from('media_reviews')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.warn('Supabase media fetch error:', error.message);
-        return false;
-      }
-
-      if (data && data.length > 0) {
-        this.videos = data.map(supabaseRowToVideo);
-        this.saveToStorage();
-        return true;
-      } else if (data && data.length === 0 && this.videos.length > 0) {
-        // Table exists but is empty - push local to seed
-        await this.pushAllToSupabase();
-        return true;
-      }
-    } catch (e) {
-      console.warn('Failed to sync media from Supabase', e);
-    }
-    return false;
-  }
-
-  public async pushAllToSupabase(): Promise<void> {
-    const supabase = getSupabaseClient();
-    if (!supabase || this.videos.length === 0) return;
-
-    try {
-      const rows = this.videos.map(videoToSupabaseRow);
-      await supabase.from('media_reviews').upsert(rows, { onConflict: 'id' });
-    } catch (e) {
-      console.warn('Failed to push media seed to Supabase', e);
-    }
-  }
-
-  private saveToStorage() {
-    try {
-      localStorage.setItem(MEDIA_STORAGE_KEY, JSON.stringify(this.videos));
-    } catch (e) {
-      console.warn('Failed to save media videos to localStorage', e);
-    }
-    this.notify();
-  }
-
-  private notify() {
-    this.listeners.forEach((listener) => {
-      try {
-        listener([...this.videos]);
-      } catch (e) {
-        console.error('MediaService listener error', e);
-      }
-    });
-  }
+  private hasLoaded = false;
 
   public async getVideos(): Promise<MediaVideoItem[]> {
-    this.init();
-    return [...this.videos];
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.');
+    }
+
+    const { data, error } = await supabase
+      .from('car_media')
+      .select('*, cars (id, title)')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to load media reviews from Supabase: ${error.message}`);
+    }
+
+    this.cache = (data || []).map(mapSupabaseToMediaItem);
+    this.hasLoaded = true;
+    this.notify();
+    return [...this.cache];
   }
 
   public getVideosSync(): MediaVideoItem[] {
-    this.init();
-    return [...this.videos];
+    return [...this.cache];
   }
 
   public async getVideoById(id: string): Promise<MediaVideoItem | null> {
-    this.init();
-    const found = this.videos.find((v) => v.id === id);
-    return found ? { ...found } : null;
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.');
+    }
+
+    const { data, error } = await supabase
+      .from('car_media')
+      .select('*, cars (id, title)')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to load video: ${error.message}`);
+    }
+
+    return data ? mapSupabaseToMediaItem(data) : null;
   }
 
   public async getVideosByCarId(carId: string): Promise<MediaVideoItem[]> {
-    this.init();
-    return this.videos.filter((v) => v.car_id === carId);
-  }
-
-  public async createVideo(data: Partial<MediaVideoItem>): Promise<MediaVideoItem> {
-    this.init();
-    const videoId = extractYouTubeVideoId(data.youtube_url || '') || '';
-    const youtubeUrl = data.youtube_url ? formatStandardYouTubeUrl(videoId || data.youtube_url) : '';
-    const thumbnailUrl = data.youtube_thumbnail_url || (videoId ? getYouTubeThumbnailUrl(videoId) : '');
-
-    const newVideo: MediaVideoItem = {
-      id: data.id || `media-${Date.now()}`,
-      title: data.title || 'Untitled Video Review',
-      video_type: data.video_type || 'Car Review',
-      youtube_url: youtubeUrl,
-      youtube_video_id: videoId,
-      youtube_thumbnail_url: thumbnailUrl,
-      car_id: data.car_id,
-      car_title: data.car_title,
-      description: data.description || '',
-      status: data.status || 'Published',
-      is_featured: !!data.is_featured,
-      is_primary: !!data.is_primary,
-      duration: data.duration || '10:00',
-      views_count: data.views_count || '1 view',
-      presenter: data.presenter || 'MANIFOLD Media Team',
-      created_at: new Date().toISOString(),
-    };
-
-    // If marked primary and attached to a vehicle, handle primary synchronization
-    if (newVideo.car_id && newVideo.is_primary) {
-      await this.syncPrimaryVideoWithCar(newVideo.car_id, newVideo);
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.');
     }
 
-    this.videos.unshift(newVideo);
-    this.saveToStorage();
+    const { data, error } = await supabase
+      .from('car_media')
+      .select('*, cars (id, title)')
+      .eq('car_id', carId)
+      .order('sort_order', { ascending: true });
 
-    // Persist to Supabase
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        await supabase.from('media_reviews').insert(videoToSupabaseRow(newVideo));
-      } catch (e) {
-        console.warn('Failed to insert video to Supabase', e);
-      }
+    if (error) {
+      throw new Error(`Failed to load car media: ${error.message}`);
     }
 
-    return { ...newVideo };
-  }
-
-  public async updateVideo(id: string, updates: Partial<MediaVideoItem>): Promise<MediaVideoItem> {
-    this.init();
-    const index = this.videos.findIndex((v) => v.id === id);
-    if (index === -1) {
-      throw new Error(`Media video with ID ${id} not found.`);
-    }
-
-    const existing = this.videos[index];
-    const newYoutubeUrl = updates.youtube_url ?? existing.youtube_url;
-    const videoId = extractYouTubeVideoId(newYoutubeUrl) || existing.youtube_video_id;
-    const thumbnailUrl = updates.youtube_thumbnail_url ?? (videoId ? getYouTubeThumbnailUrl(videoId) : existing.youtube_thumbnail_url);
-
-    const updated: MediaVideoItem = {
-      ...existing,
-      ...updates,
-      id: existing.id,
-      youtube_url: newYoutubeUrl ? formatStandardYouTubeUrl(videoId || newYoutubeUrl) : existing.youtube_url,
-      youtube_video_id: videoId,
-      youtube_thumbnail_url: thumbnailUrl,
-    };
-
-    // If marked primary and has car_id, sync with car
-    if (updated.car_id && updated.is_primary) {
-      await this.syncPrimaryVideoWithCar(updated.car_id, updated, id);
-    }
-
-    this.videos[index] = updated;
-    this.saveToStorage();
-
-    // Persist to Supabase
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        await supabase.from('media_reviews').upsert(videoToSupabaseRow(updated));
-      } catch (e) {
-        console.warn('Failed to update video in Supabase', e);
-      }
-    }
-
-    return { ...updated };
-  }
-
-  public async deleteVideo(id: string): Promise<boolean> {
-    this.init();
-    const index = this.videos.findIndex((v) => v.id === id);
-    if (index === -1) return false;
-    this.videos.splice(index, 1);
-    this.saveToStorage();
-
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        await supabase.from('media_reviews').delete().eq('id', id);
-      } catch (e) {
-        console.warn('Failed to delete video from Supabase', e);
-      }
-    }
-
-    return true;
+    return (data || []).map(mapSupabaseToMediaItem);
   }
 
   /**
-   * Enforces that only one video is designated primary for a vehicle.
-   * Updates the vehicle's own primary video fields.
+   * Section 11: CREATE YouTube Video in public.car_media
    */
-  private async syncPrimaryVideoWithCar(carId: string, primaryVideo: MediaVideoItem, excludeVideoId?: string) {
-    // 1. Remove is_primary from any other video for this car
-    this.videos.forEach((v) => {
-      if (v.car_id === carId && v.id !== excludeVideoId) {
-        v.is_primary = false;
-      }
-    });
-
-    // 2. Update the car record itself
-    try {
-      await carService.updateCar(carId, {
-        video: {
-          youtube_video_id: primaryVideo.youtube_video_id,
-          youtube_url: primaryVideo.youtube_url,
-          youtube_thumbnail_url: primaryVideo.youtube_thumbnail_url,
-          video_title: primaryVideo.title,
-          video_duration: primaryVideo.duration || '12:00',
-          video_type: primaryVideo.video_type === 'Car Walkaround' ? 'walkaround' : 'full_review',
-          is_primary: true,
-          presenter_name: primaryVideo.presenter || 'MANIFOLD Media Team',
-        },
-      });
-    } catch (e) {
-      console.error('Failed to update car primary video', e);
+  public async createVideo(data: Partial<MediaVideoItem>): Promise<MediaVideoItem> {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.');
     }
+
+    const videoId = extractYouTubeVideoId(data.youtube_url || '') || '';
+    if (!videoId) {
+      throw new Error('Invalid YouTube URL provided.');
+    }
+
+    const youtubeUrl = formatStandardYouTubeUrl(videoId);
+    const thumbnailUrl = data.youtube_thumbnail_url || getYouTubeThumbnailUrl(videoId);
+    const id = data.id || `media-${Date.now()}`;
+
+    // If marked primary and attached to a vehicle, clear primary on any other video for that vehicle
+    if (data.car_id && data.is_primary) {
+      await supabase
+        .from('car_media')
+        .update({ is_primary: false })
+        .eq('car_id', data.car_id);
+    }
+
+    const insertRow = {
+      id,
+      car_id: data.car_id || null,
+      media_type: 'youtube_video',
+      video_type: data.video_type || 'Car Review',
+      title: data.title || 'Untitled Video Review',
+      youtube_url: youtubeUrl,
+      youtube_video_id: videoId,
+      youtube_thumbnail_url: thumbnailUrl,
+      description: data.description || '',
+      is_primary: Boolean(data.is_primary),
+      status: (data.status || 'Published').toLowerCase(),
+      sort_order: 1,
+      duration: data.duration || '12:00',
+      presenter: data.presenter || 'MANIFOLD Media Team',
+    };
+
+    const { error } = await supabase.from('car_media').insert(insertRow);
+    if (error) {
+      throw new Error(`Failed to create video review in Supabase: ${error.message}`);
+    }
+
+    await this.getVideos();
+    const created = await this.getVideoById(id);
+    if (!created) {
+      throw new Error('Video created but could not be retrieved from Supabase.');
+    }
+    return created;
+  }
+
+  /**
+   * Section 11: UPDATE YouTube Video in public.car_media
+   */
+  public async updateVideo(id: string, updates: Partial<MediaVideoItem>): Promise<MediaVideoItem> {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.');
+    }
+
+    const updateRow: any = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (updates.title !== undefined) updateRow.title = updates.title;
+    if (updates.video_type !== undefined) updateRow.video_type = updates.video_type;
+    if (updates.description !== undefined) updateRow.description = updates.description;
+    if (updates.status !== undefined) updateRow.status = updates.status.toLowerCase();
+    if (updates.duration !== undefined) updateRow.duration = updates.duration;
+    if (updates.presenter !== undefined) updateRow.presenter = updates.presenter;
+    if (updates.is_primary !== undefined) updateRow.is_primary = updates.is_primary;
+    if (updates.car_id !== undefined) updateRow.car_id = updates.car_id || null;
+
+    if (updates.youtube_url) {
+      const vidId = extractYouTubeVideoId(updates.youtube_url) || updates.youtube_video_id || '';
+      updateRow.youtube_url = formatStandardYouTubeUrl(vidId || updates.youtube_url);
+      updateRow.youtube_video_id = vidId;
+      updateRow.youtube_thumbnail_url = updates.youtube_thumbnail_url || (vidId ? getYouTubeThumbnailUrl(vidId) : '');
+    }
+
+    // If setting primary, unset other videos for that car
+    if (updates.car_id && updates.is_primary) {
+      await supabase
+        .from('car_media')
+        .update({ is_primary: false })
+        .eq('car_id', updates.car_id)
+        .neq('id', id);
+    }
+
+    const { error } = await supabase.from('car_media').update(updateRow).eq('id', id);
+    if (error) {
+      throw new Error(`Failed to update video review in Supabase: ${error.message}`);
+    }
+
+    await this.getVideos();
+    const updated = await this.getVideoById(id);
+    if (!updated) {
+      throw new Error('Updated video could not be retrieved from Supabase.');
+    }
+    return updated;
+  }
+
+  /**
+   * Section 11: DELETE Video from public.car_media
+   */
+  public async deleteVideo(id: string): Promise<boolean> {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.');
+    }
+
+    const { error } = await supabase.from('car_media').delete().eq('id', id);
+    if (error) {
+      throw new Error(`Failed to delete video review from Supabase: ${error.message}`);
+    }
+
+    await this.getVideos();
+    return true;
   }
 
   public subscribe(listener: MediaChangeListener): () => void {
     this.listeners.add(listener);
-    listener([...this.videos]);
+    if (this.hasLoaded) {
+      listener([...this.cache]);
+    } else {
+      this.getVideos().catch(() => {});
+    }
     return () => this.listeners.delete(listener);
+  }
+
+  private notify(): void {
+    const list = [...this.cache];
+    this.listeners.forEach((listener) => {
+      try {
+        listener(list);
+      } catch (e) {
+        console.error('MediaService subscriber error:', e);
+      }
+    });
   }
 }
 
