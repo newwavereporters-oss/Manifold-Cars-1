@@ -204,21 +204,44 @@ CREATE TABLE IF NOT EXISTS public.buyer_inquiries (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 13. Car Hunt Requests
+-- 13. Car Hunt Requests (Concierge Sourcing)
 CREATE TABLE IF NOT EXISTS public.car_hunt_requests (
-  id TEXT PRIMARY KEY,
-  full_name TEXT NOT NULL,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_name TEXT NOT NULL,
   phone TEXT NOT NULL,
-  email TEXT NOT NULL,
-  make TEXT NOT NULL,
-  model TEXT,
+  email TEXT,
+  budget_max BIGINT,
+  preferred_brand_id TEXT REFERENCES public.car_brands(id) ON DELETE SET NULL,
+  preferred_model_id TEXT REFERENCES public.car_models(id) ON DELETE SET NULL,
+  body_type_id TEXT REFERENCES public.car_types(id) ON DELETE SET NULL,
   year_min INTEGER,
   year_max INTEGER,
-  budget_max BIGINT NOT NULL,
-  status TEXT DEFAULT 'pending',
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  location TEXT,
+  requirements TEXT,
+  trim TEXT,
+  preferred_condition TEXT,
+  buying_timeframe TEXT,
+  assigned_to UUID,
+  status TEXT NOT NULL DEFAULT 'new',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Incremental column guards
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS customer_name TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS budget_max BIGINT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS preferred_brand_id TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS preferred_model_id TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS body_type_id TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS year_min INTEGER;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS requirements TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS trim TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS preferred_condition TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS buying_timeframe TEXT;
+ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'new';
 
 -- 14. Viewings
 CREATE TABLE IF NOT EXISTS public.viewings (
@@ -320,6 +343,7 @@ ALTER TABLE public.dealers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.buyer_inquiries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.commissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.car_hunt_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to check if requesting user is active admin
@@ -360,6 +384,10 @@ CREATE POLICY "Admins full access dealers" ON public.dealers FOR ALL USING (publ
 -- Inquiries: Public can submit; Admins can read & update
 CREATE POLICY "Public insert inquiries" ON public.buyer_inquiries FOR INSERT WITH CHECK (true);
 CREATE POLICY "Admins full access inquiries" ON public.buyer_inquiries FOR ALL USING (public.is_active_admin());
+
+-- Car Hunt Requests: Public can submit; Admins can read & manage
+CREATE POLICY "Public can submit car hunt requests" ON public.car_hunt_requests FOR INSERT WITH CHECK (true);
+CREATE POLICY "Admins full access car hunt requests" ON public.car_hunt_requests FOR ALL USING (public.is_active_admin());
 
 -- Sales & Commissions: Admin only
 CREATE POLICY "Admins full access sales" ON public.sales FOR ALL USING (public.is_active_admin());

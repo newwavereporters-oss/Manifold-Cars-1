@@ -46,6 +46,7 @@ import { modelService } from '../../services/modelService';
 import { categoryService } from '../../services/categoryService';
 import { dealerService, DealerFullRecord } from '../../services/dealerService';
 import { inquiryService, InquiryRecord, InquiryDetailedStatus } from '../../services/inquiryService';
+import { carHuntService, CarHuntRequestRecord } from '../../services/carHuntService';
 import { inspectionService, InspectionRecord } from '../../services/inspectionService';
 import { salesService, SaleRecord, CommissionRecord } from '../../services/salesService';
 import { checkIsSupabaseConfigured } from '../../lib/supabase';
@@ -123,6 +124,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [inventoryList, setInventoryList] = useState<Car[]>([]);
   const [mediaList, setMediaList] = useState<MediaVideoItem[]>([]);
   const [inquiries, setInquiries] = useState<InquiryRecord[]>([]);
+  const [carHunts, setCarHunts] = useState<CarHuntRequestRecord[]>([]);
   const [inspections, setInspections] = useState<InspectionRecord[]>([]);
   const [brands, setBrands] = useState<CarBrand[]>([]);
   const [bodyTypes, setBodyTypes] = useState<BodyTypeCategory[]>([]);
@@ -187,6 +189,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     try {
       const [
         inqRes,
+        huntRes,
         inspRes,
         brandsRes,
         typesRes,
@@ -195,6 +198,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         commRes,
       ] = await Promise.allSettled([
         inquiryService.getInquiries(),
+        carHuntService.getRequests(),
         inspectionService.getInspections(),
         brandService.getBrands(),
         categoryService.getBodyTypes(),
@@ -204,6 +208,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       ]);
 
       if (inqRes.status === 'fulfilled') setInquiries(inqRes.value);
+      if (huntRes.status === 'fulfilled') setCarHunts(huntRes.value);
       if (inspRes.status === 'fulfilled') setInspections(inspRes.value);
       if (brandsRes.status === 'fulfilled') setBrands(brandsRes.value);
       if (typesRes.status === 'fulfilled') setBodyTypes(typesRes.value);
@@ -339,6 +344,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       notify(`Inquiry updated to "${nextStatus}"`);
     } catch (e: any) {
       notify(`Failed to update inquiry: ${e.message}`);
+    }
+  };
+
+  // Car Hunt Status Updates
+  const updateCarHuntStatus = async (huntId: string, nextStatus: string) => {
+    try {
+      await carHuntService.updateRequestStatus(huntId, nextStatus);
+      setCarHunts((prev) =>
+        prev.map((h) => (h.id === huntId ? { ...h, status: nextStatus } : h))
+      );
+      notify(`Car Hunt request updated to "${nextStatus}"`);
+    } catch (e: any) {
+      notify(`Failed to update Car Hunt request: ${e.message}`);
     }
   };
 
@@ -937,99 +955,239 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
         {/* TAB 2: BUYER INQUIRIES & CONCIERGE */}
         {activeTab === 'concierge' && (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-gray-100 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-gray-900 text-sm">
-                  Live Buyer Inquiries (public.buyer_inquiries)
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Direct requests submitted via "I'm Interested" and concierge inquiry forms.
-                </p>
+          <div className="space-y-6">
+            {/* CAR HUNT REQUESTS (public.car_hunt_requests) */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-gray-900 text-sm">
+                      Live Car Hunt Requests (public.car_hunt_requests)
+                    </h3>
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-red-100 text-[#EF233C]">
+                      Concierge Sourcing
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Vehicles requested by customers via the MANIFOLD Car Hunt Sourcing Concierge.
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded">
+                  Total: {carHunts.length}
+                </span>
               </div>
-              <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded">
-                Total: {inquiries.length}
-              </span>
+
+              {carHunts.length === 0 ? (
+                <div className="p-8 text-center text-xs text-gray-500">
+                  No Car Hunt requests recorded yet. Submissions from the /car-hunt form appear here in real time.
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {carHunts.map((hunt) => (
+                    <div
+                      key={hunt.id}
+                      className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50/60 transition"
+                    >
+                      <div className="space-y-1.5 max-w-2xl">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900 text-sm">{hunt.customer_name}</span>
+                          <span
+                            className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded tracking-wider ${
+                              hunt.status === 'new'
+                                ? 'bg-red-100 text-[#EF233C]'
+                                : hunt.status === 'hunting'
+                                ? 'bg-amber-100 text-amber-800'
+                                : hunt.status === 'contacted'
+                                ? 'bg-blue-100 text-blue-800'
+                                : hunt.status === 'found'
+                                ? 'bg-purple-100 text-purple-800'
+                                : hunt.status === 'delivered'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {hunt.status}
+                          </span>
+                          <span className="text-[10px] text-gray-400">
+                            · {new Date(hunt.created_at).toLocaleDateString()}
+                          </span>
+                          <span className="text-[10px] font-mono text-gray-400">
+                            (ID: {hunt.id.slice(0, 8)})
+                          </span>
+                        </div>
+
+                        <p className="text-xs font-semibold text-[#071A2B]">
+                          Target Vehicle:{' '}
+                          <span className="font-normal text-gray-800">
+                            {hunt.year_min ? `${hunt.year_min}+ ` : ''}
+                            {hunt.brand_name || hunt.preferred_brand_id || 'Any Brand'}{' '}
+                            {hunt.model_name || hunt.preferred_model_id || ''}{' '}
+                            {hunt.trim ? `• Trim: ${hunt.trim}` : ''}
+                          </span>
+                        </p>
+
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+                          <span>
+                            Max Budget:{' '}
+                            <strong className="text-emerald-700">
+                              {hunt.budget_max ? `₦${hunt.budget_max.toLocaleString()}` : 'Not specified'}
+                            </strong>
+                          </span>
+                          <span>
+                            Phone: <strong className="text-gray-800">{hunt.phone}</strong>
+                          </span>
+                          {hunt.email && (
+                            <span>
+                              Email: <strong className="text-gray-800">{hunt.email}</strong>
+                            </span>
+                          )}
+                          {hunt.location && (
+                            <span>
+                              Location: <strong className="text-gray-800">{hunt.location}</strong>
+                            </span>
+                          )}
+                          {hunt.preferred_condition && (
+                            <span>
+                              Condition: <strong className="text-gray-800">{hunt.preferred_condition}</strong>
+                            </span>
+                          )}
+                          {hunt.buying_timeframe && (
+                            <span>
+                              Timeframe: <strong className="text-gray-800">{hunt.buying_timeframe}</strong>
+                            </span>
+                          )}
+                        </div>
+
+                        {hunt.requirements && (
+                          <p className="text-xs text-gray-600 italic bg-gray-50 p-2.5 rounded-lg border border-gray-100">
+                            "{hunt.requirements}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <select
+                          value={hunt.status}
+                          onChange={(e) => updateCarHuntStatus(hunt.id, e.target.value)}
+                          className="h-8 px-2 text-xs bg-gray-50 border border-gray-200 rounded font-medium text-gray-700 outline-none"
+                        >
+                          <option value="new">Status: NEW</option>
+                          <option value="contacted">Status: CONTACTED</option>
+                          <option value="hunting">Status: HUNTING</option>
+                          <option value="found">Status: FOUND</option>
+                          <option value="delivered">Status: DELIVERED</option>
+                          <option value="closed">Status: CLOSED</option>
+                          <option value="cancelled">Status: CANCELLED</option>
+                        </select>
+
+                        <a
+                          href={`tel:${hunt.phone}`}
+                          className="h-8 px-3 bg-[#071A2B] hover:bg-[#0B2239] text-white text-xs font-bold rounded flex items-center transition"
+                        >
+                          Call
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {inquiries.length === 0 ? (
-              <div className="p-8 text-center text-xs text-gray-500">
-                No buyer inquiries in database yet. Inquiries submitted on vehicle pages appear here in real time.
+            {/* DIRECT BUYER INQUIRIES (public.buyer_inquiries) */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-gray-900 text-sm">
+                    Live Buyer Inquiries (public.buyer_inquiries)
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Direct requests submitted via "I'm Interested" and car detail inquiry forms.
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded">
+                  Total: {inquiries.length}
+                </span>
               </div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {inquiries.map((inq) => (
-                  <div
-                    key={inq.id}
-                    className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50/60 transition"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-gray-900 text-sm">{inq.full_name}</span>
-                        <span
-                          className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded tracking-wider ${
-                            inq.status === 'new'
-                              ? 'bg-red-100 text-[#EF233C]'
-                              : inq.status === 'contacted'
-                              ? 'bg-blue-100 text-blue-800'
-                              : inq.status === 'viewing_scheduled'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-emerald-100 text-emerald-800'
-                          }`}
-                        >
-                          {inq.status}
-                        </span>
-                        <span className="text-[10px] text-gray-400">
-                          · {new Date(inq.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
 
-                      <p className="text-xs font-semibold text-[#071A2B]">
-                        Vehicle: <span className="font-normal text-gray-700">{inq.car_title || 'General Enquiry'}</span>
-                      </p>
+              {inquiries.length === 0 ? (
+                <div className="p-8 text-center text-xs text-gray-500">
+                  No buyer inquiries in database yet. Inquiries submitted on vehicle pages appear here in real time.
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {inquiries.map((inq) => (
+                    <div
+                      key={inq.id}
+                      className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50/60 transition"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900 text-sm">{inq.full_name}</span>
+                          <span
+                            className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded tracking-wider ${
+                              inq.status === 'new'
+                                ? 'bg-red-100 text-[#EF233C]'
+                                : inq.status === 'contacted'
+                                ? 'bg-blue-100 text-blue-800'
+                                : inq.status === 'viewing_scheduled'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {inq.status}
+                          </span>
+                          <span className="text-[10px] text-gray-400">
+                            · {new Date(inq.created_at).toLocaleDateString()}
+                          </span>
+                        </div>
 
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
-                        <span>Phone: <strong className="text-gray-800">{inq.phone_number}</strong></span>
-                        <span>Email: <strong className="text-gray-800">{inq.email}</strong></span>
-                        <span>Location: <strong className="text-gray-800">{inq.location}</strong></span>
-                      </div>
-
-                      {inq.notes && (
-                        <p className="text-xs text-gray-500 italic bg-gray-50 p-2 rounded border border-gray-100 mt-1">
-                          "{inq.notes}"
+                        <p className="text-xs font-semibold text-[#071A2B]">
+                          Vehicle: <span className="font-normal text-gray-700">{inq.car_title || 'General Enquiry'}</span>
                         </p>
-                      )}
-                    </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <select
-                        value={inq.status}
-                        onChange={(e) =>
-                          updateInquiryStatus(inq.id, e.target.value as InquiryDetailedStatus)
-                        }
-                        className="h-8 px-2 text-xs bg-gray-50 border border-gray-200 rounded font-medium text-gray-700 outline-none"
-                      >
-                        <option value="new">Status: NEW</option>
-                        <option value="contacted">Status: CONTACTED</option>
-                        <option value="qualified">Status: QUALIFIED</option>
-                        <option value="viewing_scheduled">Status: VIEWING SCHEDULED</option>
-                        <option value="negotiating">Status: NEGOTIATING</option>
-                        <option value="won">Status: WON</option>
-                        <option value="lost">Status: LOST</option>
-                        <option value="closed">Status: CLOSED</option>
-                      </select>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+                          <span>Phone: <strong className="text-gray-800">{inq.phone_number}</strong></span>
+                          <span>Email: <strong className="text-gray-800">{inq.email}</strong></span>
+                          <span>Location: <strong className="text-gray-800">{inq.location}</strong></span>
+                        </div>
 
-                      <a
-                        href={`tel:${inq.phone_number}`}
-                        className="h-8 px-3 bg-[#071A2B] hover:bg-[#0B2239] text-white text-xs font-bold rounded flex items-center transition"
-                      >
-                        Call Buyer
-                      </a>
+                        {inq.notes && (
+                          <p className="text-xs text-gray-500 italic bg-gray-50 p-2 rounded border border-gray-100 mt-1">
+                            "{inq.notes}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <select
+                          value={inq.status}
+                          onChange={(e) =>
+                            updateInquiryStatus(inq.id, e.target.value as InquiryDetailedStatus)
+                          }
+                          className="h-8 px-2 text-xs bg-gray-50 border border-gray-200 rounded font-medium text-gray-700 outline-none"
+                        >
+                          <option value="new">Status: NEW</option>
+                          <option value="contacted">Status: CONTACTED</option>
+                          <option value="qualified">Status: QUALIFIED</option>
+                          <option value="viewing_scheduled">Status: VIEWING SCHEDULED</option>
+                          <option value="negotiating">Status: NEGOTIATING</option>
+                          <option value="won">Status: WON</option>
+                          <option value="lost">Status: LOST</option>
+                          <option value="closed">Status: CLOSED</option>
+                        </select>
+
+                        <a
+                          href={`tel:${inq.phone_number}`}
+                          className="h-8 px-3 bg-[#071A2B] hover:bg-[#0B2239] text-white text-xs font-bold rounded flex items-center transition"
+                        >
+                          Call Buyer
+                        </a>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
