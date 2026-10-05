@@ -25,14 +25,17 @@ import {
   Play,
   X,
   Star,
+  Database,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../../data/mockCars';
 import { Car } from '../../types';
 import { carService } from '../../services/carService';
 import { mediaService, MediaVideoItem } from '../../services/mediaService';
+import { isSupabaseConfigured } from '../../lib/supabase';
 import { CarForm } from '../../components/admin/CarForm';
 import { MediaVideoModal } from '../../components/admin/MediaVideoModal';
+import { SupabaseSettingsModal } from '../../components/admin/SupabaseSettingsModal';
 
 interface AdminDashboardPageProps {
   navigate: (route: string) => void;
@@ -108,6 +111,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   // Modals
   const [showAddCarModal, setShowAddCarModal] = useState(false);
   const [showAddMediaModal, setShowAddMediaModal] = useState(false);
+  const [showSupabaseModal, setShowSupabaseModal] = useState(false);
+  const [supabaseActive, setSupabaseActive] = useState(() => isSupabaseConfigured());
   const [editingMedia, setEditingMedia] = useState<MediaVideoItem | null>(null);
 
   // Safety Confirmation Modals (PART 22 & PART 23)
@@ -296,6 +301,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 {user?.email || 'admin@manifold.ng'}
               </span>
             </div>
+
+            {/* Supabase Connection Button */}
+            <button
+              onClick={() => setShowSupabaseModal(true)}
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded transition font-medium cursor-pointer border border-white/10 hover:border-white/30 bg-white/5 hover:bg-white/10 text-white"
+              title="Configure Supabase Database"
+            >
+              <Database className="w-3.5 h-3.5 text-[#3ECF8E]" />
+              <span className="hidden sm:inline">
+                {supabaseActive ? 'Supabase Connected' : 'Connect Supabase'}
+              </span>
+              <span className={`w-2 h-2 rounded-full ${supabaseActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            </button>
 
             <button
               onClick={() => navigate('/')}
@@ -1030,6 +1048,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* SUPABASE CONNECTION SETTINGS MODAL */}
+      <SupabaseSettingsModal
+        isOpen={showSupabaseModal}
+        onClose={() => setShowSupabaseModal(false)}
+        onStatusChange={() => setSupabaseActive(isSupabaseConfigured())}
+      />
     </div>
   );
 };

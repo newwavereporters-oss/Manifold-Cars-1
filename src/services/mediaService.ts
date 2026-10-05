@@ -1,6 +1,7 @@
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl, formatStandardYouTubeUrl } from '../utils/youtube';
 import { carService } from './carService';
 import { MEDIA_REVIEWS } from '../data/brandsAndTypes';
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
 
 export type MediaVideoType =
   | 'Car Review'
@@ -33,6 +34,48 @@ const MEDIA_STORAGE_KEY = 'manifold_media_videos_v1';
 
 type MediaChangeListener = (videos: MediaVideoItem[]) => void;
 
+function videoToSupabaseRow(video: MediaVideoItem) {
+  return {
+    id: video.id,
+    title: video.title,
+    video_type: video.video_type,
+    youtube_url: video.youtube_url,
+    youtube_video_id: video.youtube_video_id,
+    youtube_thumbnail_url: video.youtube_thumbnail_url,
+    car_id: video.car_id || null,
+    car_title: video.car_title || null,
+    description: video.description || null,
+    status: video.status,
+    is_featured: video.is_featured,
+    is_primary: video.is_primary,
+    duration: video.duration || '12:00',
+    views_count: video.views_count || '1.2k views',
+    presenter: video.presenter || 'MANIFOLD Media Team',
+    created_at: video.created_at,
+  };
+}
+
+function supabaseRowToVideo(row: any): MediaVideoItem {
+  return {
+    id: row.id,
+    title: row.title,
+    video_type: row.video_type || 'Car Review',
+    youtube_url: row.youtube_url,
+    youtube_video_id: row.youtube_video_id,
+    youtube_thumbnail_url: row.youtube_thumbnail_url,
+    car_id: row.car_id || undefined,
+    car_title: row.car_title || undefined,
+    description: row.description || '',
+    status: row.status || 'Published',
+    is_featured: !!row.is_featured,
+    is_primary: !!row.is_primary,
+    duration: row.duration || '12:00',
+    views_count: row.views_count || '1.2k views',
+    presenter: row.presenter || 'MANIFOLD Media Team',
+    created_at: row.created_at || new Date().toISOString(),
+  };
+}
+
 class MediaService {
   private videos: MediaVideoItem[] = [];
   private listeners: Set<MediaChangeListener> = new Set();
@@ -42,8 +85,9 @@ class MediaService {
     this.init();
   }
 
-  private init() {
+  private async init() {
     if (this.initialized) return;
+
     try {
       const stored = localStorage.getItem(MEDIA_STORAGE_KEY);
       if (stored) {
@@ -51,66 +95,113 @@ class MediaService {
         if (Array.isArray(parsed) && parsed.length > 0) {
           this.videos = parsed;
           this.initialized = true;
-          return;
         }
       }
     } catch (e) {
       console.warn('Failed to load media videos from localStorage', e);
     }
 
-    // Seed from existing car videos and MEDIA_REVIEWS
-    const cars = carService.getCarsSync();
-    const initialVideos: MediaVideoItem[] = [];
+    if (!this.initialized) {
+      // Seed from existing car videos and MEDIA_REVIEWS
+      const cars = carService.getCarsSync();
+      const initialVideos: MediaVideoItem[] = [];
 
-    cars.forEach((car, index) => {
-      if (car.video && car.video.youtube_url) {
-        initialVideos.push({
-          id: `media-car-${car.id}`,
-          title: car.video.video_title || `${car.title} Full Review`,
-          video_type: car.video.video_type === 'walkaround' ? 'Car Walkaround' : 'Car Review',
-          youtube_url: car.video.youtube_url,
-          youtube_video_id: car.video.youtube_video_id,
-          youtube_thumbnail_url: car.video.youtube_thumbnail_url || getYouTubeThumbnailUrl(car.video.youtube_video_id),
-          car_id: car.id,
-          car_title: car.title,
-          description: car.description?.substring(0, 150) || `Official MANIFOLD verified inspection review for ${car.title}`,
-          status: 'Published',
-          is_featured: index < 3,
-          is_primary: true,
-          duration: car.video.video_duration || '12:30',
-          views_count: `${car.views_count || 1200} views`,
-          presenter: car.video.presenter_name || 'MANIFOLD Media Team',
-          created_at: car.created_at || new Date().toISOString(),
-        });
+      cars.forEach((car, index) => {
+        if (car.video && car.video.youtube_url) {
+          initialVideos.push({
+            id: `media-car-${car.id}`,
+            title: car.video.video_title || `${car.title} Full Review`,
+            video_type: car.video.video_type === 'walkaround' ? 'Car Walkaround' : 'Car Review',
+            youtube_url: car.video.youtube_url,
+            youtube_video_id: car.video.youtube_video_id,
+            youtube_thumbnail_url: car.video.youtube_thumbnail_url || getYouTubeThumbnailUrl(car.video.youtube_video_id),
+            car_id: car.id,
+            car_title: car.title,
+            description: car.description?.substring(0, 150) || `Official MANIFOLD verified inspection review for ${car.title}`,
+            status: 'Published',
+            is_featured: index < 3,
+            is_primary: true,
+            duration: car.video.video_duration || '12:30',
+            views_count: `${car.views_count || 1200} views`,
+            presenter: car.video.presenter_name || 'MANIFOLD Media Team',
+            created_at: car.created_at || new Date().toISOString(),
+          });
+        }
+      });
+
+      // Add media reviews from brandsAndTypes
+      MEDIA_REVIEWS.forEach((mr, idx) => {
+        if (!initialVideos.some((v) => v.youtube_url === mr.youtube_url)) {
+          const vidId = extractYouTubeVideoId(mr.youtube_url) || `sample-${idx}`;
+          initialVideos.push({
+            id: `media-editorial-${mr.id}`,
+            title: mr.title,
+            video_type: (mr.category === 'Car Hunt' ? 'Car Hunt' : mr.category === 'Buying Tips' ? 'Buying Guide' : 'Car Review') as MediaVideoType,
+            youtube_url: mr.youtube_url,
+            youtube_video_id: vidId,
+            youtube_thumbnail_url: mr.thumbnail_url || getYouTubeThumbnailUrl(vidId),
+            description: mr.description,
+            status: 'Published',
+            is_featured: true,
+            is_primary: false,
+            duration: mr.duration,
+            views_count: mr.views,
+            presenter: 'MANIFOLD Editorial',
+            created_at: new Date(Date.now() - idx * 86400000).toISOString(),
+          });
+        }
+      });
+
+      this.videos = initialVideos;
+      this.saveToStorage();
+      this.initialized = true;
+    }
+
+    if (isSupabaseConfigured()) {
+      this.syncFromSupabase();
+    }
+  }
+
+  public async syncFromSupabase(): Promise<boolean> {
+    const supabase = getSupabaseClient();
+    if (!supabase) return false;
+
+    try {
+      const { data, error } = await supabase
+        .from('media_reviews')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Supabase media fetch error:', error.message);
+        return false;
       }
-    });
 
-    // Add media reviews from brandsAndTypes
-    MEDIA_REVIEWS.forEach((mr, idx) => {
-      if (!initialVideos.some((v) => v.youtube_url === mr.youtube_url)) {
-        const vidId = extractYouTubeVideoId(mr.youtube_url) || `sample-${idx}`;
-        initialVideos.push({
-          id: `media-editorial-${mr.id}`,
-          title: mr.title,
-          video_type: (mr.category === 'Car Hunt' ? 'Car Hunt' : mr.category === 'Buying Tips' ? 'Buying Guide' : 'Car Review') as MediaVideoType,
-          youtube_url: mr.youtube_url,
-          youtube_video_id: vidId,
-          youtube_thumbnail_url: mr.thumbnail_url || getYouTubeThumbnailUrl(vidId),
-          description: mr.description,
-          status: 'Published',
-          is_featured: true,
-          is_primary: false,
-          duration: mr.duration,
-          views_count: mr.views,
-          presenter: 'MANIFOLD Editorial',
-          created_at: new Date(Date.now() - idx * 86400000).toISOString(),
-        });
+      if (data && data.length > 0) {
+        this.videos = data.map(supabaseRowToVideo);
+        this.saveToStorage();
+        return true;
+      } else if (data && data.length === 0 && this.videos.length > 0) {
+        // Table exists but is empty - push local to seed
+        await this.pushAllToSupabase();
+        return true;
       }
-    });
+    } catch (e) {
+      console.warn('Failed to sync media from Supabase', e);
+    }
+    return false;
+  }
 
-    this.videos = initialVideos;
-    this.saveToStorage();
-    this.initialized = true;
+  public async pushAllToSupabase(): Promise<void> {
+    const supabase = getSupabaseClient();
+    if (!supabase || this.videos.length === 0) return;
+
+    try {
+      const rows = this.videos.map(videoToSupabaseRow);
+      await supabase.from('media_reviews').upsert(rows, { onConflict: 'id' });
+    } catch (e) {
+      console.warn('Failed to push media seed to Supabase', e);
+    }
   }
 
   private saveToStorage() {
@@ -185,6 +276,17 @@ class MediaService {
 
     this.videos.unshift(newVideo);
     this.saveToStorage();
+
+    // Persist to Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('media_reviews').insert(videoToSupabaseRow(newVideo));
+      } catch (e) {
+        console.warn('Failed to insert video to Supabase', e);
+      }
+    }
+
     return { ...newVideo };
   }
 
@@ -216,6 +318,17 @@ class MediaService {
 
     this.videos[index] = updated;
     this.saveToStorage();
+
+    // Persist to Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('media_reviews').upsert(videoToSupabaseRow(updated));
+      } catch (e) {
+        console.warn('Failed to update video in Supabase', e);
+      }
+    }
+
     return { ...updated };
   }
 
@@ -225,6 +338,16 @@ class MediaService {
     if (index === -1) return false;
     this.videos.splice(index, 1);
     this.saveToStorage();
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('media_reviews').delete().eq('id', id);
+      } catch (e) {
+        console.warn('Failed to delete video from Supabase', e);
+      }
+    }
+
     return true;
   }
 

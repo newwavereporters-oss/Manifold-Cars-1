@@ -27,8 +27,16 @@ export function App() {
     return window.location.pathname || '/';
   });
 
-  const [cars] = useState<Car[]>(MOCK_CARS);
+  const [cars, setCars] = useState<Car[]>(() => carService.getCarsSync());
   const [selectedCarSlug, setSelectedCarSlug] = useState<string | null>(null);
+  const [editingCarId, setEditingCarId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = carService.subscribe((updated) => {
+      setCars(updated);
+    });
+    return () => unsub();
+  }, []);
 
   // Favorites state with localStorage persistence
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -93,6 +101,20 @@ export function App() {
   };
 
   const parseRoute = (path: string) => {
+    if (path.startsWith('/admin/cars/') && path.endsWith('/edit')) {
+      const id = path.replace('/admin/cars/', '').replace('/edit', '').split('?')[0];
+      setEditingCarId(id);
+      setSelectedCarSlug(null);
+      setCurrentRoute('/admin/cars/:id/edit');
+      return;
+    }
+
+    if (path.startsWith('/admin/cars')) {
+      setSelectedCarSlug(null);
+      setCurrentRoute('/admin');
+      return;
+    }
+
     if (path.startsWith('/cars/')) {
       const slug = path.replace('/cars/', '').split('?')[0];
       setSelectedCarSlug(slug);
@@ -184,12 +206,23 @@ export function App() {
     ? cars.find((c) => c.slug === selectedCarSlug) || cars[0]
     : cars[0];
 
-  const isAdminRoute = currentRoute === '/admin' || currentRoute === '/admin/login';
+  const isAdminRoute =
+    currentRoute === '/admin' ||
+    currentRoute === '/admin/login' ||
+    currentRoute === '/admin/cars/:id/edit';
 
   if (currentRoute === '/admin/login') {
     return (
       <div className="min-h-screen bg-[#071A2B]">
         <AdminLoginPage navigate={navigate} />
+      </div>
+    );
+  }
+
+  if (currentRoute === '/admin/cars/:id/edit' && editingCarId) {
+    return (
+      <div className="min-h-screen bg-[#F7F8FA]">
+        <AdminEditCarPage carId={editingCarId} navigate={navigate} />
       </div>
     );
   }
