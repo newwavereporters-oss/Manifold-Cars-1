@@ -262,10 +262,16 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
               About Us
             </button>
             <button
-              onClick={() => handleNav('/services')}
+              onClick={() => handleNav('/dealer/sign-in')}
+              className="hover:text-white transition-colors font-medium text-gray-300"
+            >
+              Dealer Portal
+            </button>
+            <button
+              onClick={() => handleNav('/dealer/register')}
               className="hover:text-white transition-colors"
             >
-              Dealer Partnerships
+              Register Dealership
             </button>
             <button
               onClick={() => handleNav('/about')}

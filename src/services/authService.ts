@@ -29,8 +29,7 @@ class AuthService {
         if (admin) {
           this.currentUser = admin;
         } else {
-          // Authenticated in Supabase Auth but not an authorized active admin
-          await supabase.auth.signOut();
+          // Authenticated user is not an active MANIFOLD admin (e.g. dealer or client)
           this.currentUser = null;
         }
         this.notifyListeners();
@@ -46,7 +45,7 @@ class AuthService {
           if (admin) {
             this.currentUser = admin;
           } else {
-            await supabase.auth.signOut();
+            // User is authenticated in Supabase but not an admin
             this.currentUser = null;
           }
           this.notifyListeners();

@@ -38,6 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
     { label: 'Sell a Car', route: '/sell-a-car' },
     { label: 'Services', route: '/services' },
     { label: 'About MANIFOLD', route: '/about' },
+    { label: 'Dealer Portal', route: '/dealer/sign-in' },
   ];
 
   const handleNavClick = (route: string) => {

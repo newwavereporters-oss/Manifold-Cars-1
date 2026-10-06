@@ -14,6 +14,16 @@ import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { AdminEditCarPage } from './pages/admin/AdminEditCarPage';
 import { AdminGuard } from './components/AdminGuard';
 import { AdminLoginModal } from './components/AdminLoginModal';
+import { DealerAuthProvider } from './context/DealerAuthContext';
+import { DealerGuard } from './components/dealer/DealerGuard';
+import { DealerSignInPage } from './pages/dealer/DealerSignInPage';
+import { DealerRegisterPage } from './pages/dealer/DealerRegisterPage';
+import { DealerBusinessInfoPage } from './pages/dealer/DealerBusinessInfoPage';
+import { DealerOnboardingSuccessPage } from './pages/dealer/DealerOnboardingSuccessPage';
+import { DealerDashboardPage } from './pages/dealer/DealerDashboardPage';
+import { DealerCarsPage } from './pages/dealer/DealerCarsPage';
+import { DealerAddCarPage } from './pages/dealer/DealerAddCarPage';
+import { DealerEditCarPage } from './pages/dealer/DealerEditCarPage';
 import { carService } from './services/carService';
 import { InquiryModal } from './components/InquiryModal';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
@@ -31,6 +41,7 @@ export function App() {
   const [cars, setCars] = useState<Car[]>(() => carService.getCarsSync());
   const [selectedCarSlug, setSelectedCarSlug] = useState<string | null>(null);
   const [editingCarId, setEditingCarId] = useState<string | null>(null);
+  const [dealerEditingCarId, setDealerEditingCarId] = useState<string | null>(null);
   const [slugCar, setSlugCar] = useState<Car | null>(null);
   const [slugCarLoading, setSlugCarLoading] = useState(false);
 
@@ -117,6 +128,22 @@ export function App() {
     if (path.startsWith('/admin')) {
       setSelectedCarSlug(null);
       setCurrentRoute(path.split('?')[0] || '/admin');
+      return;
+    }
+
+    // 3. Dealer Edit Car Route: /dealer/cars/:id/edit
+    if (path.startsWith('/dealer/cars/') && path.endsWith('/edit')) {
+      const id = path.replace('/dealer/cars/', '').replace('/edit', '').split('?')[0];
+      setDealerEditingCarId(id);
+      setSelectedCarSlug(null);
+      setCurrentRoute('/dealer/cars/:id/edit');
+      return;
+    }
+
+    // 4. Dealer Routes (Section 3: Dealer Portal Routes)
+    if (path.startsWith('/dealer')) {
+      setSelectedCarSlug(null);
+      setCurrentRoute(path.split('?')[0] || '/dealer/dashboard');
       return;
     }
 
@@ -254,6 +281,35 @@ export function App() {
           </div>
         )}
       </AdminGuard>
+    );
+  }
+
+  // Section 3: Dealer Portal Routes
+  if (currentRoute.startsWith('/dealer')) {
+    return (
+      <DealerAuthProvider>
+        {currentRoute === '/dealer/sign-in' ? (
+          <DealerSignInPage navigate={navigate} />
+        ) : currentRoute === '/dealer/register' ? (
+          <DealerRegisterPage navigate={navigate} />
+        ) : (
+          <DealerGuard navigate={navigate} currentRoute={currentRoute}>
+            {currentRoute === '/dealer/business-information' ? (
+              <DealerBusinessInfoPage navigate={navigate} />
+            ) : currentRoute === '/dealer/onboarding-success' ? (
+              <DealerOnboardingSuccessPage navigate={navigate} />
+            ) : currentRoute === '/dealer/cars/new' ? (
+              <DealerAddCarPage navigate={navigate} />
+            ) : currentRoute === '/dealer/cars/:id/edit' && dealerEditingCarId ? (
+              <DealerEditCarPage carId={dealerEditingCarId} navigate={navigate} />
+            ) : currentRoute === '/dealer/cars' ? (
+              <DealerCarsPage navigate={navigate} />
+            ) : (
+              <DealerDashboardPage navigate={navigate} />
+            )}
+          </DealerGuard>
+        )}
+      </DealerAuthProvider>
     );
   }
 
