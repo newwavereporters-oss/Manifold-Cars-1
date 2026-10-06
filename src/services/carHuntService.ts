@@ -46,7 +46,7 @@ export interface CreateCarHuntPayload {
 class CarHuntService {
   public async submitRequest(payload: CreateCarHuntPayload): Promise<{ data: any; error: any }> {
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('car_hunt_requests')
         .insert({
           customer_name: payload.customer_name,
@@ -64,16 +64,19 @@ class CarHuntService {
           buying_timeframe: payload.buying_timeframe,
           status: 'new',
           assigned_to: null,
-        })
-        .select()
-        .single();
+        });
 
       if (error) {
-        console.error('MANIFOLD Car Hunt Error:', error);
+        console.error('MANIFOLD CAR HUNT ERROR', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        });
         return { data: null, error };
       }
 
-      return { data, error: null };
+      return { data: { success: true }, error: null };
     } catch (err: any) {
       console.error('MANIFOLD Car Hunt Unexpected Error:', err);
       return { data: null, error: err };

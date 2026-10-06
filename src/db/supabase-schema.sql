@@ -238,9 +238,12 @@ ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS body_type_id TEXT;
 ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS year_min INTEGER;
 ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS location TEXT;
 ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS requirements TEXT;
-ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS trim TEXT;
-ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS preferred_condition TEXT;
-ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS buying_timeframe TEXT;
+
+ALTER TABLE public.car_hunt_requests
+ADD COLUMN IF NOT EXISTS trim text NULL,
+ADD COLUMN IF NOT EXISTS preferred_condition text NULL,
+ADD COLUMN IF NOT EXISTS buying_timeframe text NULL;
+
 ALTER TABLE public.car_hunt_requests ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'new';
 
 -- 14. Viewings

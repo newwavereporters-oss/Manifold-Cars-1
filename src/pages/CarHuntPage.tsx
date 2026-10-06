@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, ArrowRight, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { CAR_BRANDS, BODY_TYPES } from '../data/brandsAndTypes';
 
 interface CarHuntPageProps {
   navigate: (route: string) => void;
@@ -22,8 +21,20 @@ interface TypeOption {
   name: string;
 }
 
+// Helper to ensure valid UUIDs or null (never empty string "" or text names)
+const toUuidOrNull = (val?: string | null): string | null => {
+  if (!val) return null;
+  const trimmed = val.trim();
+  if (!trimmed || trimmed === '') return null;
+  // Verify standard UUID format (8-4-4-4-12 hex characters)
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+};
+
 export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
-  // Database option lists
+  // Database option lists loaded from authoritative Supabase tables
   const [brands, setBrands] = useState<BrandOption[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [bodyTypes, setBodyTypes] = useState<TypeOption[]>([]);
@@ -49,36 +60,32 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
   // Submission State
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submittedRecord, setSubmittedRecord] = useState<any | null>(null);
+  const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
+  const [submissionRef, setSubmissionRef] = useState<string>('');
 
-  // 1. Load active brands from public.car_brands and body types from public.car_types
+  // 1. Load brands from public.car_brands and body types from public.car_types
   useEffect(() => {
     let isMounted = true;
 
     async function loadInitialOptions() {
       setLoadingBrands(true);
       try {
-        // Load active brands
+        // Load brands from public.car_brands using .select('id, name')
         const { data: brandsData, error: brandsError } = await supabase
           .from('car_brands')
           .select('id, name')
-          .eq('is_active', true)
           .order('name');
 
         if (!brandsError && brandsData && brandsData.length > 0) {
           if (isMounted) setBrands(brandsData);
         } else {
-          // Fallback to static brands if table is unseeded
-          if (isMounted) {
-            setBrands(CAR_BRANDS.map((b) => ({ id: b.id, name: b.name })));
-          }
+          if (isMounted) setBrands([]);
         }
 
-        // Load active body types
+        // Load body types from public.car_types using .select('id, name')
         const { data: typesData, error: typesError } = await supabase
           .from('car_types')
           .select('id, name')
-          .eq('is_active', true)
           .order('name');
 
         if (!typesError && typesData && typesData.length > 0) {
@@ -88,16 +95,15 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
           }
         } else {
           if (isMounted) {
-            setBodyTypes(BODY_TYPES.map((t) => ({ id: t.id, name: t.name })));
-            setBodyTypeId(BODY_TYPES[0].id);
+            setBodyTypes([]);
+            setBodyTypeId('');
           }
         }
       } catch (err) {
-        console.warn('Could not load options from Supabase:', err);
+        console.warn('Notice loading options from Supabase:', err);
         if (isMounted) {
-          setBrands(CAR_BRANDS.map((b) => ({ id: b.id, name: b.name })));
-          setBodyTypes(BODY_TYPES.map((t) => ({ id: t.id, name: t.name })));
-          setBodyTypeId(BODY_TYPES[0].id);
+          setBrands([]);
+          setBodyTypes([]);
         }
       } finally {
         if (isMounted) setLoadingBrands(false);
@@ -111,7 +117,7 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
     };
   }, []);
 
-  // 2. Load models dynamically when brand changes
+  // 2. Load models dynamically from public.car_models when brand changes
   useEffect(() => {
     let isMounted = true;
     setPreferredModelId('');
@@ -128,31 +134,15 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
           .from('car_models')
           .select('id, name')
           .eq('brand_id', preferredBrandId)
-          .eq('is_active', true)
           .order('name');
 
         if (!error && data && data.length > 0) {
           if (isMounted) setModels(data);
         } else {
-          // Fallback check against static CAR_BRANDS popular models
-          const matchedStatic = CAR_BRANDS.find(
-            (b) => b.id === preferredBrandId || b.name.toLowerCase() === preferredBrandId.toLowerCase()
-          );
-          if (matchedStatic && matchedStatic.popular_models?.length) {
-            if (isMounted) {
-              setModels(
-                matchedStatic.popular_models.map((m, idx) => ({
-                  id: `model-${preferredBrandId}-${idx}`,
-                  name: m,
-                }))
-              );
-            }
-          } else {
-            if (isMounted) setModels([]);
-          }
+          if (isMounted) setModels([]);
         }
       } catch (err) {
-        console.warn('Failed to load models:', err);
+        console.warn('Notice loading models for brand:', err);
         if (isMounted) setModels([]);
       } finally {
         if (isMounted) setLoadingModels(false);
@@ -166,26 +156,22 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
     };
   }, [preferredBrandId]);
 
-  // Form submission directly to Supabase
+  // Form submission directly to Supabase — Anonymous INSERT ONLY (NO .select())
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
 
     // Validation checks
-    if (!preferredBrandId) {
-      setSubmitError('Please select a Preferred Make.');
-      return;
-    }
-    if (!budget.trim()) {
-      setSubmitError('Please enter your Maximum Budget.');
-      return;
-    }
     if (!customerName.trim()) {
       setSubmitError('Please provide your Full Name.');
       return;
     }
     if (!phone.trim()) {
       setSubmitError('Please provide your Phone / WhatsApp number.');
+      return;
+    }
+    if (!budget.trim()) {
+      setSubmitError('Please enter your Maximum Budget.');
       return;
     }
 
@@ -196,14 +182,15 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
       const parsedBudget = budget ? Number(budget.replace(/[^0-9.]/g, '')) : null;
       const parsedYear = yearMin ? Number(yearMin) : null;
 
+      // Final Payload: Ensure UUID columns receive valid UUIDs or null (never empty string "")
       const payload = {
         customer_name: customerName.trim(),
         email: email?.trim() || null,
         phone: phone.trim(),
         budget_max: parsedBudget,
-        preferred_brand_id: preferredBrandId || null,
-        preferred_model_id: preferredModelId || null,
-        body_type_id: bodyTypeId || null,
+        preferred_brand_id: toUuidOrNull(preferredBrandId),
+        preferred_model_id: toUuidOrNull(preferredModelId),
+        body_type_id: toUuidOrNull(bodyTypeId),
         year_min: parsedYear,
         location: location?.trim() || null,
         requirements: requirements?.trim() || null,
@@ -211,35 +198,46 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
         preferred_condition: condition || null,
         buying_timeframe: buyingTimeframe || null,
         status: 'new',
-        assigned_to: null,
       };
 
-      const { data, error } = await supabase
+      // Anonymous public INSERT without .select() or .single() to honor RLS
+      const { error } = await supabase
         .from('car_hunt_requests')
-        .insert(payload)
-        .select()
-        .single();
+        .insert(payload);
 
       if (error) {
-        console.error('MANIFOLD Car Hunt Error:', error);
+        console.error('MANIFOLD CAR HUNT ERROR', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        });
         setSubmitError("We couldn't submit your request right now. Please try again.");
         setIsSubmitting(false);
         return;
       }
 
-      // Success
-      setSubmittedRecord(data || { id: `MHF-${Date.now()}`, ...payload });
+      // Success — Generate client reference without requiring returned DB record
+      const ref = `MHF-HUNT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      setSubmissionRef(ref);
+      setIsSubmitted(true);
       setIsSubmitting(false);
     } catch (err: any) {
-      console.error('MANIFOLD Car Hunt Error:', err);
+      console.error('MANIFOLD CAR HUNT ERROR', {
+        message: err?.message,
+        details: err?.details,
+        hint: err?.hint,
+        code: err?.code,
+      });
       setSubmitError("We couldn't submit your request right now. Please try again.");
       setIsSubmitting(false);
     }
   };
 
   const handleResetForm = () => {
-    setSubmittedRecord(null);
+    setIsSubmitted(false);
     setSubmitError(null);
+    setSubmissionRef('');
     setPreferredBrandId('');
     setPreferredModelId('');
     setTrim('');
@@ -253,11 +251,6 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
 
   const selectedBrand = brands.find((b) => b.id === preferredBrandId);
   const selectedModel = models.find((m) => m.id === preferredModelId);
-  const selectedType = bodyTypes.find((t) => t.id === bodyTypeId);
-
-  const referenceCode = submittedRecord?.id
-    ? `MHF-HUNT-${submittedRecord.id.slice(0, 8).toUpperCase()}`
-    : `MHF-HUNT-${Date.now().toString().slice(-6)}`;
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] pt-24 pb-20">
@@ -289,7 +282,7 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
         </div>
 
         {/* SUCCESS STATE */}
-        {submittedRecord ? (
+        {isSubmitted ? (
           <div className="bg-white rounded-xl border border-gray-200 p-8 sm:p-10 text-center space-y-5 shadow-sm animate-in fade-in duration-300">
             <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 mx-auto flex items-center justify-center shadow-inner">
               <CheckCircle2 className="w-10 h-10" />
@@ -308,12 +301,14 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
             </div>
 
             {/* Reference Badge */}
-            <div className="inline-flex items-center gap-2 bg-[#071A2B]/5 border border-[#071A2B]/10 px-4 py-2 rounded-lg text-xs">
-              <span className="text-gray-500 font-medium">Tracking Reference:</span>
-              <span className="font-mono font-bold text-[#071A2B] tracking-wider">
-                {referenceCode}
-              </span>
-            </div>
+            {submissionRef && (
+              <div className="inline-flex items-center gap-2 bg-[#071A2B]/5 border border-[#071A2B]/10 px-4 py-2 rounded-lg text-xs">
+                <span className="text-gray-500 font-medium">Tracking Reference:</span>
+                <span className="font-mono font-bold text-[#071A2B] tracking-wider">
+                  {submissionRef}
+                </span>
+              </div>
+            )}
 
             {/* Summary Card */}
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-xs text-gray-700 max-w-lg mx-auto text-left space-y-2.5">
@@ -405,17 +400,16 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
                 {/* PREFERRED MAKE */}
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-gray-600 mb-1">
-                    Preferred Make *
+                    Preferred Make
                   </label>
                   <select
-                    required
                     value={preferredBrandId}
                     onChange={(e) => setPreferredBrandId(e.target.value)}
                     disabled={loadingBrands}
                     className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-900 font-medium focus:bg-white focus:border-[#071A2B] outline-none disabled:opacity-60 transition"
                   >
                     <option value="">
-                      {loadingBrands ? 'Loading Makes...' : 'Select Make'}
+                      {loadingBrands ? 'Loading Makes...' : 'Select Make (or specify below)'}
                     </option>
                     {brands.map((b) => (
                       <option key={b.id} value={b.id}>
@@ -508,6 +502,7 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
                     onChange={(e) => setBodyTypeId(e.target.value)}
                     className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-900 font-medium focus:bg-white focus:border-[#071A2B] outline-none transition"
                   >
+                    <option value="">Select Body Type (Optional)</option>
                     {bodyTypes.map((bt) => (
                       <option key={bt.id} value={bt.id}>
                         {bt.name}
