@@ -169,6 +169,14 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
                   Blog & Market Insights
                 </button>
               </li>
+              <li>
+                <button
+                  onClick={() => handleNav('/dealer/sign-in')}
+                  className="hover:text-white transition-colors text-gray-300 font-medium"
+                >
+                  Dealer Portal
+                </button>
+              </li>
             </ul>
           </div>
 

@@ -15,17 +15,6 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
-  // If already authenticated and has dealer account, redirect to dashboard
-  React.useEffect(() => {
-    if (user && dealerAccount) {
-      if (dealerAccount.hasAccount) {
-        navigate('/dealer/dashboard');
-      } else {
-        navigate('/dealer/business-information');
-      }
-    }
-  }, [user, dealerAccount, navigate]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -44,12 +33,8 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
         setError(res.error || 'Authentication failed. Please check your credentials.');
         setLoading(false);
       } else {
-        // Successful login
-        if (res.isPending) {
-          navigate('/dealer/dashboard');
-        } else {
-          navigate('/dealer/dashboard');
-        }
+        // Successful login goes to dealer dashboard
+        navigate('/dealer/dashboard');
       }
     } catch {
       setError('An unexpected connection error occurred. Please try again.');
@@ -96,9 +81,9 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
           </span>
         </div>
 
-        {/* Section 4 Headline & Supporting text */}
-        <h2 className="text-2xl font-bold tracking-tight text-white">
-          Welcome back.
+        {/* Headline & Supporting text */}
+        <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white font-display">
+          Dealer Sign In
         </h2>
         <p className="mt-1.5 text-xs text-gray-400 max-w-sm mx-auto">
           Sign in to manage your MANIFOLD dealership.
@@ -107,6 +92,19 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4">
         <div className="bg-[#0B2239] py-8 px-6 sm:px-8 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-sm">
+          {user && (
+            <div className="mb-4 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-between gap-3 text-xs text-blue-200">
+              <span className="truncate">Signed in as <strong className="text-white">{user.email}</strong></span>
+              <button
+                type="button"
+                onClick={() => navigate('/dealer/dashboard')}
+                className="shrink-0 font-bold text-[#EF233C] hover:text-white underline underline-offset-2 transition"
+              >
+                Go to Dashboard
+              </button>
+            </div>
+          )}
+
           {error && (
             <div className="mb-5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3 animate-in fade-in">
               <AlertCircle className="w-4 h-4 text-[#EF233C] shrink-0 mt-0.5" />
@@ -124,7 +122,7 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                Dealer Email
+                Email
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-500">

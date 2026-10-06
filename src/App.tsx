@@ -24,6 +24,7 @@ import { DealerDashboardPage } from './pages/dealer/DealerDashboardPage';
 import { DealerCarsPage } from './pages/dealer/DealerCarsPage';
 import { DealerAddCarPage } from './pages/dealer/DealerAddCarPage';
 import { DealerEditCarPage } from './pages/dealer/DealerEditCarPage';
+import { DealerOfferPage } from './pages/dealer/DealerOfferPage';
 import { carService } from './services/carService';
 import { InquiryModal } from './components/InquiryModal';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
@@ -292,6 +293,8 @@ export function App() {
           <DealerSignInPage navigate={navigate} />
         ) : currentRoute === '/dealer/register' ? (
           <DealerRegisterPage navigate={navigate} />
+        ) : currentRoute === '/dealer/offer' ? (
+          <DealerOfferPage navigate={navigate} />
         ) : (
           <DealerGuard navigate={navigate} currentRoute={currentRoute}>
             {currentRoute === '/dealer/business-information' ? (
