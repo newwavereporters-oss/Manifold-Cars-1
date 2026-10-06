@@ -21,14 +21,10 @@ interface DealerBusinessInfoPageProps {
 export const DealerBusinessInfoPage: React.FC<DealerBusinessInfoPageProps> = ({ navigate }) => {
   const { user, dealerAccount, refreshDealerStatus } = useDealerAuth();
 
-  // If already completed onboarding, redirect to dashboard or onboarding success
+  // If already completed onboarding, redirect to dashboard
   useEffect(() => {
     if (dealerAccount?.hasAccount) {
-      if (dealerAccount.accountStatus === 'pending') {
-        navigate('/dealer/onboarding-success');
-      } else {
-        navigate('/dealer/dashboard');
-      }
+      navigate('/dealer/dashboard');
     }
   }, [dealerAccount, navigate]);
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, Clock, PlusCircle, LayoutDashboard, ShieldCheck, Phone, ArrowRight } from 'lucide-react';
+import { CheckCircle2, Sparkles, PlusCircle, ArrowRight, LayoutDashboard, Compass } from 'lucide-react';
 import { useDealerAuth } from '../../context/DealerAuthContext';
 
 interface DealerOnboardingSuccessPageProps {
@@ -7,15 +7,23 @@ interface DealerOnboardingSuccessPageProps {
 }
 
 export const DealerOnboardingSuccessPage: React.FC<DealerOnboardingSuccessPageProps> = ({ navigate }) => {
-  const { dealerAccount } = useDealerAuth();
+  const { user, dealerAccount } = useDealerAuth();
   const businessName = dealerAccount?.businessName || 'Your Dealership';
+
+  const handleListFirstCar = () => {
+    if (user) {
+      navigate('/dealer/cars/new');
+    } else {
+      navigate('/dealer/sign-in');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#071A2B] flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-[#111827] relative overflow-hidden">
       {/* Background Ambience */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-transparent to-transparent pointer-events-none" />
 
-      <div className="sm:mx-auto sm:w-full sm:max-w-xl text-center relative z-10 px-4">
+      <div className="sm:mx-auto sm:w-full sm:max-w-2xl text-center relative z-10 px-4">
         {/* Brand Lockup */}
         <div
           onClick={() => navigate('/')}
@@ -33,74 +41,92 @@ export const DealerOnboardingSuccessPage: React.FC<DealerOnboardingSuccessPagePr
         </div>
 
         {/* Card */}
-        <div className="bg-[#0B2239] py-10 px-6 sm:px-10 border border-white/10 rounded-3xl shadow-2xl backdrop-blur-sm text-center">
-          {/* Animated Status Icon */}
-          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-5 text-amber-400">
-            <Clock className="w-8 h-8 animate-pulse" />
+        <div className="bg-[#0B2239] py-10 px-6 sm:px-12 border border-white/10 rounded-3xl shadow-2xl backdrop-blur-sm text-center space-y-6">
+          {/* Active Verified Icon */}
+          <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto text-emerald-400">
+            <CheckCircle2 className="w-8 h-8" />
           </div>
 
-          {/* Section 9 Title */}
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-2">
-            Welcome to MANIFOLD
-          </h2>
+          {/* Section 2 Required Headline & Supporting Message */}
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-3">
+              <span>ACTIVE DEALERSHIP</span>
+            </div>
 
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold mb-5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-            <span>Application under review</span>
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-2 font-display">
+              WELCOME TO MANIFOLD
+            </h1>
+
+            <p className="text-base text-gray-200 font-medium">
+              Your dealership is now set up on MANIFOLD.
+            </p>
           </div>
 
-          {/* Section 9 Required Supporting Text */}
-          <p className="text-sm text-gray-300 leading-relaxed max-w-md mx-auto mb-6">
-            Your dealer application for <strong className="text-white">{businessName}</strong> has been received. Our team will review your dealership information and activate your account when approved.
+          {/* Section 2 Required Brief Explanation */}
+          <p className="text-xs sm:text-sm text-gray-300 leading-relaxed max-w-lg mx-auto">
+            MANIFOLD gives professional automobile dealers a better way to present their vehicles, reach serious buyers and understand where their inventory sits in the market.
           </p>
 
-          <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-left mb-8 space-y-2">
-            <div className="flex items-start gap-2.5">
-              <ShieldCheck className="w-4 h-4 text-[#EF233C] shrink-0 mt-0.5" />
-              <p className="text-xs text-gray-300">
-                <strong className="text-white font-semibold">Account Status: Pending</strong> — You can immediately prepare vehicle draft listings. Full public vehicle publishing becomes active upon compliance verification.
-              </p>
+          {/* TWO PRIMARY PATHS: OPTION 1 & OPTION 2 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left pt-2">
+            {/* OPTION 1: EXPLORE MANIFOLD */}
+            <div className="p-6 rounded-2xl bg-white/5 border border-white/10 hover:border-white/20 transition flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-[#EF233C]">
+                  <Compass className="w-5 h-5" />
+                </div>
+                <h2 className="text-sm font-bold uppercase tracking-wider text-white">
+                  OPTION 1 — EXPLORE MANIFOLD
+                </h2>
+                <p className="text-xs text-gray-300 leading-relaxed">
+                  See exactly how MANIFOLD works for professional dealers and what you get when you list with us.
+                </p>
+              </div>
+
+              <button
+                onClick={() => navigate('/dealer/offer')}
+                className="w-full py-3 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 border border-white/10 group"
+              >
+                <span>Explore the MANIFOLD Dealer Offer</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </button>
             </div>
-            <div className="flex items-start gap-2.5">
-              <Phone className="w-4 h-4 text-[#EF233C] shrink-0 mt-0.5" />
-              <p className="text-xs text-gray-400">
-                A MANIFOLD dealer partner manager may reach out via Phone / WhatsApp for rapid catalog onboarding.
-              </p>
+
+            {/* OPTION 2: LIST MY FIRST CAR */}
+            <div className="p-6 rounded-2xl bg-red-950/40 border border-red-500/20 hover:border-red-500/40 transition flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-[#EF233C]">
+                  <PlusCircle className="w-5 h-5" />
+                </div>
+                <h2 className="text-sm font-bold uppercase tracking-wider text-white">
+                  OPTION 2 — LIST MY FIRST CAR
+                </h2>
+                <p className="text-xs text-gray-300 leading-relaxed">
+                  Start building your MANIFOLD inventory by listing your first vehicle.
+                </p>
+              </div>
+
+              <button
+                onClick={handleListFirstCar}
+                className="w-full py-3 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-red-900/40 group"
+              >
+                <span>List My First Car</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </button>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <button
-              onClick={() => navigate('/dealer/cars/new')}
-              className="w-full sm:w-auto px-6 py-3 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-red-900/30"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>List My First Car</span>
-            </button>
-
+          {/* DASHBOARD LINK */}
+          <div className="pt-2">
             <button
               onClick={() => navigate('/dealer/dashboard')}
-              className="w-full sm:w-auto px-6 py-3 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 border border-white/10"
+              className="text-xs font-semibold text-gray-400 hover:text-white transition flex items-center justify-center gap-1.5 mx-auto py-2"
             >
-              <LayoutDashboard className="w-4 h-4" />
-              <span>Go to My Dashboard</span>
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              <span>Or go directly to My Dealer Dashboard</span>
             </button>
           </div>
         </div>
-
-        {/* Support Footer */}
-        <p className="mt-6 text-xs text-gray-400">
-          Need immediate onboarding assistance?{' '}
-          <a
-            href="https://wa.me/2348169664607?text=MANIFOLD%20Dealer%20Onboarding%20Follow-up"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-white hover:text-[#EF233C] underline ml-1 font-semibold"
-          >
-            WhatsApp Support: 08169664607
-          </a>
-        </p>
       </div>
     </div>
   );

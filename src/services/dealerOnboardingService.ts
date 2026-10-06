@@ -101,11 +101,15 @@ class DealerOnboardingService {
       }
 
       const dealerRecord = data as any;
+      const rawStatus = dealerRecord.account_status;
+      // In the MANIFOLD model, registered dealers receive immediate active access (never blocked in pending)
+      const accountStatus = (rawStatus === 'suspended' || rawStatus === 'rejected') ? rawStatus : 'active';
+
       return {
         hasAccount: true,
         dealerId: dealerRecord.dealer_id,
-        accountStatus: dealerRecord.account_status || 'pending',
-        onboardingStatus: dealerRecord.onboarding_status,
+        accountStatus,
+        onboardingStatus: dealerRecord.onboarding_status || 'completed',
         businessName: dealerRecord.dealers?.name,
       };
     } catch (err) {

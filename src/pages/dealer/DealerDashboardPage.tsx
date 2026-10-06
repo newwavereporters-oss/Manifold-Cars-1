@@ -84,14 +84,17 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                     Dealership Portal
                   </span>
                   <span className="text-xs text-gray-400">·</span>
-                  <span className="text-xs font-semibold text-gray-300 capitalize">{status} Account</span>
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Active Dealership</span>
+                  </span>
                 </div>
 
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-2">
                   Welcome to {businessName}
                 </h1>
                 <p className="text-xs sm:text-sm text-gray-300 leading-relaxed mb-6">
-                  Manage your vehicle catalog, track verification status, and connect with serious automotive buyers on the MANIFOLD network.
+                  Manage your vehicle catalog, track inventory performance, and connect with serious automotive buyers on the MANIFOLD network.
                 </p>
 
                 <div className="flex flex-wrap items-center gap-3">
@@ -110,34 +113,51 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                     <CarFront className="w-4 h-4" />
                     <span>View My Inventory ({totalVehicles})</span>
                   </button>
+
+                  <button
+                    onClick={() => navigate('/dealer/offer')}
+                    className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-xs font-medium rounded-xl transition flex items-center gap-1.5 border border-white/10"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-[#EF233C]" />
+                    <span>Explore Dealer Offer</span>
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* STATUS ALERT IF PENDING */}
-            {status === 'pending' && (
-              <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 animate-pulse" />
-                  <div>
-                    <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wide">
-                      Application Pending Review
-                    </h4>
-                    <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
-                      Your dealership information is undergoing verification by the MANIFOLD dealer desk. You may create and prepare draft vehicle listings now; public publishing unlocks immediately once approved.
-                    </p>
+            {/* DEALER WELCOME & QUICK START BANNER IF INVENTORY IS EMPTY */}
+            {totalVehicles === 0 && (
+              <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-950/80 to-[#0B2239] border border-blue-500/20 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-lg">
+                <div className="space-y-2 max-w-xl">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-wider border border-emerald-500/30">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Dealership Ready</span>
                   </div>
+                  <h3 className="text-lg font-bold text-white tracking-tight">
+                    Start Building Your MANIFOLD Showroom
+                  </h3>
+                  <p className="text-xs text-gray-300 leading-relaxed">
+                    Present your vehicles through structured YouTube walkaround videos, 
+                    detailed technical specifications, and transparent market pricing to reach serious automotive buyers.
+                  </p>
                 </div>
 
-                <a
-                  href="https://wa.me/2348169664607?text=MANIFOLD%20Dealer%20Approval%20Inquiry"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>Contact Dealer Desk</span>
-                </a>
+                <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto shrink-0">
+                  <button
+                    onClick={() => navigate('/dealer/cars/new')}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-red-900/30"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    <span>List First Car</span>
+                  </button>
+                  <button
+                    onClick={() => navigate('/dealer/offer')}
+                    className="w-full sm:w-auto px-4 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 border border-white/10"
+                  >
+                    <span>View Dealer Offer</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             )}
 

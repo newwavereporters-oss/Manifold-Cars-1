@@ -21,6 +21,7 @@ import {
   Clock,
   AlertTriangle,
   ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 
 interface DealerLayoutProps {
@@ -43,12 +44,13 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const businessName = dealerAccount?.businessName || 'MANIFOLD Dealership';
-  const status = dealerAccount?.accountStatus || 'pending';
+  const status = dealerAccount?.accountStatus && dealerAccount.accountStatus !== 'pending' ? dealerAccount.accountStatus : 'active';
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard, route: '/dealer/dashboard' },
     { id: 'cars', label: 'My Cars', icon: CarFront, route: '/dealer/cars' },
     { id: 'new-car', label: 'Add Vehicle', icon: PlusCircle, route: '/dealer/cars/new' },
+    { id: 'offer', label: 'Explore MANIFOLD', icon: Sparkles, route: '/dealer/offer' },
     { id: 'enquiries', label: 'Enquiries', icon: MessageSquare, tab: 'enquiries' },
     { id: 'pricing-intel', label: 'Price Intelligence', icon: TrendingUp, tab: 'pricing-intel' },
     { id: 'market-intel', label: 'Market Intelligence', icon: BarChart3, tab: 'market-intel' },
@@ -120,30 +122,21 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
           {/* Right Header: Status Badge, Marketplace Link, Profile & Sign Out */}
           <div className="flex items-center gap-3">
             {/* Account Status Badge */}
-            {status === 'active' && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold">
+            {status !== 'suspended' && status !== 'rejected' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold uppercase tracking-wider">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Active Partner</span>
-              </div>
-            )}
-            {status === 'pending' && (
-              <div
-                title="Your dealer application is undergoing verification by MANIFOLD."
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold cursor-help"
-              >
-                <Clock className="w-3.5 h-3.5 animate-pulse" />
-                <span>Pending Review</span>
+                <span>ACTIVE</span>
               </div>
             )}
             {status === 'suspended' && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] font-bold">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] font-bold uppercase tracking-wider">
                 <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Suspended</span>
+                <span>SUSPENDED</span>
               </div>
             )}
             {status === 'rejected' && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-500/10 border border-gray-500/30 text-gray-400 text-[11px] font-bold">
-                <span>Application Rejected</span>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-500/10 border border-gray-500/30 text-gray-400 text-[11px] font-bold uppercase tracking-wider">
+                <span>REJECTED</span>
               </div>
             )}
 
