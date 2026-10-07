@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Heart, Menu, X, PhoneCall, ChevronRight, Compass, ShieldCheck } from 'lucide-react';
+import {
+  Search,
+  Heart,
+  Menu,
+  X,
+  PhoneCall,
+  ChevronRight,
+  Compass,
+  ShieldCheck,
+  LayoutDashboard,
+} from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useDealerAuth } from '../context/DealerAuthContext';
 
 interface HeaderProps {
   currentRoute: string;
@@ -23,6 +35,10 @@ export const Header: React.FC<HeaderProps> = ({
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const { isAdmin } = useAuth();
+  const { dealerAccount } = useDealerAuth();
+  const isDealer = Boolean(dealerAccount?.hasAccount);
+
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 30);
@@ -38,7 +54,11 @@ export const Header: React.FC<HeaderProps> = ({
     { label: 'Sell a Car', route: '/sell-a-car' },
     { label: 'Services', route: '/services' },
     { label: 'About MANIFOLD', route: '/about' },
-    { label: 'Dealer Portal', route: '/dealer/sign-in' },
+    isAdmin
+      ? { label: 'Admin Dashboard', route: '/admin' }
+      : isDealer
+      ? { label: 'Dealer Dashboard', route: '/dealer/dashboard' }
+      : { label: 'Dealer Portal', route: '/dealer/sign-in' },
   ];
 
   const handleNavClick = (route: string) => {
@@ -128,14 +148,32 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </button>
 
-              {/* Primary Action Button (Red) - strictly single line */}
-              <button
-                onClick={() => onOpenInquiry()}
-                className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider px-3.5 xl:px-4 py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
-              >
-                <PhoneCall className="w-3.5 h-3.5 shrink-0" />
-                <span>Talk to MANIFOLD</span>
-              </button>
+              {/* Primary Action Button (Red) - strictly role-aware per Section 20 & 21 */}
+              {isAdmin ? (
+                <button
+                  onClick={() => handleNavClick('/admin')}
+                  className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider px-3.5 xl:px-4 py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>ADMIN DASHBOARD</span>
+                </button>
+              ) : isDealer ? (
+                <button
+                  onClick={() => handleNavClick('/dealer/dashboard')}
+                  className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider px-3.5 xl:px-4 py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
+                  <span>DASHBOARD</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => onOpenInquiry()}
+                  className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider px-3.5 xl:px-4 py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
+                >
+                  <PhoneCall className="w-3.5 h-3.5 shrink-0" />
+                  <span>Talk to MANIFOLD</span>
+                </button>
+              )}
 
               {/* Mobile / Tablet Menu Hamburger (Visible below lg: 1024px) */}
               <button

@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDealerAuth } from '../../context/DealerAuthContext';
+import { authService } from '../../services/authService';
 import { Loader2, ShieldAlert, ArrowRight, Phone } from 'lucide-react';
 
 interface DealerGuardProps {
@@ -10,6 +11,18 @@ interface DealerGuardProps {
 
 export const DealerGuard: React.FC<DealerGuardProps> = ({ children, navigate, currentRoute }) => {
   const { user, dealerAccount, loading } = useDealerAuth();
+  const [isAdminUser, setIsAdminUser] = useState(false);
+
+  useEffect(() => {
+    const admin = authService.getCurrentUser();
+    if (admin && admin.role === 'ADMIN') {
+      setIsAdminUser(true);
+    } else if (user?.email === 'newwavereporters@gmail.com') {
+      setIsAdminUser(true);
+    } else {
+      setIsAdminUser(false);
+    }
+  }, [user]);
 
   // If user is authenticated, we must wait until dealerAccount is resolved before making routing decisions
   const isResolvingAccount = loading || (Boolean(user) && dealerAccount === null);
@@ -18,7 +31,10 @@ export const DealerGuard: React.FC<DealerGuardProps> = ({ children, navigate, cu
     if (!isResolvingAccount) {
       if (!user) {
         navigate('/dealer/sign-in');
-      } else if (!dealerAccount?.hasAccount) {
+      } else if (isAdminUser && currentRoute === '/dealer/cars/new') {
+        // Admin is restricted on vehicle listing flow
+        return;
+      } else if (!dealerAccount?.hasAccount && !isAdminUser) {
         // Authenticated user genuinely has no dealer account
         if (
           currentRoute !== '/dealer/business-information' &&
@@ -34,7 +50,7 @@ export const DealerGuard: React.FC<DealerGuardProps> = ({ children, navigate, cu
         }
       }
     }
-  }, [user, dealerAccount, isResolvingAccount, currentRoute, navigate]);
+  }, [user, dealerAccount, isResolvingAccount, isAdminUser, currentRoute, navigate]);
 
   if (isResolvingAccount) {
     return (
@@ -88,6 +104,30 @@ export const DealerGuard: React.FC<DealerGuardProps> = ({ children, navigate, cu
               Back to Sign In
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Admin vehicle listing restriction (Section 1 & 2 Requirement)
+  if (isAdminUser && currentRoute === '/dealer/cars/new') {
+    return (
+      <div className="min-h-screen bg-[#071A2B] flex flex-col items-center justify-center text-white p-4">
+        <div className="max-w-md w-full bg-[#0D233A] border border-white/10 rounded-2xl p-8 text-center shadow-2xl">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4 text-amber-400">
+            <ShieldAlert className="w-7 h-7" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Dealership Restricted</h2>
+          <p className="text-sm text-gray-300 mb-6 leading-relaxed">
+            Vehicle listing is available to MANIFOLD dealer accounts.
+          </p>
+          <button
+            onClick={() => navigate('/admin')}
+            className="w-full py-3 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition shadow-lg shadow-red-900/30"
+          >
+            <span>Return to Admin Dashboard</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
         </div>
       </div>
     );

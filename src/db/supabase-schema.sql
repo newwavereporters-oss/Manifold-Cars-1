@@ -286,6 +286,34 @@ CREATE TABLE IF NOT EXISTS public.commissions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 16b. Commission Rules (Phase 4: Admin Commission Control)
+CREATE TABLE IF NOT EXISTS public.commission_rules (
+  id TEXT PRIMARY KEY DEFAULT ('crule-' || substr(gen_random_uuid()::text, 1, 8)),
+  name TEXT NOT NULL,
+  min_price BIGINT NOT NULL DEFAULT 0,
+  max_price BIGINT, -- NULL represents no upper ceiling (e.g. 50,000,000+)
+  commission_percentage NUMERIC NOT NULL,
+  fixed_fee BIGINT NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'NGN',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  effective_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  effective_until TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 16c. Dealer Commission Agreements (Phase 4: Individual Dealer Terms)
+CREATE TABLE IF NOT EXISTS public.commission_agreements (
+  id TEXT PRIMARY KEY DEFAULT ('cagr-' || substr(gen_random_uuid()::text, 1, 8)),
+  dealer_id TEXT REFERENCES public.dealers(id) ON DELETE CASCADE,
+  custom_percentage NUMERIC,
+  custom_fixed_fee BIGINT DEFAULT 0,
+  notes TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- 17. Favorites
 CREATE TABLE IF NOT EXISTS public.favorites (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -363,7 +391,18 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Public can read published vehicles and media
 CREATE POLICY "Public read published cars" ON public.cars FOR SELECT USING (status = 'PUBLISHED' OR public.is_active_admin());
-CREATE POLICY "Admins full access cars" ON public.cars FOR ALL USING (public.is_active_admin());
+CREATE POLICY "Admins moderate cars" ON public.cars FOR UPDATE USING (public.is_active_admin());
+CREATE POLICY "Admins delete cars" ON public.cars FOR DELETE USING (public.is_active_admin());
+
+-- PHASE 4: Admin MUST NOT list or create dealer vehicles (Section 1 Requirement)
+-- Only active authenticated dealers may insert vehicles, and only with their own dealer_id
+CREATE POLICY "Dealers insert own cars" ON public.cars
+  FOR INSERT
+  WITH CHECK (
+    public.is_active_dealer() AND
+    dealer_id::TEXT = public.current_dealer_id() AND
+    public.current_dealer_id() IS NOT NULL
+  );
 
 CREATE POLICY "Public read car media" ON public.car_media FOR SELECT USING (status = 'published' OR public.is_active_admin());
 CREATE POLICY "Admins full access car media" ON public.car_media FOR ALL USING (public.is_active_admin());
@@ -395,6 +434,32 @@ CREATE POLICY "Admins full access car hunt requests" ON public.car_hunt_requests
 -- Sales & Commissions: Admin only
 CREATE POLICY "Admins full access sales" ON public.sales FOR ALL USING (public.is_active_admin());
 CREATE POLICY "Admins full access commissions" ON public.commissions FOR ALL USING (public.is_active_admin());
+
+-- Commission Rules & Agreements RLS (Phase 4: Admin Commission Control)
+ALTER TABLE public.commission_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.commission_agreements ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Admins manage commission rules" ON public.commission_rules
+  FOR ALL USING (public.is_active_admin()) WITH CHECK (public.is_active_admin());
+
+CREATE POLICY "Public read active commission rules" ON public.commission_rules
+  FOR SELECT USING (is_active = true);
+
+CREATE POLICY "Admins manage commission agreements" ON public.commission_agreements
+  FOR ALL USING (public.is_active_admin()) WITH CHECK (public.is_active_admin());
+
+CREATE POLICY "Dealers read own agreement" ON public.commission_agreements
+  FOR SELECT USING (dealer_id::TEXT = public.current_dealer_id());
+
+-- Seed Initial Commission Rules (Section 5 Tiers)
+INSERT INTO public.commission_rules (id, name, min_price, max_price, commission_percentage, fixed_fee, currency, is_active)
+VALUES
+  ('crule-tier-1', 'Tier 1 (₦5M - ₦10M)', 5000000, 9999999, 1.8, 0, 'NGN', true),
+  ('crule-tier-2', 'Tier 2 (₦10M - ₦20M)', 10000000, 19999999, 1.5, 0, 'NGN', true),
+  ('crule-tier-3', 'Tier 3 (₦20M - ₦30M)', 20000000, 29999999, 1.25, 0, 'NGN', true),
+  ('crule-tier-4', 'Tier 4 (₦30M - ₦50M)', 30000000, 49999999, 1.0, 0, 'NGN', true),
+  ('crule-tier-5', 'Tier 5 (₦50M+)', 50000000, NULL, 0.8, 0, 'NGN', true)
+ON CONFLICT (id) DO NOTHING;
 
 -- Admin Users table: authenticated users can read their own authorization row; admins can manage
 CREATE POLICY "Self read admin authorization" ON public.admin_users FOR SELECT USING (user_id = auth.uid() OR email = auth.jwt()->>'email');
