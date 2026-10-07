@@ -25,6 +25,8 @@ import { DealerCarsPage } from './pages/dealer/DealerCarsPage';
 import { DealerAddCarPage } from './pages/dealer/DealerAddCarPage';
 import { DealerEditCarPage } from './pages/dealer/DealerEditCarPage';
 import { DealerOfferPage } from './pages/dealer/DealerOfferPage';
+import { DealerEnquiriesPage } from './pages/dealer/DealerEnquiriesPage';
+import { DealerBusinessProfilePage } from './pages/dealer/DealerBusinessProfilePage';
 import { carService } from './services/carService';
 import { InquiryModal } from './components/InquiryModal';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
@@ -299,6 +301,10 @@ export function App() {
           <DealerGuard navigate={navigate} currentRoute={currentRoute}>
             {currentRoute === '/dealer/business-information' ? (
               <DealerBusinessInfoPage navigate={navigate} />
+            ) : currentRoute === '/dealer/enquiries' ? (
+              <DealerEnquiriesPage navigate={navigate} />
+            ) : currentRoute === '/dealer/business-profile' || currentRoute === '/dealer/profile' ? (
+              <DealerBusinessProfilePage navigate={navigate} />
             ) : currentRoute === '/dealer/onboarding-success' ? (
               <DealerOnboardingSuccessPage navigate={navigate} />
             ) : currentRoute === '/dealer/cars/new' ? (

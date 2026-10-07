@@ -400,10 +400,109 @@ CREATE POLICY "Admins full access commissions" ON public.commissions FOR ALL USI
 CREATE POLICY "Self read admin authorization" ON public.admin_users FOR SELECT USING (user_id = auth.uid() OR email = auth.jwt()->>'email');
 CREATE POLICY "Admins manage admin users" ON public.admin_users FOR ALL USING (public.is_active_admin());
 
+-- ==============================================================================
+-- PHASE 3: DEALER OPERATIONS RLS POLICIES & FUNCTIONS
+-- ==============================================================================
+
+-- Helper function to obtain current authenticated dealer ID from dealer_accounts
+CREATE OR REPLACE FUNCTION public.current_dealer_id()
+RETURNS TEXT AS $$
+BEGIN
+  RETURN (
+    SELECT dealer_id::TEXT FROM public.dealer_accounts
+    WHERE user_id = auth.uid()
+      AND account_status != 'suspended'
+    LIMIT 1
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+CREATE OR REPLACE FUNCTION public.is_active_dealer()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.dealer_accounts
+    WHERE user_id = auth.uid()
+      AND account_status != 'suspended'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+-- Dealer Inquiries: Dealer can read inquiries only for vehicles they own
+CREATE POLICY "Dealers view inquiries for own cars" ON public.buyer_inquiries
+  FOR SELECT
+  USING (
+    car_id IN (
+      SELECT id FROM public.cars
+      WHERE dealer_id::TEXT = public.current_dealer_id()
+    )
+  );
+
+-- Dealer Inquiries: Dealer can update inquiry status for their own vehicles
+CREATE POLICY "Dealers update status on own inquiries" ON public.buyer_inquiries
+  FOR UPDATE
+  USING (
+    car_id IN (
+      SELECT id FROM public.cars
+      WHERE dealer_id::TEXT = public.current_dealer_id()
+    )
+  )
+  WITH CHECK (
+    car_id IN (
+      SELECT id FROM public.cars
+      WHERE dealer_id::TEXT = public.current_dealer_id()
+    )
+  );
+
+-- Business Profiles & Addresses: Scoped strictly to authenticated dealer
+ALTER TABLE public.dealer_business_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dealer_addresses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dealer_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Dealers manage own business profile" ON public.dealer_business_profiles
+  FOR ALL
+  USING (dealer_id::TEXT = public.current_dealer_id())
+  WITH CHECK (dealer_id::TEXT = public.current_dealer_id());
+
+CREATE POLICY "Dealers manage own address" ON public.dealer_addresses
+  FOR ALL
+  USING (dealer_id::TEXT = public.current_dealer_id())
+  WITH CHECK (dealer_id::TEXT = public.current_dealer_id());
+
+CREATE POLICY "Dealers view own account" ON public.dealer_accounts
+  FOR SELECT
+  USING (user_id = auth.uid() OR dealer_id::TEXT = public.current_dealer_id());
+
+CREATE POLICY "Dealers view own cars" ON public.cars
+  FOR SELECT
+  USING (dealer_id::TEXT = public.current_dealer_id() OR status = 'PUBLISHED' OR public.is_active_admin());
+
+CREATE POLICY "Dealers manage own cars" ON public.cars
+  FOR ALL
+  USING (dealer_id::TEXT = public.current_dealer_id())
+  WITH CHECK (dealer_id::TEXT = public.current_dealer_id());
+
+-- Notifications: Strict isolation by user_id = auth.uid()
+CREATE POLICY "Users read own notifications" ON public.notifications
+  FOR SELECT
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users update own notifications" ON public.notifications
+  FOR UPDATE
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
 -- Indexes for lightning queries
 CREATE INDEX IF NOT EXISTS idx_cars_slug ON public.cars(slug);
 CREATE INDEX IF NOT EXISTS idx_cars_status ON public.cars(status);
 CREATE INDEX IF NOT EXISTS idx_cars_brand_id ON public.cars(brand_id);
+CREATE INDEX IF NOT EXISTS idx_cars_dealer_id ON public.cars(dealer_id);
+CREATE INDEX IF NOT EXISTS idx_buyer_inquiries_car_id ON public.buyer_inquiries(car_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_dealer_addresses_dealer_id ON public.dealer_addresses(dealer_id);
+CREATE INDEX IF NOT EXISTS idx_dealer_business_profiles_dealer_id ON public.dealer_business_profiles(dealer_id);
+CREATE INDEX IF NOT EXISTS idx_dealer_accounts_user_id ON public.dealer_accounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_car_media_car_id ON public.car_media(car_id);
 CREATE INDEX IF NOT EXISTS idx_car_images_car_id ON public.car_images(car_id);
 CREATE INDEX IF NOT EXISTS idx_admin_users_email ON public.admin_users(email);

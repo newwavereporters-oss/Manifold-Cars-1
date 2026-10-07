@@ -7,7 +7,7 @@ interface DealerSignInPageProps {
 }
 
 export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) => {
-  const { signIn, user, dealerAccount } = useDealerAuth();
+  const { signIn } = useDealerAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -92,19 +92,6 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4">
         <div className="bg-[#0B2239] py-8 px-6 sm:px-8 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-sm">
-          {user && (
-            <div className="mb-4 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-between gap-3 text-xs text-blue-200">
-              <span className="truncate">Signed in as <strong className="text-white">{user.email}</strong></span>
-              <button
-                type="button"
-                onClick={() => navigate('/dealer/dashboard')}
-                className="shrink-0 font-bold text-[#EF233C] hover:text-white underline underline-offset-2 transition"
-              >
-                Go to Dashboard
-              </button>
-            </div>
-          )}
-
           {error && (
             <div className="mb-5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3 animate-in fade-in">
               <AlertCircle className="w-4 h-4 text-[#EF233C] shrink-0 mt-0.5" />

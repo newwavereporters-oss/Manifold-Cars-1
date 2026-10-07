@@ -51,14 +51,14 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
     { id: 'cars', label: 'My Cars', icon: CarFront, route: '/dealer/cars' },
     { id: 'new-car', label: 'Add Vehicle', icon: PlusCircle, route: '/dealer/cars/new' },
     { id: 'offer', label: 'Explore MANIFOLD', icon: Sparkles, route: '/dealer/offer' },
-    { id: 'enquiries', label: 'Enquiries', icon: MessageSquare, tab: 'enquiries' },
+    { id: 'enquiries', label: 'Enquiries', icon: MessageSquare, route: '/dealer/enquiries' },
     { id: 'pricing-intel', label: 'Price Intelligence', icon: TrendingUp, tab: 'pricing-intel' },
     { id: 'market-intel', label: 'Market Intelligence', icon: BarChart3, tab: 'market-intel' },
     { id: 'news', label: 'Industry News', icon: Newspaper, tab: 'news' },
     { id: 'performance', label: 'Performance', icon: LineChart, tab: 'performance' },
     { id: 'sales', label: 'Sales', icon: BadgeDollarSign, tab: 'sales' },
     { id: 'earnings', label: 'Earnings', icon: Wallet, tab: 'earnings' },
-    { id: 'profile', label: 'Business Profile', icon: Building2, tab: 'profile' },
+    { id: 'profile', label: 'Business Profile', icon: Building2, route: '/dealer/business-profile' },
     { id: 'guide', label: 'MANIFOLD Guide', icon: BookOpen, tab: 'guide' },
   ];
 

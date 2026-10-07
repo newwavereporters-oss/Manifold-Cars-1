@@ -3,6 +3,11 @@ import { DealerLayout } from '../../components/dealer/DealerLayout';
 import { useDealerAuth } from '../../context/DealerAuthContext';
 import { dealerVehicleService, DealerCarRecord } from '../../services/dealerVehicleService';
 import {
+  dealerOperationsService,
+  DealerDashboardOverview,
+  DealerEnquiryRecord,
+} from '../../services/dealerOperationsService';
+import {
   CarFront,
   PlusCircle,
   Clock,
@@ -22,6 +27,9 @@ import {
   Phone,
   ShieldCheck,
   ExternalLink,
+  User,
+  Calendar,
+  Loader2,
 } from 'lucide-react';
 
 interface DealerDashboardPageProps {
@@ -32,36 +40,53 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
   const { user, dealerAccount } = useDealerAuth();
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [cars, setCars] = useState<DealerCarRecord[]>([]);
-  const [loadingCars, setLoadingCars] = useState<boolean>(true);
+  const [overview, setOverview] = useState<DealerDashboardOverview | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
   const businessName = dealerAccount?.businessName || 'Your Dealership';
-  const status = dealerAccount?.accountStatus || 'pending';
 
   useEffect(() => {
     let mounted = true;
-    async function loadDealerInventory() {
+    async function loadDealerData() {
       if (dealerAccount?.dealerId) {
-        setLoadingCars(true);
-        const list = await dealerVehicleService.getDealerCars(dealerAccount.dealerId);
-        if (mounted) {
-          setCars(list);
-          setLoadingCars(false);
+        setLoading(true);
+        try {
+          const [overviewData, carsList] = await Promise.all([
+            dealerOperationsService.getDashboardOverview(dealerAccount.dealerId),
+            dealerVehicleService.getDealerCars(dealerAccount.dealerId),
+          ]);
+          if (mounted) {
+            setOverview(overviewData);
+            setCars(carsList);
+            setLoading(false);
+          }
+        } catch (err) {
+          console.error('Failed to load dealer data:', err);
+          if (mounted) setLoading(false);
         }
       } else {
-        if (mounted) setLoadingCars(false);
+        if (mounted) setLoading(false);
       }
     }
-    loadDealerInventory();
+    loadDealerData();
     return () => {
       mounted = false;
     };
   }, [dealerAccount?.dealerId]);
 
-  // Real inventory metrics derived strictly from actual database rows
-  const totalVehicles = cars.length;
-  const publishedVehicles = cars.filter((c) => c.status === 'PUBLISHED').length;
-  const inReviewVehicles = cars.filter((c) => c.status === 'PENDING_REVIEW').length;
-  const draftVehicles = cars.filter((c) => c.status === 'DRAFT').length;
+  // Real inventory and enquiry metrics derived strictly from actual database rows
+  const totalVehicles = overview ? overview.totalVehicles : cars.length;
+  const publishedVehicles = overview
+    ? overview.publishedVehicles
+    : cars.filter((c) => c.status === 'PUBLISHED').length;
+  const inReviewVehicles = overview
+    ? overview.inReviewVehicles
+    : cars.filter((c) => c.status === 'PENDING_REVIEW').length;
+  const draftVehicles = overview
+    ? overview.draftVehicles
+    : cars.filter((c) => c.status === 'DRAFT').length;
+  const newEnquiriesCount = overview ? overview.newEnquiriesCount : 0;
+  const recentEnquiries = overview?.recentEnquiries || [];
 
   return (
     <DealerLayout
@@ -162,7 +187,7 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
             )}
 
             {/* REAL STATS COUNTERS (NO FAKE DATA) */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
                 <div className="flex items-center justify-between text-gray-400 mb-2">
                   <span className="text-xs font-bold uppercase tracking-wider">Total Listed</span>
@@ -198,6 +223,20 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                 <div className="text-2xl font-extrabold text-[#071A2B]">{draftVehicles}</div>
                 <p className="text-[11px] text-gray-500 mt-1">Unsubmitted listings</p>
               </div>
+
+              <div
+                onClick={() => navigate('/dealer/enquiries')}
+                className="bg-white p-5 rounded-2xl border border-red-100 hover:border-red-300 shadow-sm cursor-pointer transition group"
+              >
+                <div className="flex items-center justify-between text-[#EF233C] mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider">New Enquiries</span>
+                  <MessageSquare className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                </div>
+                <div className="text-2xl font-extrabold text-[#EF233C]">{newEnquiriesCount}</div>
+                <p className="text-[11px] text-gray-500 mt-1 group-hover:text-gray-700 transition">
+                  Prospective buyers waiting
+                </p>
+              </div>
             </div>
 
             {/* RECENT VEHICLES PREVIEW */}
@@ -216,7 +255,7 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                 </button>
               </div>
 
-              {loadingCars ? (
+              {loading ? (
                 <div className="py-8 text-center text-xs text-gray-400">Loading catalog...</div>
               ) : cars.length === 0 ? (
                 <div className="py-12 text-center space-y-3">
@@ -281,6 +320,97 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                         >
                           Edit
                         </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* RECENT BUYER ENQUIRIES (SECTION 5 REQUIREMENT) */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-[#EF233C]">
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-gray-900 text-sm">Recent Buyer Enquiries</h3>
+                      {newEnquiriesCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-red-100 text-[#EF233C] text-[10px] font-bold">
+                          {newEnquiriesCount} New
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500">Latest interest and requests from prospective buyers</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate('/dealer/enquiries')}
+                  className="text-xs font-bold text-[#EF233C] hover:text-[#D90429] flex items-center gap-1"
+                >
+                  <span>View All Enquiries</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {loading ? (
+                <div className="py-8 text-center text-xs text-gray-400 flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#EF233C]" />
+                  <span>Loading buyer enquiries...</span>
+                </div>
+              ) : recentEnquiries.length === 0 ? (
+                <div className="py-10 text-center space-y-2">
+                  <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto text-gray-400">
+                    <MessageSquare className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-gray-800">No buyer enquiries yet</h4>
+                  <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                    When prospective buyers send messages or request physical inspections for your cars, they will appear here in real time.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {recentEnquiries.slice(0, 5).map((inq) => (
+                    <div
+                      key={inq.id}
+                      onClick={() => navigate('/dealer/enquiries')}
+                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-gray-50/70 rounded-xl px-2.5 transition cursor-pointer"
+                    >
+                      <div className="flex items-start sm:items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-gray-600 shrink-0 font-bold text-xs">
+                          {inq.customer_name ? inq.customer_name.substring(0, 2).toUpperCase() : 'BY'}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h5 className="text-xs font-bold text-gray-900">{inq.customer_name}</h5>
+                            <span className="text-[11px] text-gray-400 font-medium">·</span>
+                            <span className="text-[11px] text-gray-500">{inq.customer_phone}</span>
+                          </div>
+                          <p className="text-xs text-gray-700 truncate mt-0.5">
+                            <span className="font-semibold text-gray-900">{inq.car_title}:</span> {inq.message}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                        <span
+                          className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded tracking-wider ${
+                            inq.status === 'new'
+                              ? 'bg-red-100 text-[#EF233C]'
+                              : inq.status === 'contacted'
+                              ? 'bg-blue-100 text-blue-800'
+                              : inq.status === 'qualified' || inq.status === 'viewing_scheduled'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          {inq.status.replace('_', ' ')}
+                        </span>
+                        <span className="text-[11px] text-gray-400">
+                          {new Date(inq.created_at).toLocaleDateString()}
+                        </span>
                       </div>
                     </div>
                   ))}
