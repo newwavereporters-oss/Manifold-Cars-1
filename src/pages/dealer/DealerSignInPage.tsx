@@ -33,8 +33,10 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
         setError(res.error || 'Authentication failed. Please check your credentials.');
         setLoading(false);
       } else {
-        // Successful login goes to dealer dashboard
-        navigate('/dealer/dashboard');
+        // Successful login goes to dealer dashboard (or preserves return intent)
+        const searchParams = new URLSearchParams(window.location.search);
+        const nextUrl = searchParams.get('next') || '/dealer/dashboard';
+        navigate(nextUrl);
       }
     } catch {
       setError('An unexpected connection error occurred. Please try again.');

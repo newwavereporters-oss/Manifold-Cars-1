@@ -12,9 +12,9 @@ export const DealerOnboardingSuccessPage: React.FC<DealerOnboardingSuccessPagePr
 
   const handleListFirstCar = () => {
     if (user) {
-      navigate('/dealer/cars/new');
+      navigate('/dealer/dashboard');
     } else {
-      navigate('/dealer/sign-in');
+      navigate('/dealer/sign-in?next=/dealer/dashboard');
     }
   };
 

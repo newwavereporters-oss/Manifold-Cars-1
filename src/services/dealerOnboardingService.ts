@@ -82,6 +82,7 @@ class DealerOnboardingService {
 
   /**
    * Retrieves the current authenticated user's dealer account status from the database
+   * Authoritative source of truth is dealer_accounts matching session.user.id
    */
   public async getDealerAccountStatus(): Promise<DealerAccountStatus> {
     try {
@@ -90,27 +91,46 @@ class DealerOnboardingService {
         return { hasAccount: false };
       }
 
+      // Query dealer_accounts directly without embedded relations that might fail in PostgREST
       const { data, error } = await supabase
         .from('dealer_accounts')
-        .select('dealer_id, account_status, onboarding_status, dealers:dealer_id(name)')
+        .select('dealer_id, account_status, onboarding_status')
         .eq('user_id', session.user.id)
         .maybeSingle();
 
-      if (error || !data) {
+      if (error) {
+        console.warn('Could not query dealer_accounts for user:', error.message);
+      }
+
+      if (!data || !data.dealer_id) {
         return { hasAccount: false };
       }
 
-      const dealerRecord = data as any;
-      const rawStatus = dealerRecord.account_status;
-      // In the MANIFOLD model, registered dealers receive immediate active access (never blocked in pending)
+      const rawStatus = data.account_status;
+      // In the MANIFOLD active model, registered dealers receive immediate active access (never blocked in pending)
       const accountStatus = (rawStatus === 'suspended' || rawStatus === 'rejected') ? rawStatus : 'active';
+
+      // Safely look up dealer name
+      let businessName = 'Your Dealership';
+      try {
+        const { data: dealerRow } = await supabase
+          .from('dealers')
+          .select('name')
+          .eq('id', data.dealer_id)
+          .maybeSingle();
+        if (dealerRow?.name) {
+          businessName = dealerRow.name;
+        }
+      } catch {
+        // Fallback to default name if table read fails
+      }
 
       return {
         hasAccount: true,
-        dealerId: dealerRecord.dealer_id,
+        dealerId: data.dealer_id,
         accountStatus,
-        onboardingStatus: dealerRecord.onboarding_status || 'completed',
-        businessName: dealerRecord.dealers?.name,
+        onboardingStatus: data.onboarding_status || 'completed',
+        businessName,
       };
     } catch (err) {
       console.warn('Could not check dealer status:', err);

@@ -23,7 +23,12 @@ export const DealerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [loading, setLoading] = useState<boolean>(true);
 
   const fetchDealerAccount = useCallback(async (currentSession?: Session | null) => {
-    if (!currentSession?.user) {
+    let activeSession = currentSession;
+    if (activeSession === undefined) {
+      const { data } = await supabase.auth.getSession();
+      activeSession = data.session;
+    }
+    if (!activeSession?.user) {
       setDealerAccount(null);
       return null;
     }
@@ -242,8 +247,17 @@ export const DealerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const refreshDealerStatus = async (): Promise<DealerAccountStatus> => {
-    const status = await fetchDealerAccount(session);
-    return status || { hasAccount: false };
+    try {
+      const { data: { session: freshSession } } = await supabase.auth.getSession();
+      if (freshSession) {
+        setSession(freshSession);
+        setUser(freshSession.user);
+      }
+      const status = await fetchDealerAccount(freshSession);
+      return status || { hasAccount: false };
+    } catch {
+      return { hasAccount: false };
+    }
   };
 
   const value: DealerAuthContextType = {

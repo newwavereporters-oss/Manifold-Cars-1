@@ -128,7 +128,7 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                     className="px-5 py-2.5 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center gap-2 shadow-lg shadow-red-900/30"
                   >
                     <PlusCircle className="w-4 h-4" />
-                    <span>List a Vehicle</span>
+                    <span>{totalVehicles === 0 ? 'List Your First Car' : 'List a Vehicle'}</span>
                   </button>
 
                   <button
@@ -173,7 +173,7 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                     className="w-full sm:w-auto px-5 py-2.5 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-red-900/30"
                   >
                     <PlusCircle className="w-4 h-4" />
-                    <span>List First Car</span>
+                    <span>List Your First Car</span>
                   </button>
                   <button
                     onClick={() => navigate('/dealer/offer')}
@@ -271,7 +271,7 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                     className="mt-2 px-4 py-2 bg-[#071A2B] hover:bg-[#0B2239] text-white text-xs font-bold uppercase rounded-xl inline-flex items-center gap-1.5 transition"
                   >
                     <PlusCircle className="w-4 h-4 text-[#EF233C]" />
-                    <span>List First Vehicle</span>
+                    <span>List Your First Car</span>
                   </button>
                 </div>
               ) : (

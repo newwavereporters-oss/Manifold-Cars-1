@@ -11,22 +11,32 @@ interface DealerGuardProps {
 export const DealerGuard: React.FC<DealerGuardProps> = ({ children, navigate, currentRoute }) => {
   const { user, dealerAccount, loading } = useDealerAuth();
 
+  // If user is authenticated, we must wait until dealerAccount is resolved before making routing decisions
+  const isResolvingAccount = loading || (Boolean(user) && dealerAccount === null);
+
   useEffect(() => {
-    if (!loading) {
+    if (!isResolvingAccount) {
       if (!user) {
         navigate('/dealer/sign-in');
-      } else if (
-        !dealerAccount?.hasAccount &&
-        currentRoute !== '/dealer/business-information' &&
-        currentRoute !== '/dealer/onboarding-success'
-      ) {
-        // Authenticated user needs to complete dealership onboarding
-        navigate('/dealer/business-information');
+      } else if (!dealerAccount?.hasAccount) {
+        // Authenticated user genuinely has no dealer account
+        if (
+          currentRoute !== '/dealer/business-information' &&
+          currentRoute !== '/dealer/onboarding-success'
+        ) {
+          navigate('/dealer/business-information');
+        }
+      } else if (dealerAccount?.hasAccount) {
+        // Authenticated dealer already has completed onboarding
+        // Do not force them through business-information again
+        if (currentRoute === '/dealer/business-information') {
+          navigate('/dealer/dashboard');
+        }
       }
     }
-  }, [user, dealerAccount, loading, currentRoute, navigate]);
+  }, [user, dealerAccount, isResolvingAccount, currentRoute, navigate]);
 
-  if (loading) {
+  if (isResolvingAccount) {
     return (
       <div className="min-h-screen bg-[#071A2B] flex flex-col items-center justify-center text-white p-4">
         <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-4">
