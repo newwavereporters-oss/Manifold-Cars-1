@@ -38,13 +38,15 @@ export const DealerGuard: React.FC<DealerGuardProps> = ({ children, navigate, cu
         // Authenticated user genuinely has no dealer account
         if (
           currentRoute !== '/dealer/business-information' &&
-          currentRoute !== '/dealer/onboarding-success'
+          currentRoute !== '/dealer/onboarding-success' &&
+          currentRoute !== '/dealer/offer'
         ) {
           navigate('/dealer/business-information');
         }
       } else if (dealerAccount?.hasAccount) {
-        // Authenticated dealer already has completed onboarding
-        // Do not force them through business-information again
+        // Authenticated dealer with valid dealer_accounts record
+        // All dealer routes (dashboard, cars, cars/new, enquiries, profile, offer) are permitted
+        // Never redirect them back to business-information
         if (currentRoute === '/dealer/business-information') {
           navigate('/dealer/dashboard');
         }

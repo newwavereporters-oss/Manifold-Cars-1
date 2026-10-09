@@ -146,6 +146,34 @@ class DealerVehicleService {
     }
 
     try {
+      // Authoritative security check: resolve current auth session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        return { car: null, error: 'Authentication required to list vehicles.' };
+      }
+
+      // Prevent admin users without a dealer account from listing vehicles
+      const { data: adminRow } = await supabase
+        .from('admin_users')
+        .select('role')
+        .eq('user_id', session.user.id)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      const { data: dealerAcc } = await supabase
+        .from('dealer_accounts')
+        .select('dealer_id')
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+
+      if (adminRow && !dealerAcc) {
+        return { car: null, error: 'Vehicle listing is available to MANIFOLD dealer accounts.' };
+      }
+
+      if (dealerAcc && dealerAcc.dealer_id !== dealerId) {
+        return { car: null, error: 'Dealership authorization mismatch.' };
+      }
+
       const id = `car-dlr-${Date.now()}`;
       const title = `${input.year} ${input.make} ${input.model}${input.trim ? ` ${input.trim}` : ''}`;
       const slugBase = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');

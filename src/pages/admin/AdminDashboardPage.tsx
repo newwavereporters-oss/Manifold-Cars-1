@@ -35,6 +35,10 @@ import {
   Calendar,
   Award,
   RefreshCw,
+  BadgeDollarSign,
+  Calculator,
+  Percent,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../../data/mockCars';
@@ -49,6 +53,11 @@ import { inquiryService, InquiryRecord, InquiryDetailedStatus } from '../../serv
 import { carHuntService, CarHuntRequestRecord } from '../../services/carHuntService';
 import { inspectionService, InspectionRecord } from '../../services/inspectionService';
 import { salesService, SaleRecord, CommissionRecord } from '../../services/salesService';
+import {
+  commissionService,
+  CommissionRule,
+  CommissionCalculationResult,
+} from '../../services/commissionService';
 import { checkIsSupabaseConfigured } from '../../lib/supabase';
 import { CarForm } from '../../components/admin/CarForm';
 import { MediaVideoModal } from '../../components/admin/MediaVideoModal';
@@ -64,6 +73,7 @@ export type AdminTabType =
   | 'types'
   | 'dealers'
   | 'sales'
+  | 'commissions'
   | 'settings';
 
 interface AdminDashboardPageProps {
@@ -88,7 +98,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     if (route.startsWith('/admin/media')) return 'media';
     if (route.startsWith('/admin/enquiries')) return 'concierge';
     if (route.startsWith('/admin/inspections')) return 'inspections';
-    if (route.startsWith('/admin/sales') || route.startsWith('/admin/commissions')) return 'sales';
+    if (route.startsWith('/admin/commissions') || route.startsWith('/admin/commission-rules')) return 'commissions';
+    if (route.startsWith('/admin/sales')) return 'sales';
     if (route.startsWith('/admin/settings')) return 'settings';
     return defaultTab;
   };
@@ -115,6 +126,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       types: '/admin/types',
       dealers: '/admin/dealers',
       sales: '/admin/sales',
+      commissions: '/admin/commissions',
       settings: '/admin/settings',
     };
     navigate(routeMap[tab]);
@@ -131,6 +143,21 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [dealers, setDealers] = useState<DealerFullRecord[]>([]);
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [commissions, setCommissions] = useState<CommissionRecord[]>([]);
+
+  // Commission Control State (Phase 4 Requirement)
+  const [commissionRules, setCommissionRules] = useState<CommissionRule[]>([]);
+  const [testPrice, setTestPrice] = useState<string>('35,000,000');
+  const [calcResult, setCalcResult] = useState<CommissionCalculationResult | null>(null);
+  const [showRuleModal, setShowRuleModal] = useState(false);
+  const [editingRule, setEditingRule] = useState<CommissionRule | null>(null);
+  const [ruleFormName, setRuleFormName] = useState('');
+  const [ruleFormMinPrice, setRuleFormMinPrice] = useState('');
+  const [ruleFormMaxPrice, setRuleFormMaxPrice] = useState('');
+  const [ruleFormNoMax, setRuleFormNoMax] = useState(false);
+  const [ruleFormPercentage, setRuleFormPercentage] = useState('1.5');
+  const [ruleFormFixedFee, setRuleFormFixedFee] = useState('0');
+  const [ruleFormIsActive, setRuleFormIsActive] = useState(true);
+  const [savingRule, setSavingRule] = useState(false);
 
   // Search & Filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -196,6 +223,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         dealersRes,
         salesRes,
         commRes,
+        rulesRes,
       ] = await Promise.allSettled([
         inquiryService.getInquiries(),
         carHuntService.getRequests(),
@@ -205,6 +233,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         dealerService.getDealers(),
         salesService.getSales(),
         salesService.getCommissions(),
+        commissionService.getRules(),
       ]);
 
       if (inqRes.status === 'fulfilled') setInquiries(inqRes.value);
@@ -215,10 +244,138 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       if (dealersRes.status === 'fulfilled') setDealers(dealersRes.value);
       if (salesRes.status === 'fulfilled') setSales(salesRes.value);
       if (commRes.status === 'fulfilled') setCommissions(commRes.value);
+      if (rulesRes.status === 'fulfilled') setCommissionRules(rulesRes.value);
     } catch (e: any) {
       console.warn('Notice loading Supabase auxiliary datasets:', e.message);
     } finally {
       setLoadingData(false);
+    }
+  };
+
+  // Live Commission Testing Simulator Effect
+  useEffect(() => {
+    let mounted = true;
+    const cleanNum = Number(testPrice.replace(/[^0-9.]/g, '')) || 0;
+    if (cleanNum > 0) {
+      commissionService.calculateCommission(cleanNum).then((res) => {
+        if (mounted) setCalcResult(res);
+      });
+    } else {
+      setCalcResult(null);
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [testPrice, commissionRules]);
+
+  const handleToggleRule = async (rule: CommissionRule) => {
+    try {
+      const res = await commissionService.updateRule(rule.id, { is_active: !rule.is_active });
+      if (res.error) {
+        notify(`Error: ${res.error}`);
+      } else {
+        notify(`Rule "${rule.name}" is now ${!rule.is_active ? 'active' : 'inactive'}.`);
+        const updated = await commissionService.getRules();
+        setCommissionRules(updated);
+      }
+    } catch {
+      notify('Failed to update commission rule.');
+    }
+  };
+
+  const handleOpenAddRule = () => {
+    setEditingRule(null);
+    setRuleFormName('');
+    setRuleFormMinPrice('');
+    setRuleFormMaxPrice('');
+    setRuleFormNoMax(false);
+    setRuleFormPercentage('1.5');
+    setRuleFormFixedFee('0');
+    setRuleFormIsActive(true);
+    setShowRuleModal(true);
+  };
+
+  const handleOpenEditRule = (rule: CommissionRule) => {
+    setEditingRule(rule);
+    setRuleFormName(rule.name);
+    setRuleFormMinPrice(rule.min_price.toString());
+    setRuleFormMaxPrice(rule.max_price !== null && rule.max_price !== undefined ? rule.max_price.toString() : '');
+    setRuleFormNoMax(rule.max_price === null);
+    setRuleFormPercentage(rule.commission_percentage.toString());
+    setRuleFormFixedFee(rule.fixed_fee.toString());
+    setRuleFormIsActive(rule.is_active);
+    setShowRuleModal(true);
+  };
+
+  const handleSaveRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ruleFormName.trim()) {
+      notify('Please enter a tier name.');
+      return;
+    }
+    const minVal = Number(ruleFormMinPrice.replace(/[^0-9.]/g, '')) || 0;
+    const maxVal = ruleFormNoMax ? null : Number(ruleFormMaxPrice.replace(/[^0-9.]/g, '')) || null;
+    const pct = parseFloat(ruleFormPercentage) || 0;
+    const fee = Number(ruleFormFixedFee.replace(/[^0-9.]/g, '')) || 0;
+
+    setSavingRule(true);
+    try {
+      if (editingRule) {
+        const res = await commissionService.updateRule(editingRule.id, {
+          name: ruleFormName.trim(),
+          min_price: minVal,
+          max_price: maxVal,
+          commission_percentage: pct,
+          fixed_fee: fee,
+          is_active: ruleFormIsActive,
+        });
+        if (res.error) {
+          notify(`Failed: ${res.error}`);
+        } else {
+          notify(`Commission rule "${ruleFormName}" updated.`);
+          setShowRuleModal(false);
+          const updated = await commissionService.getRules();
+          setCommissionRules(updated);
+        }
+      } else {
+        const res = await commissionService.createRule({
+          name: ruleFormName.trim(),
+          min_price: minVal,
+          max_price: maxVal,
+          commission_percentage: pct,
+          fixed_fee: fee,
+          currency: 'NGN',
+          is_active: ruleFormIsActive,
+        });
+        if (res.error) {
+          notify(`Failed: ${res.error}`);
+        } else {
+          notify(`Commission rule "${ruleFormName}" created.`);
+          setShowRuleModal(false);
+          const updated = await commissionService.getRules();
+          setCommissionRules(updated);
+        }
+      }
+    } catch {
+      notify('An error occurred while saving the rule.');
+    } finally {
+      setSavingRule(false);
+    }
+  };
+
+  const handleDeleteRule = async (ruleId: string, ruleName: string) => {
+    if (!window.confirm(`Are you sure you want to delete commission rule "${ruleName}"?`)) return;
+    try {
+      const success = await commissionService.deleteRule(ruleId);
+      if (!success) {
+        notify(`Failed to delete commission rule "${ruleName}".`);
+      } else {
+        notify(`Commission rule "${ruleName}" deleted.`);
+        const updated = await commissionService.getRules();
+        setCommissionRules(updated);
+      }
+    } catch {
+      notify('Failed to delete commission rule.');
     }
   };
 
@@ -757,7 +914,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               }`}
             >
               <DollarSign className="w-4 h-4" />
-              <span>Sales & Commissions</span>
+              <span>Sales & Ledger</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('commissions')}
+              className={`py-3 px-1 border-b-2 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer ${
+                activeTab === 'commissions'
+                  ? 'border-[#EF233C] text-[#EF233C]'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              <BadgeDollarSign className="w-4 h-4" />
+              <span>Commission Rules ({commissionRules.length})</span>
             </button>
 
             <button
@@ -1626,6 +1795,283 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </div>
         )}
 
+        {/* TAB 8: COMMISSION CONTROL & CALCULATOR (PHASE 4 REQUIREMENT) */}
+        {activeTab === 'commissions' && (
+          <div className="space-y-6">
+            {/* Header with Title and Add Action */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 sm:p-8">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#EF233C] bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
+                      Revenue & Monetization
+                    </span>
+                    <span className="text-xs text-gray-400">·</span>
+                    <span className="text-xs font-semibold text-emerald-600">
+                      Authoritative (public.commission_rules)
+                    </span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900 font-display">
+                    Commission Control & Fee Schedule
+                  </h2>
+                  <p className="text-xs sm:text-sm text-gray-500 max-w-2xl leading-relaxed">
+                    Configure platform commission brackets, percentage rates, and fee overrides. All rules are evaluated dynamically by the marketplace and dealer pricing intelligence engines.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={loadLiveSupabaseData}
+                    className="p-2.5 border border-gray-200 hover:bg-gray-50 rounded-xl text-gray-600 transition"
+                    title="Refresh Rules"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={handleOpenAddRule}
+                    className="px-4 py-2.5 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center gap-2 shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Commission Rule</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Commission Metrics Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-100">
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200/60">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+                    Total Tiers
+                  </span>
+                  <div className="text-2xl font-extrabold text-gray-900">
+                    {commissionRules.length}
+                  </div>
+                  <span className="text-[11px] text-gray-500 mt-0.5 block">Configured brackets</span>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200/60">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+                    Active Rules
+                  </span>
+                  <div className="text-2xl font-extrabold text-emerald-600">
+                    {commissionRules.filter((r) => r.is_active).length}
+                  </div>
+                  <span className="text-[11px] text-gray-500 mt-0.5 block">Enforced in pricing</span>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200/60">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+                    Rate Range
+                  </span>
+                  <div className="text-2xl font-extrabold text-gray-900">
+                    {commissionRules.length > 0
+                      ? `${Math.min(...commissionRules.map((r) => r.commission_percentage))}% – ${Math.max(...commissionRules.map((r) => r.commission_percentage))}%`
+                      : '0%'}
+                  </div>
+                  <span className="text-[11px] text-gray-500 mt-0.5 block">Min to max rates</span>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200/60">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+                    Model Type
+                  </span>
+                  <div className="text-2xl font-extrabold text-[#EF233C]">
+                    Success-Only
+                  </div>
+                  <span className="text-[11px] text-gray-500 mt-0.5 block">0 upfront listing fee</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Commission Simulator / Testing Tool */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 sm:p-8 space-y-5">
+              <div className="flex items-center gap-2 border-b border-gray-100 pb-4">
+                <Calculator className="w-5 h-5 text-[#EF233C]" />
+                <div>
+                  <h3 className="font-bold text-gray-900 text-sm">
+                    Live Commission Calculator & Rule Simulator
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Test how current active commission rules calculate platform fees and dealer payouts for any vehicle price.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Price input & chips */}
+                <div className="space-y-3">
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Test Vehicle Asking Price (NGN)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-xs font-bold text-gray-400">
+                      ₦
+                    </span>
+                    <input
+                      type="text"
+                      value={testPrice}
+                      onChange={(e) => setTestPrice(e.target.value)}
+                      placeholder="35,000,000"
+                      className="w-full h-11 pl-8 pr-3 text-sm font-bold text-gray-900 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#EF233C]"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {['7,500,000', '15,000,000', '25,000,000', '45,000,000', '75,000,000'].map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setTestPrice(p)}
+                        className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-[11px] font-semibold rounded-lg transition"
+                      >
+                        ₦{p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Simulator Live Breakdown Output */}
+                <div className="lg:col-span-2">
+                  {calcResult && calcResult.applicable ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="p-4 rounded-xl bg-gray-50 border border-gray-200">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+                          Matched Tier Rule
+                        </span>
+                        <div className="text-sm font-bold text-gray-900">
+                          {calcResult.ruleName}
+                        </div>
+                        <span className="text-xs font-extrabold text-[#EF233C] mt-1 block">
+                          {calcResult.commissionPercentage}% Rate {calcResult.fixedFee > 0 ? `+ ₦${calcResult.fixedFee.toLocaleString()}` : ''}
+                        </span>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-red-50/60 border border-red-100">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-red-500 block mb-1">
+                          MANIFOLD Commission
+                        </span>
+                        <div className="text-lg font-extrabold text-gray-900">
+                          ₦{calcResult.estimatedCommission.toLocaleString()}
+                        </div>
+                        <span className="text-[11px] text-gray-500 mt-1 block">Platform brokerage fee</span>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block mb-1">
+                          Dealer Net Proceeds
+                        </span>
+                        <div className="text-lg font-extrabold text-emerald-700">
+                          ₦{calcResult.estimatedDealerProceeds.toLocaleString()}
+                        </div>
+                        <span className="text-[11px] text-emerald-600 mt-1 block">
+                          {(100 - calcResult.commissionPercentage).toFixed(2)}% of transaction
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl">
+                      Enter a valid price above to test active commission tier calculation.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Rules Table */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-gray-900 text-sm">
+                    Commission Rules Ledger
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Live rows from <code>public.commission_rules</code>.
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2.5 py-1 rounded">
+                  {commissionRules.length} Rules Defined
+                </span>
+              </div>
+
+              {commissionRules.length === 0 ? (
+                <div className="p-8 text-center text-xs text-gray-500">
+                  No commission rules found in database. Click "Add Commission Rule" to create one.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-gray-600">
+                    <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 border-b border-gray-200">
+                      <tr>
+                        <th className="py-3 px-5">Tier Name</th>
+                        <th className="py-3 px-5">Price Range (NGN)</th>
+                        <th className="py-3 px-5">Commission Rate</th>
+                        <th className="py-3 px-5">Fixed Fee</th>
+                        <th className="py-3 px-5">Status</th>
+                        <th className="py-3 px-5 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {commissionRules.map((rule) => (
+                        <tr key={rule.id} className="hover:bg-gray-50 transition">
+                          <td className="py-3.5 px-5 font-bold text-gray-900">
+                            {rule.name}
+                          </td>
+                          <td className="py-3.5 px-5">
+                            ₦{rule.min_price.toLocaleString()} –{' '}
+                            {rule.max_price
+                              ? `₦${rule.max_price.toLocaleString()}`
+                              : 'No Max (Uncapped)'}
+                          </td>
+                          <td className="py-3.5 px-5 font-extrabold text-[#EF233C]">
+                            {rule.commission_percentage}%
+                          </td>
+                          <td className="py-3.5 px-5 text-gray-500">
+                            {rule.fixed_fee > 0 ? `₦${rule.fixed_fee.toLocaleString()}` : '₦0'}
+                          </td>
+                          <td className="py-3.5 px-5">
+                            <button
+                              onClick={() => handleToggleRule(rule)}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition ${
+                                rule.is_active
+                                  ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  rule.is_active ? 'bg-emerald-500' : 'bg-gray-400'
+                                }`}
+                              />
+                              <span>{rule.is_active ? 'Active' : 'Inactive'}</span>
+                            </button>
+                          </td>
+                          <td className="py-3.5 px-5 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleOpenEditRule(rule)}
+                                className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition"
+                                title="Edit Rule"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteRule(rule.id, rule.name)}
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                                title="Delete Rule"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* TAB 9: DATABASE & SETTINGS */}
         {activeTab === 'settings' && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-6">
@@ -2003,6 +2449,153 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 Delete Video
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD / EDIT COMMISSION RULE MODAL */}
+      {showRuleModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-gray-200 p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <BadgeDollarSign className="w-5 h-5 text-[#EF233C]" />
+                <h3 className="font-bold text-gray-900 text-sm font-display">
+                  {editingRule ? 'Edit Commission Rule' : 'New Commission Rule'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowRuleModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRule} className="space-y-4">
+              <div>
+                <label className="text-[11px] font-bold text-gray-700 uppercase block mb-1">
+                  Tier Name <span className="text-[#EF233C]">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={ruleFormName}
+                  onChange={(e) => setRuleFormName(e.target.value)}
+                  placeholder="e.g. Tier 2 (₦10M - ₦20M)"
+                  className="w-full h-10 px-3 border border-gray-200 rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#EF233C]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-gray-700 uppercase block mb-1">
+                    Min Price (NGN) <span className="text-[#EF233C]">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    value={ruleFormMinPrice}
+                    onChange={(e) => setRuleFormMinPrice(e.target.value)}
+                    placeholder="10000000"
+                    className="w-full h-10 px-3 border border-gray-200 rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#EF233C]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-gray-700 uppercase block mb-1">
+                    Max Price (NGN)
+                  </label>
+                  <input
+                    type="number"
+                    disabled={ruleFormNoMax}
+                    min="0"
+                    value={ruleFormNoMax ? '' : ruleFormMaxPrice}
+                    onChange={(e) => setRuleFormMaxPrice(e.target.value)}
+                    placeholder={ruleFormNoMax ? 'No upper limit' : '19999999'}
+                    className="w-full h-10 px-3 border border-gray-200 rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#EF233C] disabled:bg-gray-100 disabled:text-gray-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="ruleNoMax"
+                  checked={ruleFormNoMax}
+                  onChange={(e) => setRuleFormNoMax(e.target.checked)}
+                  className="rounded text-[#EF233C] focus:ring-[#EF233C]"
+                />
+                <label htmlFor="ruleNoMax" className="text-xs text-gray-600 font-medium">
+                  No maximum limit (e.g. ₦50M+ uncapped bracket)
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-gray-700 uppercase block mb-1">
+                    Commission Rate (%) <span className="text-[#EF233C]">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    required
+                    value={ruleFormPercentage}
+                    onChange={(e) => setRuleFormPercentage(e.target.value)}
+                    placeholder="1.5"
+                    className="w-full h-10 px-3 border border-gray-200 rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#EF233C]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-gray-700 uppercase block mb-1">
+                    Fixed Fee (NGN)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={ruleFormFixedFee}
+                    onChange={(e) => setRuleFormFixedFee(e.target.value)}
+                    placeholder="0"
+                    className="w-full h-10 px-3 border border-gray-200 rounded-xl text-xs font-medium text-gray-900 focus:outline-none focus:border-[#EF233C]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="ruleActive"
+                  checked={ruleFormIsActive}
+                  onChange={(e) => setRuleFormIsActive(e.target.checked)}
+                  className="rounded text-[#EF233C] focus:ring-[#EF233C]"
+                />
+                <label htmlFor="ruleActive" className="text-xs text-gray-700 font-medium">
+                  Active in calculations & pricing models
+                </label>
+              </div>
+
+              <div className="pt-2 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowRuleModal(false)}
+                  className="flex-1 py-2.5 border border-gray-300 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingRule}
+                  className="flex-1 py-2.5 bg-[#EF233C] hover:bg-[#d91b32] text-white rounded-xl text-xs font-bold uppercase tracking-wider transition shadow flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {savingRule ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                  <span>{editingRule ? 'Update Rule' : 'Create Rule'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

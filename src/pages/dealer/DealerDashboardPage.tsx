@@ -8,6 +8,11 @@ import {
   DealerEnquiryRecord,
 } from '../../services/dealerOperationsService';
 import {
+  commissionService,
+  CommissionRule,
+  CommissionCalculationResult,
+} from '../../services/commissionService';
+import {
   CarFront,
   PlusCircle,
   Clock,
@@ -44,6 +49,32 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
   const [loading, setLoading] = useState<boolean>(true);
 
   const businessName = dealerAccount?.businessName || 'Your Dealership';
+
+  // Dealer Pricing Intelligence State
+  const [intelPrice, setIntelPrice] = useState<string>('25,000,000');
+  const [intelCalc, setIntelCalc] = useState<CommissionCalculationResult | null>(null);
+  const [activeCommissionRules, setActiveCommissionRules] = useState<CommissionRule[]>([]);
+
+  useEffect(() => {
+    commissionService.getActiveRules('NGN').then((rules) => {
+      setActiveCommissionRules(rules);
+    });
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const cleanNum = Number(intelPrice.replace(/[^0-9.]/g, '')) || 0;
+    if (cleanNum > 0) {
+      commissionService.calculateCommission(cleanNum).then((res) => {
+        if (mounted) setIntelCalc(res);
+      });
+    } else {
+      setIntelCalc(null);
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [intelPrice]);
 
   useEffect(() => {
     let mounted = true;
@@ -420,11 +451,284 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
           </div>
         )}
 
-        {/* COMING SOON PROFESSIONAL CARDS FOR UNBUILT SECTIONS (Section 10 Requirement) */}
-        {activeTab !== 'overview' && (
+        {/* TAB: DEALER PRICING INTELLIGENCE (PHASE 4 REQUIREMENT) */}
+        {activeTab === 'pricing-intel' && (
+          <div className="space-y-6">
+            {/* Header Banner */}
+            <div className="bg-[#071A2B] text-white rounded-3xl p-6 sm:p-8 border border-white/10 shadow-xl relative overflow-hidden">
+              <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-600/10 via-transparent to-transparent pointer-events-none" />
+              <div className="relative z-10 max-w-2xl space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-[#EF233C] bg-red-950/80 border border-red-500/20 px-2.5 py-0.5 rounded-full">
+                    Dealer Intelligence Suite
+                  </span>
+                  <span className="text-xs text-gray-400">·</span>
+                  <span className="text-xs font-semibold text-emerald-400">
+                    Live Active Rules (public.commission_rules)
+                  </span>
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white font-display">
+                  Pricing Intelligence & Commission Calculator
+                </h1>
+                <p className="text-xs sm:text-sm text-gray-300 leading-relaxed">
+                  Model vehicle asking prices against MANIFOLD's active commission rules. Understand exact platform fees and determine your net dealership payout before listing vehicles.
+                </p>
+              </div>
+            </div>
+
+            {/* Interactive Calculator Card */}
+            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 sm:p-8 space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-5">
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">
+                    Vehicle Asking Price Simulator
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Enter any asking price (in NGN) or click a quick benchmark preset below.
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate('/dealer/cars/new')}
+                  className="px-4 py-2 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center gap-1.5 shadow-md shadow-red-900/20 self-start sm:self-auto"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>List Vehicle Now</span>
+                </button>
+              </div>
+
+              {/* Price Input & Presets */}
+              <div className="space-y-4">
+                <div className="max-w-md">
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Simulate Vehicle Asking Price (NGN)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-4 flex items-center text-sm font-bold text-gray-500">
+                      ₦
+                    </span>
+                    <input
+                      type="text"
+                      value={intelPrice}
+                      onChange={(e) => setIntelPrice(e.target.value)}
+                      placeholder="25,000,000"
+                      className="w-full h-12 pl-10 pr-4 text-base font-extrabold text-gray-900 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:border-[#EF233C]"
+                    />
+                  </div>
+                </div>
+
+                {/* Benchmark Presets */}
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 block mb-2">
+                    Quick Benchmark Presets:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: '₦8.5M (Tier 1 Tokunbo)', val: '8,500,000' },
+                      { label: '₦15M (Tier 2 Mid SUV)', val: '15,000,000' },
+                      { label: '₦28M (Tier 3 Luxury Sedan)', val: '28,000,000' },
+                      { label: '₦45M (Tier 4 Premium SUV)', val: '45,000,000' },
+                      { label: '₦85M (Tier 5 Exotic/Supercar)', val: '85,000,000' },
+                    ].map((p) => (
+                      <button
+                        key={p.val}
+                        onClick={() => setIntelPrice(p.val)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
+                          intelPrice.replace(/[^0-9]/g, '') === p.val.replace(/[^0-9]/g, '')
+                            ? 'bg-red-50 text-[#EF233C] border-red-200'
+                            : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Calculator Results Grid */}
+              {intelCalc && (
+                <div className="pt-4 border-t border-gray-100">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Tier Card */}
+                    <div className="p-5 rounded-2xl bg-gray-50 border border-gray-200">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+                        Applicable Tier Bracket
+                      </span>
+                      <div className="text-lg font-bold text-gray-900 font-display">
+                        {intelCalc.ruleName || 'Custom Tier'}
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Calculated by active platform rules
+                      </p>
+                    </div>
+
+                    {/* Rate Card */}
+                    <div className="p-5 rounded-2xl bg-gray-50 border border-gray-200">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+                        Commission Take Rate
+                      </span>
+                      <div className="text-2xl font-extrabold text-[#EF233C] font-display">
+                        {intelCalc.commissionPercentage}%
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Success-based upon verified sale
+                      </p>
+                    </div>
+
+                    {/* Estimated Commission */}
+                    <div className="p-5 rounded-2xl bg-red-50/50 border border-red-100">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-red-500 block mb-1">
+                        Estimated MANIFOLD Fee
+                      </span>
+                      <div className="text-2xl font-extrabold text-gray-900 font-display">
+                        ₦{intelCalc.estimatedCommission.toLocaleString()}
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Includes inspection & concierge
+                      </p>
+                    </div>
+
+                    {/* Dealership Payout */}
+                    <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block mb-1">
+                        Guaranteed Dealership Net
+                      </span>
+                      <div className="text-2xl font-extrabold text-emerald-700 font-display">
+                        ₦{intelCalc.estimatedDealerProceeds.toLocaleString()}
+                      </div>
+                      <p className="text-[11px] text-emerald-600 mt-1">
+                        {(
+                          100 - intelCalc.commissionPercentage
+                        ).toFixed(1)}% of total retail price
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Commission Rules Reference Table */}
+            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <BadgeDollarSign className="w-5 h-5 text-[#EF233C]" />
+                  <h3 className="text-base font-bold text-gray-900">
+                    Official MANIFOLD Commission Fee Schedule
+                  </h3>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Platform tiers are transparent and volume-weighted. Higher value inventory incurs lower percentage rates.
+                </p>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-gray-600">
+                  <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 border-b border-gray-200">
+                    <tr>
+                      <th className="py-3.5 px-6">Tier Name</th>
+                      <th className="py-3.5 px-6">Price Bracket (NGN)</th>
+                      <th className="py-3.5 px-6">Brokerage Commission</th>
+                      <th className="py-3.5 px-6">Fixed Fee</th>
+                      <th className="py-3.5 px-6">Dealership Retains</th>
+                      <th className="py-3.5 px-6">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {activeCommissionRules.map((rule) => {
+                      const isCurrentMatch =
+                        intelCalc && intelCalc.ruleId === rule.id;
+                      return (
+                        <tr
+                          key={rule.id}
+                          className={`transition ${
+                            isCurrentMatch
+                              ? 'bg-red-50/60 font-semibold'
+                              : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <td className="py-4 px-6 font-bold text-gray-900">
+                            {rule.name}
+                            {isCurrentMatch && (
+                              <span className="ml-2 text-[10px] bg-[#EF233C] text-white px-2 py-0.5 rounded-full font-bold uppercase">
+                                Selected
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-4 px-6">
+                            ₦{rule.min_price.toLocaleString()} –{' '}
+                            {rule.max_price
+                              ? `₦${rule.max_price.toLocaleString()}`
+                              : 'Above'}
+                          </td>
+                          <td className="py-4 px-6 font-extrabold text-[#EF233C]">
+                            {rule.commission_percentage}%
+                          </td>
+                          <td className="py-4 px-6 text-gray-500">
+                            {rule.fixed_fee > 0
+                              ? `₦${rule.fixed_fee.toLocaleString()}`
+                              : '₦0'}
+                          </td>
+                          <td className="py-4 px-6 text-emerald-700 font-bold">
+                            {(100 - rule.commission_percentage).toFixed(2)}%
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full">
+                              Active
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Strategic Pricing Insights */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-2">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
+                <h4 className="text-sm font-bold text-gray-900">
+                  Sliding Scale Incentive
+                </h4>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Vehicles priced above ₦50M automatically drop to 0.8% commission, rewarding dealers who bring flagship luxury models to MANIFOLD.
+                </p>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-2">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <h4 className="text-sm font-bold text-gray-900">
+                  Zero Upfront Listing Fees
+                </h4>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Listing your vehicle catalog on MANIFOLD is 100% free. No monthly subscription or upfront listing deposit is ever required.
+                </p>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-2">
+                <div className="w-10 h-10 rounded-2xl bg-red-50 text-[#EF233C] flex items-center justify-center">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <h4 className="text-sm font-bold text-gray-900">
+                  High-Trust Video Conversion
+                </h4>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Listings with YouTube video walkarounds attract serious buyers ready to close, reducing negotiation friction and speeding up turnaround.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* COMING SOON PROFESSIONAL CARDS FOR OTHER UNBUILT SECTIONS */}
+        {activeTab !== 'overview' && activeTab !== 'pricing-intel' && (
           <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-8 sm:p-12 text-center max-w-2xl mx-auto space-y-4">
             <div className="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mx-auto text-[#EF233C]">
-              {activeTab === 'pricing-intel' && <TrendingUp className="w-7 h-7" />}
               {activeTab === 'market-intel' && <BarChart3 className="w-7 h-7" />}
               {activeTab === 'news' && <Newspaper className="w-7 h-7" />}
               {activeTab === 'performance' && <LineChart className="w-7 h-7" />}

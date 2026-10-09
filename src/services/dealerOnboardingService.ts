@@ -25,6 +25,8 @@ export interface DealerAccountStatus {
 }
 
 class DealerOnboardingService {
+  private cachedStatus: DealerAccountStatus | null = null;
+
   /**
    * Executes the authoritative PostgreSQL SECURITY DEFINER RPC
    * auth.uid() is resolved internally by Supabase - client NEVER passes user_id
@@ -73,6 +75,22 @@ class DealerOnboardingService {
         return { data: null, error: 'Unable to submit dealer onboarding right now. Please verify your details and try again.' };
       }
 
+      // Successful onboarding submission - seed authoritative cache
+      let resolvedDealerId: string | undefined = undefined;
+      if (typeof data === 'string' && data.length > 5) {
+        resolvedDealerId = data;
+      } else if (data && typeof data === 'object') {
+        resolvedDealerId = (data as any).dealer_id || (data as any).id;
+      }
+
+      this.cachedStatus = {
+        hasAccount: true,
+        dealerId: resolvedDealerId,
+        accountStatus: 'active',
+        onboardingStatus: 'completed',
+        businessName: payload.business_name.trim(),
+      };
+
       return { data, error: null };
     } catch (err: any) {
       console.error('MANIFOLD Dealer Onboarding Unexpected Exception:', err);
@@ -88,6 +106,7 @@ class DealerOnboardingService {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
+        this.cachedStatus = null;
         return { hasAccount: false };
       }
 
@@ -103,6 +122,10 @@ class DealerOnboardingService {
       }
 
       if (!data || !data.dealer_id) {
+        // If query returns empty but we just completed onboarding in this session
+        if (this.cachedStatus?.hasAccount) {
+          return this.cachedStatus;
+        }
         return { hasAccount: false };
       }
 
@@ -111,7 +134,7 @@ class DealerOnboardingService {
       const accountStatus = (rawStatus === 'suspended' || rawStatus === 'rejected') ? rawStatus : 'active';
 
       // Safely look up dealer name
-      let businessName = 'Your Dealership';
+      let businessName = this.cachedStatus?.businessName || 'Your Dealership';
       try {
         const { data: dealerRow } = await supabase
           .from('dealers')
@@ -125,17 +148,27 @@ class DealerOnboardingService {
         // Fallback to default name if table read fails
       }
 
-      return {
+      const resolvedStatus: DealerAccountStatus = {
         hasAccount: true,
         dealerId: data.dealer_id,
         accountStatus,
         onboardingStatus: data.onboarding_status || 'completed',
         businessName,
       };
+
+      this.cachedStatus = resolvedStatus;
+      return resolvedStatus;
     } catch (err) {
       console.warn('Could not check dealer status:', err);
+      if (this.cachedStatus?.hasAccount) {
+        return this.cachedStatus;
+      }
       return { hasAccount: false };
     }
+  }
+
+  public clearCache(): void {
+    this.cachedStatus = null;
   }
 }
 

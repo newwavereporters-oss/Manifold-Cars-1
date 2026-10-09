@@ -22,8 +22,10 @@ import {
   X,
   Info,
   ShieldAlert,
+  TrendingUp,
 } from 'lucide-react';
 import { CarBrand, BodyTypeCategory } from '../../types';
+import { commissionService, CommissionCalculationResult } from '../../services/commissionService';
 
 interface DealerEditCarPageProps {
   carId: string;
@@ -85,6 +87,22 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
   // Submission State
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [priceCalc, setPriceCalc] = useState<CommissionCalculationResult | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const cleanNum = Number(price.replace(/[^0-9.]/g, '')) || 0;
+    if (cleanNum > 0) {
+      commissionService.calculateCommission(cleanNum).then((res) => {
+        if (mounted) setPriceCalc(res);
+      });
+    } else {
+      setPriceCalc(null);
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [price]);
 
   // Load car and options
   useEffect(() => {
@@ -603,6 +621,42 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
                 </div>
               </div>
             </div>
+
+            {/* DEALER PRICING INTELLIGENCE LIVE PREVIEW */}
+            {priceCalc && priceCalc.applicable && (
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-red-50/70 to-slate-50 border border-red-100 shadow-sm space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-[#EF233C]" />
+                    <span className="text-xs font-bold text-gray-900 font-display">
+                      Pricing Intelligence · {priceCalc.ruleName || 'Commission Tier'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-extrabold text-[#EF233C] bg-red-100/70 border border-red-200 px-2.5 py-0.5 rounded-full">
+                    {priceCalc.commissionPercentage}% Success Fee
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-200/60 text-xs">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-gray-500 block">
+                      Estimated MANIFOLD Fee
+                    </span>
+                    <span className="font-extrabold text-gray-800 text-sm">
+                      ₦{priceCalc.estimatedCommission.toLocaleString()}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-gray-500 block">
+                      Estimated Dealership Net Proceeds
+                    </span>
+                    <span className="font-extrabold text-emerald-600 text-sm">
+                      ₦{priceCalc.estimatedDealerProceeds.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* SECTION 3: LOCATION */}

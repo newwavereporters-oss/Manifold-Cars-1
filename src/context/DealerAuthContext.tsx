@@ -241,6 +241,7 @@ export const DealerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     } catch (e) {
       console.warn('Dealer sign out notice:', e);
     }
+    dealerOnboardingService.clearCache();
     setUser(null);
     setSession(null);
     setDealerAccount(null);
@@ -253,7 +254,11 @@ export const DealerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setSession(freshSession);
         setUser(freshSession.user);
       }
-      const status = await fetchDealerAccount(freshSession);
+      let status = await fetchDealerAccount(freshSession);
+      if (!status?.hasAccount && freshSession?.user) {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        status = await fetchDealerAccount(freshSession);
+      }
       return status || { hasAccount: false };
     } catch {
       return { hasAccount: false };
