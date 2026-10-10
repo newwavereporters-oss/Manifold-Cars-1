@@ -39,7 +39,10 @@ import {
   Calculator,
   Percent,
   Loader2,
+  Globe,
+  Sparkles,
 } from 'lucide-react';
+import { AdminMarketIntelligenceView } from '../../components/admin/AdminMarketIntelligenceView';
 import { useAuth } from '../../context/AuthContext';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../../data/mockCars';
 import { Car, CarBrand, BodyTypeCategory } from '../../types';
@@ -74,6 +77,7 @@ export type AdminTabType =
   | 'dealers'
   | 'sales'
   | 'commissions'
+  | 'intelligence'
   | 'settings';
 
 interface AdminDashboardPageProps {
@@ -100,6 +104,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     if (route.startsWith('/admin/inspections')) return 'inspections';
     if (route.startsWith('/admin/commissions') || route.startsWith('/admin/commission-rules')) return 'commissions';
     if (route.startsWith('/admin/sales')) return 'sales';
+    if (route.startsWith('/admin/market-intelligence') || route.startsWith('/admin/intelligence')) return 'intelligence';
     if (route.startsWith('/admin/settings')) return 'settings';
     return defaultTab;
   };
@@ -127,6 +132,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       dealers: '/admin/dealers',
       sales: '/admin/sales',
       commissions: '/admin/commissions',
+      intelligence: '/admin/market-intelligence',
       settings: '/admin/settings',
     };
     navigate(routeMap[tab]);
@@ -927,6 +933,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             >
               <BadgeDollarSign className="w-4 h-4" />
               <span>Commission Rules ({commissionRules.length})</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('intelligence')}
+              className={`py-3 px-1 border-b-2 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer ${
+                activeTab === 'intelligence'
+                  ? 'border-[#EF233C] text-[#EF233C]'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              <Globe className="w-4 h-4" />
+              <span>Market Intelligence</span>
             </button>
 
             <button
@@ -2072,7 +2090,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </div>
         )}
 
-        {/* TAB 9: DATABASE & SETTINGS */}
+        {/* TAB 9: MARKET INTELLIGENCE CENTRE */}
+        {activeTab === 'intelligence' && (
+          <AdminMarketIntelligenceView />
+        )}
+
+        {/* TAB 10: DATABASE & SETTINGS */}
         {activeTab === 'settings' && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-6">
             <div>
