@@ -968,11 +968,15 @@ app.get('/api/market-intelligence/db-migration-status', async (req: Request, res
   ];
 
   for (const t of tables) {
-    const { data: _d, error, count } = await supabase.from(t).select('*', { count: 'exact', head: true });
+    const { error } = await supabase.from(t).select('id').limit(1);
     if (error) {
-      tableChecks[t] = { exists: false, code: error.code, error: error.message };
+      const msg = error.code === '42501'
+        ? 'Permission denied (table requires least-privilege migration grants)'
+        : (error.message || `Table not accessible (code: ${error.code})`);
+      tableChecks[t] = { exists: false, code: error.code, error: msg };
     } else {
-      tableChecks[t] = { exists: true, count };
+      const { count } = await supabase.from(t).select('id', { count: 'exact', head: true });
+      tableChecks[t] = { exists: true, count: count ?? 0 };
     }
   }
 

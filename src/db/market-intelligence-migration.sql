@@ -32,9 +32,9 @@ BEGIN
 END;
 $$;
 
--- Revoke direct execution from public and anon, grant only to authenticated API roles
+-- Grant execution to anon, authenticated, and service_role so RLS expressions evaluate cleanly
 REVOKE ALL ON FUNCTION public.is_active_admin() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.is_active_admin() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.is_active_admin() TO anon, authenticated, service_role;
 
 -- ==============================================================================
 -- 2. MARKET DATA SOURCES
@@ -287,7 +287,7 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
 BEGIN
   -- Strict security filter: only approved records in public knowledge base
