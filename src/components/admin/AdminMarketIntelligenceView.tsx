@@ -415,10 +415,10 @@ export const AdminMarketIntelligenceView: React.FC = () => {
     setSrcName('');
     setSrcBaseUrl('');
     setSrcType('marketplace');
-    setSrcTrust('verified');
-    setSrcFreq('daily');
+    setSrcTrust('unverified');
+    setSrcFreq('weekly');
     setSrcActive(true);
-    setSrcCrawlEnabled(true);
+    setSrcCrawlEnabled(false);
     setSrcNotes('');
     setShowSourceModal(true);
   };

@@ -1166,6 +1166,7 @@ app.post('/api/market-intelligence/search-knowledge', async (req: Request, res: 
     const { data, error } = await supabase
       .from('knowledge_base')
       .select('id, title, content, category, metadata, source_url')
+      .eq('status', 'approved')
       .ilike('content', `%${query}%`)
       .limit(limit);
 
