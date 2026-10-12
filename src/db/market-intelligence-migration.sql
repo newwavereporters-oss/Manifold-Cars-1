@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- MANIFOLD Automotive Marketplace — Market Intelligence Schema & Knowledge Base
--- Phase 1C: Hardened Database Security, Least-Privilege RLS & Clean Knowledge Base
+-- Phase 1D: Hardened Database Security, Compatibility Hotfix & Clean Persistence
 -- ==============================================================================
 
 -- 0. Required Extensions (uuid-ossp & pgvector)
@@ -11,7 +11,11 @@ DO $$
 BEGIN
   CREATE EXTENSION IF NOT EXISTS vector;
 EXCEPTION WHEN OTHERS THEN
-  RAISE NOTICE 'pgvector extension not available or permission restricted. Vector similarity will activate once enabled.';
+  BEGIN
+    CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'pgvector extension not available or permission restricted. Vector similarity will activate once enabled.';
+  END;
 END $$;
 
 -- ==============================================================================
@@ -38,12 +42,15 @@ GRANT EXECUTE ON FUNCTION public.is_active_admin() TO anon, authenticated, servi
 
 -- ==============================================================================
 -- 2. MARKET DATA SOURCES
--- Default trust_level is strictly 'unverified'. crawl_enabled defaults to FALSE.
--- Added UNIQUE constraint on name so seeding is idempotent and conflict-safe.
+-- Canonical compatibility: The live schema was originally created with column 'source_name' (NOT NULL).
+-- Application queries and TypeScript interfaces reference 'name'.
+-- We ensure BOTH columns exist, synchronize them bidirectionally, maintain consistency with a trigger,
+-- and seed both columns without violating any NOT NULL constraint.
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.market_data_sources (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL UNIQUE,
+  name TEXT,
+  source_name TEXT,
   base_url TEXT,
   source_type TEXT NOT NULL DEFAULT 'marketplace',
   trust_level TEXT NOT NULL DEFAULT 'unverified', -- 'unverified', 'verified', 'partner', 'official'
@@ -58,8 +65,9 @@ CREATE TABLE IF NOT EXISTS public.market_data_sources (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Ensure columns exist if table was previously partially created
+-- Ensure all expected columns exist if table was previously partially created
 ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS source_name TEXT;
 ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS base_url TEXT;
 ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'marketplace';
 ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS trust_level TEXT DEFAULT 'unverified';
@@ -70,18 +78,40 @@ ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS last_successful_
 ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS last_error TEXT;
 ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.market_data_sources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
--- Ensure UNIQUE constraint on name for safe ON CONFLICT handling
-DO $$
+-- Synchronize existing records bidirectionally between name and source_name
+UPDATE public.market_data_sources
+SET name = source_name
+WHERE name IS NULL AND source_name IS NOT NULL;
+
+UPDATE public.market_data_sources
+SET source_name = name
+WHERE source_name IS NULL AND name IS NOT NULL;
+
+-- Automatically keep name and source_name in sync on all future inserts and updates
+CREATE OR REPLACE FUNCTION public.sync_market_data_source_names()
+RETURNS TRIGGER AS $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'uq_market_data_sources_name'
-  ) THEN
-    ALTER TABLE public.market_data_sources ADD CONSTRAINT uq_market_data_sources_name UNIQUE (name);
+  IF NEW.name IS NULL AND NEW.source_name IS NOT NULL THEN
+    NEW.name := NEW.source_name;
+  ELSIF NEW.source_name IS NULL AND NEW.name IS NOT NULL THEN
+    NEW.source_name := NEW.name;
   END IF;
-EXCEPTION WHEN OTHERS THEN
-  NULL;
-END $$;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_sync_market_data_source_names ON public.market_data_sources;
+CREATE TRIGGER trg_sync_market_data_source_names
+  BEFORE INSERT OR UPDATE ON public.market_data_sources
+  FOR EACH ROW
+  EXECUTE FUNCTION public.sync_market_data_source_names();
+
+-- Safe unique indexes for idempotent lookups (does not fail if differing constraint names exist)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mkt_sources_name_unique ON public.market_data_sources(name) WHERE name IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mkt_sources_source_name_unique ON public.market_data_sources(source_name) WHERE source_name IS NOT NULL;
 
 -- ==============================================================================
 -- 3. MARKET DATA SUBMISSIONS
@@ -122,6 +152,11 @@ ALTER TABLE public.market_data_submissions ADD COLUMN IF NOT EXISTS status TEXT 
 ALTER TABLE public.market_data_submissions ADD COLUMN IF NOT EXISTS items_count INTEGER DEFAULT 0;
 ALTER TABLE public.market_data_submissions ADD COLUMN IF NOT EXISTS error_message TEXT;
 ALTER TABLE public.market_data_submissions ADD COLUMN IF NOT EXISTS submitted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+ALTER TABLE public.market_data_submissions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.market_data_submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Ensure safe default on submission_type
+ALTER TABLE public.market_data_submissions ALTER COLUMN submission_type SET DEFAULT 'text';
 
 -- ==============================================================================
 -- 4. MARKET CRAWL JOBS
@@ -150,6 +185,7 @@ ALTER TABLE public.market_crawl_jobs ADD COLUMN IF NOT EXISTS extracted_count IN
 ALTER TABLE public.market_crawl_jobs ADD COLUMN IF NOT EXISTS last_error TEXT;
 ALTER TABLE public.market_crawl_jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE public.market_crawl_jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+ALTER TABLE public.market_crawl_jobs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 
 -- ==============================================================================
 -- 5. MARKET PRICE OBSERVATIONS
@@ -216,6 +252,8 @@ ALTER TABLE public.market_price_observations ADD COLUMN IF NOT EXISTS evidence_t
 ALTER TABLE public.market_price_observations ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE public.market_price_observations ADD COLUMN IF NOT EXISTS is_synced_to_knowledge_base BOOLEAN DEFAULT false;
 ALTER TABLE public.market_price_observations ADD COLUMN IF NOT EXISTS knowledge_base_id UUID;
+ALTER TABLE public.market_price_observations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.market_price_observations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 -- ==============================================================================
 -- 6. MARKET OBSERVATION REVISIONS
@@ -230,6 +268,10 @@ CREATE TABLE IF NOT EXISTS public.market_observation_revisions (
   new_state JSONB NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.market_observation_revisions ADD COLUMN IF NOT EXISTS revised_by TEXT DEFAULT 'Administrator';
+ALTER TABLE public.market_observation_revisions ADD COLUMN IF NOT EXISTS change_summary TEXT;
+ALTER TABLE public.market_observation_revisions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 
 -- ==============================================================================
 -- 7. KNOWLEDGE BASE
@@ -255,6 +297,12 @@ ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS category TEXT DEFAULT
 ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'approved';
 ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Ensure any existing knowledge_base records without status are default approved
+UPDATE public.knowledge_base SET status = 'approved' WHERE status IS NULL;
+ALTER TABLE public.knowledge_base ALTER COLUMN status SET DEFAULT 'approved';
 
 -- Safely add 768-dimensional vector column if vector extension is active
 DO $$
@@ -271,46 +319,53 @@ END $$;
 -- Hardened against exposing private, draft, or unapproved records.
 -- Restricts retrieval to approved status and enforces safe search path.
 -- ==============================================================================
-CREATE OR REPLACE FUNCTION public.match_knowledge(
-  query_embedding vector(768),
-  match_threshold float DEFAULT 0.5,
-  match_count int DEFAULT 5
-)
-RETURNS TABLE (
-  id UUID,
-  title TEXT,
-  content TEXT,
-  category TEXT,
-  metadata JSONB,
-  similarity float
-)
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
-AS $$
+DO $$
 BEGIN
-  -- Strict security filter: only approved records in public knowledge base
-  RETURN QUERY
-  SELECT
-    kb.id,
-    kb.title,
-    kb.content,
-    kb.category,
-    kb.metadata,
-    (1 - (kb.embedding <=> query_embedding))::float AS similarity
-  FROM public.knowledge_base kb
-  WHERE kb.embedding IS NOT NULL
-    AND kb.status = 'approved'
-    AND (1 - (kb.embedding <=> query_embedding)) > match_threshold
-  ORDER BY similarity DESC
-  LIMIT match_count;
-END;
-$$;
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vector') THEN
+    EXECUTE $func$
+      CREATE OR REPLACE FUNCTION public.match_knowledge(
+        query_embedding vector(768),
+        match_threshold float DEFAULT 0.5,
+        match_count int DEFAULT 5
+      )
+      RETURNS TABLE (
+        id UUID,
+        title TEXT,
+        content TEXT,
+        category TEXT,
+        metadata JSONB,
+        similarity float
+      )
+      LANGUAGE plpgsql
+      STABLE
+      SECURITY DEFINER
+      SET search_path = public, extensions, pg_temp
+      AS $body$
+      BEGIN
+        -- Strict security filter: only approved records in public knowledge base
+        RETURN QUERY
+        SELECT
+          kb.id,
+          kb.title,
+          kb.content,
+          kb.category,
+          kb.metadata,
+          (1 - (kb.embedding <=> query_embedding))::float AS similarity
+        FROM public.knowledge_base kb
+        WHERE kb.embedding IS NOT NULL
+          AND kb.status = 'approved'
+          AND (1 - (kb.embedding <=> query_embedding)) > match_threshold
+        ORDER BY similarity DESC
+        LIMIT match_count;
+      END;
+      $body$;
 
--- Revoke execution from PUBLIC; grant explicitly to API roles
-REVOKE ALL ON FUNCTION public.match_knowledge(vector(768), float, int) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.match_knowledge(vector(768), float, int) TO anon, authenticated, service_role;
+      -- Revoke execution from PUBLIC; grant explicitly to API roles
+      REVOKE ALL ON FUNCTION public.match_knowledge(vector(768), float, int) FROM PUBLIC;
+      GRANT EXECUTE ON FUNCTION public.match_knowledge(vector(768), float, int) TO anon, authenticated, service_role;
+    $func$;
+  END IF;
+END $$;
 
 -- ==============================================================================
 -- 9. PERFORMANCE INDEXES
@@ -324,14 +379,26 @@ CREATE INDEX IF NOT EXISTS idx_mkt_obs_created_at ON public.market_price_observa
 CREATE INDEX IF NOT EXISTS idx_mkt_crawl_jobs_status ON public.market_crawl_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_mkt_revisions_obs_id ON public.market_observation_revisions(observation_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_base_status ON public.knowledge_base(status);
-CREATE INDEX IF NOT EXISTS idx_knowledge_base_fts ON public.knowledge_base USING GIN(fts);
 CREATE INDEX IF NOT EXISTS idx_knowledge_base_category ON public.knowledge_base(category);
+
+-- Safe GIN index on fts if column exists
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' AND table_name = 'knowledge_base' AND column_name = 'fts'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_knowledge_base_fts ON public.knowledge_base USING GIN(fts);
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
 
 -- ==============================================================================
 -- 10. ROW LEVEL SECURITY (RLS) POLICIES
 -- Strict least-privilege isolation:
--- - Active admins have FULL management rights.
--- - Public / Dealers may ONLY SELECT approved observations and approved knowledge.
+-- - Active admins have FULL management rights across all tables.
+-- - Public / Dealers may ONLY SELECT approved observations, active sources, and approved knowledge.
 -- - Submissions, crawl jobs, and unapproved records are NEVER exposed to non-admins.
 -- ==============================================================================
 ALTER TABLE public.market_data_sources ENABLE ROW LEVEL SECURITY;
@@ -400,9 +467,8 @@ CREATE POLICY "Public and dealers query knowledge base" ON public.knowledge_base
 
 -- ==============================================================================
 -- 11. LEAST-PRIVILEGE TABLE GRANTS
--- Replace blanket GRANT ALL with specific granular permissions.
+-- Replace blanket GRANT ALL with specific granular permissions governed by RLS.
 -- ==============================================================================
--- Revoke any preexisting broad grants
 REVOKE ALL ON public.market_data_sources FROM anon, authenticated;
 REVOKE ALL ON public.market_data_submissions FROM anon, authenticated;
 REVOKE ALL ON public.market_crawl_jobs FROM anon, authenticated;
@@ -410,20 +476,23 @@ REVOKE ALL ON public.market_price_observations FROM anon, authenticated;
 REVOKE ALL ON public.market_observation_revisions FROM anon, authenticated;
 REVOKE ALL ON public.knowledge_base FROM anon, authenticated;
 
--- Read-only grants governed by RLS
+-- SELECT is granted to API roles; actual row access is strictly governed by RLS policies
 GRANT SELECT ON public.market_data_sources TO anon, authenticated;
+GRANT SELECT ON public.market_data_submissions TO anon, authenticated;
+GRANT SELECT ON public.market_crawl_jobs TO anon, authenticated;
 GRANT SELECT ON public.market_price_observations TO anon, authenticated;
+GRANT SELECT ON public.market_observation_revisions TO anon, authenticated;
 GRANT SELECT ON public.knowledge_base TO anon, authenticated;
 
 -- Authenticated roles have DML privileges, strictly bounded by is_active_admin() RLS policies
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.market_data_sources TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.market_data_submissions TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.market_crawl_jobs TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.market_price_observations TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.market_observation_revisions TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.knowledge_base TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.market_data_sources TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.market_data_submissions TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.market_crawl_jobs TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.market_price_observations TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.market_observation_revisions TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.knowledge_base TO authenticated;
 
--- Service role retains full system access
+-- Service role retains full administrative access
 GRANT ALL ON public.market_data_sources TO service_role;
 GRANT ALL ON public.market_data_submissions TO service_role;
 GRANT ALL ON public.market_crawl_jobs TO service_role;
@@ -433,17 +502,135 @@ GRANT ALL ON public.knowledge_base TO service_role;
 
 -- ==============================================================================
 -- 12. INITIAL SOURCE SEEDING (Safely Repeatable & Unverified by Default)
+-- Both 'name' and 'source_name' are populated to satisfy all existing constraints.
 -- Sources start as 'unverified' with crawl_enabled = FALSE.
 -- Crawling must be explicitly assessed and activated by an administrator.
 -- ==============================================================================
-INSERT INTO public.market_data_sources (name, base_url, source_type, trust_level, is_active, crawl_enabled, crawl_frequency, notes)
-VALUES
-  ('Jiji Autos Nigeria', 'https://jiji.ng/cars', 'marketplace', 'unverified', true, false, 'daily', 'Nigerian classifieds marketplace. Crawling pending admin review.'),
-  ('Cars45 / Autochek Africa', 'https://autochek.africa/ng/cars-for-sale', 'marketplace', 'unverified', true, false, 'daily', 'Wholesale/retail vehicle pricing platform. Crawling pending admin review.'),
-  ('Carmart Nigeria', 'https://carmart.ng', 'marketplace', 'unverified', true, false, 'weekly', 'Nigerian automotive portal. Crawling pending admin review.'),
-  ('Naijauto Direct', 'https://naijauto.com/cars-for-sale', 'classifieds', 'unverified', true, false, 'weekly', 'Automotive listings aggregator. Crawling pending admin review.'),
-  ('MANIFOLD Partner Dealer Desk', 'https://manifold.ng', 'dealer_site', 'unverified', true, false, 'manual', 'Direct consignments and dealer feed ingestions. Pending verification.')
-ON CONFLICT (name) DO UPDATE SET
-  base_url = EXCLUDED.base_url,
-  source_type = EXCLUDED.source_type,
-  updated_at = NOW();
+DO $$
+DECLARE
+  src RECORD;
+  sources_data JSONB := '[
+    {
+      "name": "Jiji Autos Nigeria",
+      "source_name": "Jiji Autos Nigeria",
+      "base_url": "https://jiji.ng/cars",
+      "source_type": "marketplace",
+      "trust_level": "unverified",
+      "is_active": true,
+      "crawl_enabled": false,
+      "crawl_frequency": "daily",
+      "notes": "Nigerian classifieds marketplace. Crawling pending admin review."
+    },
+    {
+      "name": "Cars45 / Autochek Africa",
+      "source_name": "Cars45 / Autochek Africa",
+      "base_url": "https://autochek.africa/ng/cars-for-sale",
+      "source_type": "marketplace",
+      "trust_level": "unverified",
+      "is_active": true,
+      "crawl_enabled": false,
+      "crawl_frequency": "daily",
+      "notes": "Wholesale/retail vehicle pricing platform. Crawling pending admin review."
+    },
+    {
+      "name": "Carmart Nigeria",
+      "source_name": "Carmart Nigeria",
+      "base_url": "https://carmart.ng",
+      "source_type": "marketplace",
+      "trust_level": "unverified",
+      "is_active": true,
+      "crawl_enabled": false,
+      "crawl_frequency": "weekly",
+      "notes": "Nigerian automotive portal. Crawling pending admin review."
+    },
+    {
+      "name": "Naijauto Direct",
+      "source_name": "Naijauto Direct",
+      "base_url": "https://naijauto.com/cars-for-sale",
+      "source_type": "classifieds",
+      "trust_level": "unverified",
+      "is_active": true,
+      "crawl_enabled": false,
+      "crawl_frequency": "weekly",
+      "notes": "Automotive listings aggregator. Crawling pending admin review."
+    },
+    {
+      "name": "MANIFOLD Partner Dealer Desk",
+      "source_name": "MANIFOLD Partner Dealer Desk",
+      "base_url": "https://manifold.ng",
+      "source_type": "dealer_site",
+      "trust_level": "unverified",
+      "is_active": true,
+      "crawl_enabled": false,
+      "crawl_frequency": "manual",
+      "notes": "Direct consignments and dealer feed ingestions. Pending verification."
+    }
+  ]'::jsonb;
+BEGIN
+  FOR src IN SELECT * FROM jsonb_to_recordset(sources_data) AS x(
+    name TEXT,
+    source_name TEXT,
+    base_url TEXT,
+    source_type TEXT,
+    trust_level TEXT,
+    is_active BOOLEAN,
+    crawl_enabled BOOLEAN,
+    crawl_frequency TEXT,
+    notes TEXT
+  )
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM public.market_data_sources
+      WHERE name = src.name
+         OR source_name = src.source_name
+         OR (base_url IS NOT NULL AND base_url = src.base_url)
+    ) THEN
+      INSERT INTO public.market_data_sources (
+        name,
+        source_name,
+        base_url,
+        source_type,
+        trust_level,
+        is_active,
+        crawl_enabled,
+        crawl_frequency,
+        notes
+      ) VALUES (
+        src.name,
+        src.source_name,
+        src.base_url,
+        src.source_type,
+        src.trust_level,
+        src.is_active,
+        src.crawl_enabled,
+        src.crawl_frequency,
+        src.notes
+      );
+    ELSE
+      -- Safely update without touching existing IDs or changing crawl_enabled/trust_level
+      UPDATE public.market_data_sources
+      SET
+        name = COALESCE(name, src.name),
+        source_name = COALESCE(source_name, src.source_name),
+        base_url = COALESCE(base_url, src.base_url),
+        source_type = COALESCE(source_type, src.source_type),
+        notes = COALESCE(notes, src.notes),
+        updated_at = NOW()
+      WHERE (name = src.name OR source_name = src.source_name OR (base_url IS NOT NULL AND base_url = src.base_url))
+        AND (name IS NULL OR source_name IS NULL OR base_url IS NULL);
+    END IF;
+  END LOOP;
+END $$;
+
+-- ==============================================================================
+-- 13. AUDIT CLEANUP: REMOVE DEMO & MOCK DATA FROM TRUSTED INTEL
+-- ==============================================================================
+DELETE FROM public.market_price_observations
+WHERE publisher = 'Mock Crawler'
+   OR source_url LIKE '%example.com%'
+   OR notes LIKE '%demo vehicle%';
+
+DELETE FROM public.knowledge_base
+WHERE source_url LIKE '%example.com%'
+   OR metadata->>'is_mock' = 'true'
+   OR title ILIKE '%[Demo]%';

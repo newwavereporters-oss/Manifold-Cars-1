@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { HomePage } from './pages/HomePage';
+import { ManifoldWorldPage } from './pages/ManifoldWorldPage';
 import { ListingsPage } from './pages/ListingsPage';
 import { CarDetailPage } from './pages/CarDetailPage';
 import { CarHuntPage } from './pages/CarHuntPage';
@@ -173,6 +174,13 @@ export function App() {
       return;
     }
 
+    // Real Marketplace Entry Route
+    if (path.startsWith('/car-marketplace') || path.startsWith('/marketplace')) {
+      setSelectedCarSlug(null);
+      setCurrentRoute('/car-marketplace');
+      return;
+    }
+
     setSelectedCarSlug(null);
     setCurrentRoute(path.split('?')[0] || '/');
   };
@@ -338,6 +346,16 @@ export function App() {
       {/* Main View Router */}
       <main className="flex-1">
         {currentRoute === '/' && (
+          <ManifoldWorldPage
+            cars={cars}
+            navigate={navigate}
+            onSelectCar={handleSelectCar}
+            onPlayVideo={handlePlayCarVideo}
+            onInterested={(car) => handleOpenInquiry(car)}
+          />
+        )}
+
+        {(currentRoute === '/car-marketplace' || currentRoute === '/marketplace') && (
           <HomePage
             cars={cars}
             favorites={favorites}
@@ -422,15 +440,17 @@ export function App() {
         )}
       </main>
 
-      {/* Global Footer */}
-      <Footer
-        navigate={navigate}
-        onFilterBrand={(brand) => {
-          setFilters((prev) => ({ ...prev, make: brand }));
-          navigate(`/cars?make=${encodeURIComponent(brand)}`);
-        }}
-        onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
-      />
+      {/* Global Footer (Rendered on non-3D world pages for full viewport gaming experience) */}
+      {currentRoute !== '/' && (
+        <Footer
+          navigate={navigate}
+          onFilterBrand={(brand) => {
+            setFilters((prev) => ({ ...prev, make: brand }));
+            navigate(`/cars?make=${encodeURIComponent(brand)}`);
+          }}
+          onOpenAdminLogin={() => setAdminLoginModalOpen(true)}
+        />
+      )}
 
       {/* Admin Sign In Modal */}
       <AdminLoginModal

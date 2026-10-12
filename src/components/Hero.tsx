@@ -94,6 +94,18 @@ export const Hero: React.FC<HeroProps> = ({
                 <span>Concierge Buying</span>
               </div>
             </div>
+
+            {/* In-Game 3D World Gateway */}
+            <div className="pt-1">
+              <button
+                onClick={() => navigate('/')}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-[#EF233C] text-white text-xs font-bold uppercase tracking-wider rounded-xl border border-white/20 hover:border-[#EF233C] transition-all shadow-md group"
+              >
+                <span className="w-2 h-2 rounded-full bg-[#EF233C] group-hover:bg-white" />
+                <span>Play MANIFOLD WORLD (3D Virtual Showroom)</span>
+                <span className="text-gray-400 group-hover:text-white transition-colors">→</span>
+              </button>
+            </div>
           </div>
 
           {/* Right Column: Signature MANIFOLD Trust Card & Presenter Video Teaser */}

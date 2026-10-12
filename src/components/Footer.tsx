@@ -123,6 +123,23 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
             <ul className="space-y-2 text-xs text-gray-400">
               <li>
                 <button
+                  onClick={() => handleNav('/')}
+                  className="hover:text-white transition-colors text-white font-semibold flex items-center gap-1.5"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#EF233C]" />
+                  <span>MANIFOLD WORLD (3D)</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => handleNav('/car-marketplace')}
+                  className="hover:text-white transition-colors"
+                >
+                  Car Marketplace
+                </button>
+              </li>
+              <li>
+                <button
                   onClick={() => handleNav('/cars')}
                   className="hover:text-white transition-colors"
                 >

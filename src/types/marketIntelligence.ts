@@ -26,6 +26,7 @@ export type ObservationStatus =
 export interface MarketDataSource {
   id: string;
   name: string;
+  source_name?: string;
   base_url: string | null;
   source_type: SourceType;
   trust_level: TrustLevel;

@@ -251,7 +251,11 @@ class MarketIntelligenceService {
           .select('*')
           .order('name');
         if (!error && data && data.length > 0) {
-          return data as MarketDataSource[];
+          return data.map((d: any) => ({
+            ...d,
+            name: d.name || d.source_name || 'Unnamed Source',
+            source_name: d.source_name || d.name || 'Unnamed Source',
+          })) as MarketDataSource[];
         }
       } catch (err) {
         console.warn('Failed to fetch sources from Supabase, using local:', err);
@@ -276,6 +280,7 @@ class MarketIntelligenceService {
           .from('market_data_sources')
           .insert({
             name: source.name,
+            source_name: source.source_name || source.name,
             base_url: source.base_url,
             source_type: source.source_type,
             trust_level: source.trust_level,
@@ -288,9 +293,14 @@ class MarketIntelligenceService {
           .single();
 
         if (!error && data) {
-          this.localSources.push(data);
+          const formatted = {
+            ...data,
+            name: data.name || data.source_name,
+            source_name: data.source_name || data.name,
+          };
+          this.localSources.push(formatted);
           this.saveLocalCache();
-          return data;
+          return formatted;
         }
       } catch (err) {
         console.warn('Error inserting source into Supabase:', err);
@@ -306,20 +316,29 @@ class MarketIntelligenceService {
     const status = await this.checkDatabaseStatus();
     if (status.tablesExist) {
       try {
+        const payload: Record<string, any> = {
+          ...updates,
+          updated_at: new Date().toISOString(),
+        };
+        if (updates.name) {
+          payload.source_name = updates.name;
+        }
         const { data, error } = await supabase
           .from('market_data_sources')
-          .update({
-            ...updates,
-            updated_at: new Date().toISOString(),
-          })
+          .update(payload)
           .eq('id', id)
           .select()
           .single();
 
         if (!error && data) {
-          this.localSources = this.localSources.map((s) => (s.id === id ? data : s));
+          const formatted = {
+            ...data,
+            name: data.name || data.source_name,
+            source_name: data.source_name || data.name,
+          };
+          this.localSources = this.localSources.map((s) => (s.id === id ? formatted : s));
           this.saveLocalCache();
-          return data;
+          return formatted;
         }
       } catch (err) {
         console.warn('Error updating source in Supabase:', err);
@@ -338,13 +357,13 @@ class MarketIntelligenceService {
       try {
         const { data, error } = await supabase
           .from('market_data_submissions')
-          .select('*, market_data_sources(name)')
+          .select('*, market_data_sources(name, source_name)')
           .order('created_at', { ascending: false });
 
         if (!error && data) {
           return data.map((sub: any) => ({
             ...sub,
-            source_name: sub.market_data_sources?.name || 'Direct Submission',
+            source_name: sub.market_data_sources?.name || sub.market_data_sources?.source_name || 'Direct Submission',
           }));
         }
       } catch (err) {
@@ -763,7 +782,7 @@ class MarketIntelligenceService {
       try {
         let query = supabase
           .from('market_price_observations')
-          .select('*, market_data_sources(name)')
+          .select('*, market_data_sources(name, source_name)')
           .order('created_at', { ascending: false });
 
         if (filters?.status && filters.status !== 'all') {
@@ -780,7 +799,7 @@ class MarketIntelligenceService {
         if (!error && data) {
           let list: MarketPriceObservation[] = data.map((d: any) => ({
             ...d,
-            source_name: d.market_data_sources?.name || d.publisher || 'External Listing',
+            source_name: d.market_data_sources?.name || d.market_data_sources?.source_name || d.publisher || 'External Listing',
           }));
 
           if (filters?.search) {

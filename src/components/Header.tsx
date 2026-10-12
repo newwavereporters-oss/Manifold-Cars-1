@@ -48,12 +48,13 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   const navItems = [
+    { label: '3D World', route: '/' },
+    { label: 'Marketplace', route: '/car-marketplace' },
     { label: 'Cars', route: '/cars' },
     { label: 'Car Hunt', route: '/car-hunt' },
-    { label: 'Car Reviews', route: '/reviews' },
+    { label: 'Reviews', route: '/reviews' },
     { label: 'Sell a Car', route: '/sell-a-car' },
-    { label: 'Services', route: '/services' },
-    { label: 'About MANIFOLD', route: '/about' },
+    { label: 'About', route: '/about' },
     isAdmin
       ? { label: 'Admin Dashboard', route: '/admin' }
       : isDealer
