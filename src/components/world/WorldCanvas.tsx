@@ -5,9 +5,11 @@ import {
   createWorldEnvironment,
   CarCustomization,
   VehicleModelType,
+  Vehicle3DResult,
   VEHICLE_SPEC_PROFILES,
 } from './worldModels';
-import { engineAudio } from '../../utils/engineAudio';
+import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
+import { HeadlightState, TurnSignalState, CockpitHotspot } from './CockpitDashboardOverlay';
 
 export type CameraViewMode = 'CHASE' | 'COCKPIT' | 'ORBIT' | 'DRONE';
 export type TimeOfDay = 'DAYLIGHT' | 'SUNSET' | 'MIDNIGHT' | 'GOLDEN_HOUR';
@@ -32,6 +34,14 @@ export interface WorldCanvasProps {
     right: boolean;
     handbrake: boolean;
   };
+  isEngineRunning?: boolean;
+  driveMode?: AudioDriveMode;
+  headlightState?: HeadlightState;
+  turnSignal?: TurnSignalState;
+  hazardLights?: boolean;
+  hornActive?: boolean;
+  cockpitHotspot?: CockpitHotspot;
+  onAwardCredits?: (amount: number, reason: string) => void;
 }
 
 export const WorldCanvas: React.FC<WorldCanvasProps> = ({
@@ -48,6 +58,14 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   onCarPositionUpdate,
   isCustomizerOpen = false,
   virtualInput,
+  isEngineRunning = true,
+  driveMode = 'SPORT',
+  headlightState = 'LOW',
+  turnSignal = 'OFF',
+  hazardLights = false,
+  hornActive = false,
+  cockpitHotspot = 'DRIVER',
+  onAwardCredits,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -55,13 +73,13 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const playerCarGroupRef = useRef<THREE.Group | null>(null);
-  const carPaintMatRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const activeVehicleRef = useRef<Vehicle3DResult | null>(null);
   const activeZoneRef = useRef<string | null>(null);
   const dirLightRef = useRef<THREE.DirectionalLight | null>(null);
   const hemiLightRef = useRef<THREE.HemisphereLight | null>(null);
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
 
-  // Wheels and dynamic components
+  // Dynamic Component Refs
   const wheelsRef = useRef<{
     frontLeftWheel: THREE.Group | null;
     frontRightWheel: THREE.Group | null;
@@ -88,169 +106,220 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     steeringAngle: 0,
     wheelSpinAngle: 0,
     isDrifting: false,
+    distanceDriven: 0,
+    lastDistanceMilestone: 0,
   });
 
   // Keyboard input tracker
   const keys = useRef<{ [key: string]: boolean }>({});
+  const lastHornState = useRef<boolean>(false);
 
-  // Speed trap debounce
+  // Speed trap & indicator timers
   const lastSpeedTrapTrigger = useRef<number>(0);
+  const lastBlinkerTick = useRef<number>(0);
+  const blinkerPhase = useRef<boolean>(false);
 
-  // Rebuild or update car paint material when customization changes
+  // Rebuild car model when customization vehicleType or key components change
   useEffect(() => {
-    if (carPaintMatRef.current) {
-      carPaintMatRef.current.color.set(customization.paintColor);
-      carPaintMatRef.current.metalness =
-        customization.finish === 'metallic' ? 0.85 : customization.finish === 'matte' ? 0.15 : 0.45;
-      carPaintMatRef.current.roughness =
-        customization.finish === 'matte' ? 0.55 : customization.finish === 'metallic' ? 0.22 : 0.18;
-    }
-  }, [customization.paintColor, customization.finish]);
+    if (!sceneRef.current || !playerCarGroupRef.current) return;
 
-  // Handle vehicle type switch (swaps the 3D car mesh in the scene while maintaining location)
-  useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
+    // Remove old car group
+    sceneRef.current.remove(playerCarGroupRef.current);
 
-    // Remove old car mesh if exists
-    if (playerCarGroupRef.current) {
-      scene.remove(playerCarGroupRef.current);
-    }
-
-    // Build new vehicle model
-    const newVehicle = createVehicleByType(customization);
-    scene.add(newVehicle.carGroup);
-    playerCarGroupRef.current = newVehicle.carGroup;
-    carPaintMatRef.current = newVehicle.paintMaterial;
+    // Build new car group with latest customization (spoiler, underglow, paint, wheels)
+    const newCar = createVehicleByType(customization);
+    sceneRef.current.add(newCar.carGroup);
+    playerCarGroupRef.current = newCar.carGroup;
+    activeVehicleRef.current = newCar;
 
     wheelsRef.current = {
-      frontLeftWheel: newVehicle.frontLeftWheel,
-      frontRightWheel: newVehicle.frontRightWheel,
-      rearLeftWheel: newVehicle.rearLeftWheel,
-      rearRightWheel: newVehicle.rearRightWheel,
+      frontLeftWheel: newCar.frontLeftWheel,
+      frontRightWheel: newCar.frontRightWheel,
+      rearLeftWheel: newCar.rearLeftWheel,
+      rearRightWheel: newCar.rearRightWheel,
     };
 
-    // Reapply current position and rotation
-    newVehicle.carGroup.position.set(carState.current.x, 0, carState.current.z);
-    newVehicle.carGroup.rotation.y = carState.current.rotation;
-  }, [customization.vehicleType]);
+    // Restore position & heading
+    newCar.carGroup.position.set(carState.current.x, 0, carState.current.z);
+    newCar.carGroup.rotation.y = carState.current.rotation;
+  }, [
+    customization.vehicleType,
+    customization.paintColor,
+    customization.finish,
+    customization.rimColor,
+    customization.caliperColor,
+    customization.spoiler,
+    customization.underglow,
+    customization.windowTint,
+  ]);
 
-  // Lighting updates based on timeOfDay (Bright Daylight Default)
+  // Lighting & Time-of-Day updates
   useEffect(() => {
-    if (!dirLightRef.current || !hemiLightRef.current || !sceneRef.current || !rendererRef.current) return;
+    if (!sceneRef.current || !dirLightRef.current || !hemiLightRef.current || !ambientLightRef.current)
+      return;
 
-    const renderer = rendererRef.current;
-    const scene = sceneRef.current;
     const dirLight = dirLightRef.current;
     const hemiLight = hemiLightRef.current;
     const ambLight = ambientLightRef.current;
+    const scene = sceneRef.current;
 
-    if (timeOfDay === 'DAYLIGHT') {
-      // Natural, bright, high-contrast daylight
-      scene.background = new THREE.Color(0xbfe3f7);
-      scene.fog = new THREE.FogExp2(0xd6eaf8, 0.0018); // very subtle atmospheric horizon haze
-      renderer.toneMappingExposure = 1.25;
-
-      dirLight.color.set(0xfffaed);
-      dirLight.intensity = 2.4;
-      dirLight.position.set(65, 85, 45);
-
-      hemiLight.color.set(0xdbeafe); // Sky tint
-      hemiLight.groundColor.set(0x94a3b8); // Road bounce
-      hemiLight.intensity = 1.35;
-
-      if (ambLight) {
-        ambLight.color.set(0xf1f5f9);
-        ambLight.intensity = 0.65;
-      }
-    } else if (timeOfDay === 'GOLDEN_HOUR') {
-      // Warm late-afternoon golden glow
-      scene.background = new THREE.Color(0xfde68a);
-      scene.fog = new THREE.FogExp2(0xfef3c7, 0.0028);
-      renderer.toneMappingExposure = 1.2;
-
-      dirLight.color.set(0xf59e0b);
-      dirLight.intensity = 2.5;
-      dirLight.position.set(80, 45, 60);
-
-      hemiLight.color.set(0xfde047);
-      hemiLight.groundColor.set(0x78350f);
-      hemiLight.intensity = 1.1;
-
-      if (ambLight) {
-        ambLight.color.set(0xfef08a);
+    switch (timeOfDay) {
+      case 'SUNSET':
+        scene.background = new THREE.Color(0xfb923c);
+        scene.fog = new THREE.FogExp2(0xfdba74, 0.0022);
+        dirLight.color.setHex(0xf97316);
+        dirLight.intensity = 2.0;
+        dirLight.position.set(80, 25, 60);
+        hemiLight.color.setHex(0xfdba74);
+        hemiLight.groundColor.setHex(0x431407);
+        hemiLight.intensity = 1.1;
+        ambLight.color.setHex(0xffedd5);
         ambLight.intensity = 0.55;
-      }
-    } else if (timeOfDay === 'SUNSET') {
-      // Crimson dusk sunset
-      scene.background = new THREE.Color(0x311b38);
-      scene.fog = new THREE.FogExp2(0x311b38, 0.0035);
-      renderer.toneMappingExposure = 1.15;
+        break;
 
-      dirLight.color.set(0xf87171);
-      dirLight.intensity = 2.0;
-      dirLight.position.set(50, 40, 40);
+      case 'MIDNIGHT':
+        scene.background = new THREE.Color(0x020617);
+        scene.fog = new THREE.FogExp2(0x0f172a, 0.0035);
+        dirLight.color.setHex(0x60a5fa);
+        dirLight.intensity = 0.6;
+        dirLight.position.set(40, 70, 30);
+        hemiLight.color.setHex(0x1e293b);
+        hemiLight.groundColor.setHex(0x020617);
+        hemiLight.intensity = 0.45;
+        ambLight.color.setHex(0x1e1b4b);
+        ambLight.intensity = 0.25;
+        break;
 
-      hemiLight.color.set(0xc084fc);
-      hemiLight.groundColor.set(0x1e1b4b);
-      hemiLight.intensity = 0.95;
+      case 'GOLDEN_HOUR':
+        scene.background = new THREE.Color(0xfef08a);
+        scene.fog = new THREE.FogExp2(0xfef9c3, 0.002);
+        dirLight.color.setHex(0xfacc15);
+        dirLight.intensity = 2.6;
+        dirLight.position.set(70, 45, 50);
+        hemiLight.color.setHex(0xfef08a);
+        hemiLight.groundColor.setHex(0x713f12);
+        hemiLight.intensity = 1.25;
+        ambLight.color.setHex(0xfef9c3);
+        ambLight.intensity = 0.6;
+        break;
 
-      if (ambLight) {
-        ambLight.color.set(0xfca5a5);
-        ambLight.intensity = 0.5;
-      }
-    } else {
-      // MIDNIGHT: Illuminated neon track with legible ambient fill
-      scene.background = new THREE.Color(0x0a1128);
-      scene.fog = new THREE.FogExp2(0x0a1128, 0.0045);
-      renderer.toneMappingExposure = 1.1;
-
-      dirLight.color.set(0x38bdf8);
-      dirLight.intensity = 1.0;
-      dirLight.position.set(40, 50, 30);
-
-      hemiLight.color.set(0x3b82f6);
-      hemiLight.groundColor.set(0x0f172a);
-      hemiLight.intensity = 0.8;
-
-      if (ambLight) {
-        ambLight.color.set(0x60a5fa);
-        ambLight.intensity = 0.45;
-      }
+      case 'DAYLIGHT':
+      default:
+        scene.background = new THREE.Color(0xbfe3f7);
+        scene.fog = new THREE.FogExp2(0xd6eaf8, 0.0018);
+        dirLight.color.setHex(0xfffaed);
+        dirLight.intensity = 2.4;
+        dirLight.position.set(65, 85, 45);
+        hemiLight.color.setHex(0xdbeafe);
+        hemiLight.groundColor.setHex(0x94a3b8);
+        hemiLight.intensity = 1.35;
+        ambLight.color.setHex(0xf1f5f9);
+        ambLight.intensity = 0.65;
+        break;
     }
   }, [timeOfDay]);
 
-  // Keyboard Event Handlers
+  // Headlights & Exterior Spotlights state sync
+  useEffect(() => {
+    const v = activeVehicleRef.current;
+    if (!v) return;
+
+    if (headlightState === 'HIGH') {
+      if (v.headlightSpotL) {
+        v.headlightSpotL.intensity = 5.0;
+        v.headlightSpotL.distance = 75;
+        v.headlightSpotL.angle = 0.65;
+      }
+      if (v.headlightSpotR) {
+        v.headlightSpotR.intensity = 5.0;
+        v.headlightSpotR.distance = 75;
+        v.headlightSpotR.angle = 0.65;
+      }
+      v.headlightsGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+          child.material.emissiveIntensity = 4.0;
+        }
+      });
+    } else if (headlightState === 'LOW') {
+      if (v.headlightSpotL) {
+        v.headlightSpotL.intensity = 2.2;
+        v.headlightSpotL.distance = 40;
+        v.headlightSpotL.angle = 0.5;
+      }
+      if (v.headlightSpotR) {
+        v.headlightSpotR.intensity = 2.2;
+        v.headlightSpotR.distance = 40;
+        v.headlightSpotR.angle = 0.5;
+      }
+      v.headlightsGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+          child.material.emissiveIntensity = 2.2;
+        }
+      });
+    } else {
+      // OFF
+      if (v.headlightSpotL) v.headlightSpotL.intensity = 0;
+      if (v.headlightSpotR) v.headlightSpotR.intensity = 0;
+      v.headlightsGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+          child.material.emissiveIntensity = 0.05;
+        }
+      });
+    }
+  }, [headlightState]);
+
+  // Horn keyboard & prop synchronization
+  useEffect(() => {
+    const isHornActiveNow = Boolean(keys.current['h'] || hornActive);
+    if (isHornActiveNow !== lastHornState.current) {
+      lastHornState.current = isHornActiveNow;
+      engineAudio.playHorn(isHornActiveNow);
+    }
+  }, [hornActive]);
+
+  // Keyboard Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
-
-      keys.current[e.key.toLowerCase()] = true;
+      engineAudio.init();
+      const k = e.key.toLowerCase();
+      keys.current[k] = true;
       keys.current[e.code] = true;
 
-      // Interaction key triggers
-      if (e.key.toLowerCase() === 'e') {
-        const zone = activeZoneRef.current;
-        if (zone === 'marketplace' && onEnterMarketplace) {
-          onEnterMarketplace();
-        } else if (zone?.startsWith('car-') && onInspectCar) {
-          onInspectCar(zone);
-        } else if (zone === 'dealer-lounge' && onOpenDealerLounge) {
-          onOpenDealerLounge();
+      // Horn on 'h'
+      if (k === 'h' && !lastHornState.current) {
+        lastHornState.current = true;
+        engineAudio.playHorn(true);
+      }
+
+      // Proximity Action on 'E'
+      if (k === 'e' && activeZoneRef.current) {
+        if (activeZoneRef.current === 'marketplace') {
+          onEnterMarketplace?.();
+        } else if (activeZoneRef.current === 'customizer') {
+          onOpenCustomizer?.();
+        } else if (activeZoneRef.current === 'dealer-lounge') {
+          onOpenDealerLounge?.();
+        } else {
+          onInspectCar?.(activeZoneRef.current);
         }
       }
 
-      if (e.key.toLowerCase() === 'c' && onOpenCustomizer) {
-        onOpenCustomizer();
+      // Customizer shortcut on 'C'
+      if (k === 'c') {
+        onOpenCustomizer?.();
       }
-
-      // Audio init on first user keypress
-      engineAudio.init();
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      keys.current[e.key.toLowerCase()] = false;
+      const k = e.key.toLowerCase();
+      keys.current[k] = false;
       keys.current[e.code] = false;
+
+      // Release Horn on 'h'
+      if (k === 'h' && lastHornState.current) {
+        lastHornState.current = false;
+        engineAudio.playHorn(false);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -271,7 +340,6 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    // Natural daylight defaults
     scene.background = new THREE.Color(0xbfe3f7);
     scene.fog = new THREE.FogExp2(0xd6eaf8, 0.0018);
 
@@ -329,14 +397,14 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     scene.add(showroomSpot.target);
 
     // 4. Build Procedural Environment & Assets
-    const { environmentGroup, podiums, speedTrapGate } = createWorldEnvironment();
+    const { environmentGroup, podiums } = createWorldEnvironment();
     scene.add(environmentGroup);
 
     // 5. Build Drivable Player Car (from active customization type)
     const playerCar = createVehicleByType(customization);
     scene.add(playerCar.carGroup);
     playerCarGroupRef.current = playerCar.carGroup;
-    carPaintMatRef.current = playerCar.paintMaterial;
+    activeVehicleRef.current = playerCar;
 
     wheelsRef.current = {
       frontLeftWheel: playerCar.frontLeftWheel,
@@ -345,7 +413,6 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       rearRightWheel: playerCar.rearRightWheel,
     };
 
-    // Initial position on plaza facing Showroom
     playerCar.carGroup.position.set(0, 0, 10);
     carState.current.x = 0;
     carState.current.z = 10;
@@ -406,61 +473,113 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       };
 
       const cs = carState.current;
-      const spec = vehicleSpecRef.current;
+      const baseSpec = vehicleSpecRef.current;
+
+      // Calculate installed tuning upgrades modifiers
+      const ecu = customization.ecuStage || 0;
+      const ecuAccelBonus = ecu === 2 ? 1.45 : ecu === 1 ? 1.2 : 1.0;
+      const ecuSpeedBonus = ecu === 2 ? 1.22 : ecu === 1 ? 1.12 : 1.0;
+
+      const isTrackSuspension = customization.suspension === 'TRACK';
+      const isSportSuspension = customization.suspension === 'SPORT';
+      const steerSpeedMultiplier = isTrackSuspension ? 1.45 : isSportSuspension ? 1.25 : 1.0;
+
+      const isCarbonBrakes = customization.brakes === 'CARBON_CERAMIC';
+      const brakeDecelEffective = isCarbonBrakes ? 64 : baseSpec.brakeDecel;
+
+      const isSemiSlick = customization.tires === 'SEMI_SLICK';
+      const driftControlMultiplier = isSemiSlick ? 0.75 : 1.0;
+
+      // Drive Mode Adjustments
+      let modeAccelMod = 1.0;
+      let modeSpeedMod = 1.0;
+      let modeSteerMod = 1.0;
+      let modeDriftMod = 1.0;
+
+      if (driveMode === 'TRACK') {
+        modeAccelMod = 1.28;
+        modeSpeedMod = 1.14;
+        modeSteerMod = 1.2;
+      } else if (driveMode === 'SPORT') {
+        modeAccelMod = 1.12;
+        modeSpeedMod = 1.06;
+      } else if (driveMode === 'ECO') {
+        modeAccelMod = 0.75;
+        modeSpeedMod = 0.82;
+      } else if (driveMode === 'DRIFT') {
+        modeAccelMod = 1.1;
+        modeDriftMod = 2.4;
+      }
+
+      const effectiveAccel = baseSpec.acceleration * ecuAccelBonus * modeAccelMod;
+      const effectiveMaxSpeed = baseSpec.maxSpeed * ecuSpeedBonus * modeSpeedMod;
+      const effectiveSteerSpeed = baseSpec.steerSpeed * steerSpeedMultiplier * modeSteerMod;
+
+      // If Engine is OFF, car cannot accelerate
+      const canThrottle = isEngineRunning;
 
       // Throttle & Braking Dynamics
-      if (input.forward) {
+      if (input.forward && canThrottle) {
         if (cs.speed < 0) {
-          cs.speed += spec.brakeDecel * delta;
+          cs.speed += brakeDecelEffective * delta;
         } else {
-          cs.speed = Math.min(cs.speed + spec.acceleration * delta, spec.maxSpeed);
+          cs.speed = Math.min(cs.speed + effectiveAccel * delta, effectiveMaxSpeed);
         }
-      } else if (input.backward) {
+      } else if (input.backward && canThrottle) {
         if (cs.speed > 0) {
-          cs.speed -= spec.brakeDecel * delta;
+          cs.speed -= brakeDecelEffective * delta;
         } else {
-          cs.speed = Math.max(cs.speed - spec.acceleration * 0.55 * delta, -16);
+          cs.speed = Math.max(cs.speed - effectiveAccel * 0.55 * delta, -18);
         }
       } else {
-        // Natural deceleration / Rolling resistance
+        // Natural rolling resistance
         if (cs.speed > 0) {
-          cs.speed = Math.max(0, cs.speed - spec.deceleration * delta);
+          cs.speed = Math.max(0, cs.speed - baseSpec.deceleration * delta);
         } else if (cs.speed < 0) {
-          cs.speed = Math.min(0, cs.speed + spec.deceleration * delta);
+          cs.speed = Math.min(0, cs.speed + baseSpec.deceleration * delta);
         }
       }
 
       // Handbrake drift
       if (input.handbrake) {
-        cs.isDrifting = Math.abs(cs.speed) > 10;
-        cs.speed *= Math.pow(0.88, delta * 30);
+        cs.isDrifting = Math.abs(cs.speed) > 9;
+        cs.speed *= Math.pow(0.89, delta * 30);
       } else {
         cs.isDrifting = false;
       }
 
-      // Speed-based steering damping (prevents high-speed rollover)
-      const speedSteerFactor = Math.max(0.32, 1 - Math.abs(cs.speed) / (spec.maxSpeed * 1.35));
+      // Speed-based steering damping
+      const speedSteerFactor = Math.max(0.32, 1 - Math.abs(cs.speed) / (effectiveMaxSpeed * 1.35));
       const targetSteer = input.left
-        ? spec.maxSteer * speedSteerFactor
+        ? baseSpec.maxSteer * speedSteerFactor
         : input.right
-        ? -spec.maxSteer * speedSteerFactor
+        ? -baseSpec.maxSteer * speedSteerFactor
         : 0;
 
-      cs.steeringAngle += (targetSteer - cs.steeringAngle) * spec.steerSpeed * delta * 4;
+      cs.steeringAngle += (targetSteer - cs.steeringAngle) * effectiveSteerSpeed * delta * 4;
 
       // Heading rotation with drift authority
       if (Math.abs(cs.speed) > 0.05) {
         const turnDirection = cs.speed > 0 ? 1 : -1;
-        const driftMultiplier = cs.isDrifting ? 1.6 : 1.0;
+        const driftMultiplier = (cs.isDrifting ? 1.7 : 1.0) * modeDriftMod * driftControlMultiplier;
         cs.rotation +=
-          (cs.steeringAngle * (cs.speed / spec.maxSpeed) * 2.8 * turnDirection * delta) * driftMultiplier;
+          (cs.steeringAngle * (cs.speed / effectiveMaxSpeed) * 2.8 * turnDirection * delta) *
+          driftMultiplier;
       }
 
       // Calculate translation vector
       const vx = Math.sin(cs.rotation) * cs.speed * delta;
       const vz = Math.cos(cs.rotation) * cs.speed * delta;
 
-      // Track boundaries: -175 to 175
+      // Track distance driven for economy rewards
+      const stepDistance = Math.hypot(vx, vz);
+      cs.distanceDriven += stepDistance;
+      if (cs.distanceDriven - cs.lastDistanceMilestone > 250) {
+        cs.lastDistanceMilestone = cs.distanceDriven;
+        onAwardCredits?.(25, 'Distance Cruise Bonus');
+      }
+
+      // Track boundaries: -185 to 185
       const nextX = cs.x + vx;
       const nextZ = cs.z + vz;
 
@@ -500,33 +619,63 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         wheels.rearRightWheel.rotation.x = -cs.wheelSpinAngle;
       }
 
-      // Engine audio synthesis update
+      // Exterior Turn Signals & Hazard Blinking sync
+      const isBlinkingNow =
+        (turnSignal !== 'OFF' || hazardLights) && Math.floor(currentTime / 450) % 2 === 0;
+
+      if (activeVehicleRef.current?.turnSignalMeshes) {
+        const { frontLeft, frontRight, rearLeft, rearRight } = activeVehicleRef.current.turnSignalMeshes;
+        const leftBlink = (turnSignal === 'LEFT' || hazardLights) && isBlinkingNow;
+        const rightBlink = (turnSignal === 'RIGHT' || hazardLights) && isBlinkingNow;
+
+        (frontLeft.material as THREE.MeshStandardMaterial).emissiveIntensity = leftBlink ? 3.5 : 0.05;
+        (rearLeft.material as THREE.MeshStandardMaterial).emissiveIntensity = leftBlink ? 3.5 : 0.05;
+
+        (frontRight.material as THREE.MeshStandardMaterial).emissiveIntensity = rightBlink ? 3.5 : 0.05;
+        (rearRight.material as THREE.MeshStandardMaterial).emissiveIntensity = rightBlink ? 3.5 : 0.05;
+
+        // Audio Tick on phase switch
+        if (isBlinkingNow !== blinkerPhase.current) {
+          blinkerPhase.current = isBlinkingNow;
+          if (currentTime - lastBlinkerTick.current > 350) {
+            lastBlinkerTick.current = currentTime;
+            engineAudio.playTurnSignalClick(isBlinkingNow ? 'on' : 'off');
+          }
+        }
+      }
+
+      // Engine audio synthesis update with dynamic acceleration load and vehicle profile
       engineAudio.update(
         cs.speed,
-        spec.maxSpeed,
-        input.forward || input.backward,
-        input.backward && cs.speed > 0,
-        cs.isDrifting
+        effectiveMaxSpeed,
+        canThrottle && (input.forward || input.backward),
+        canThrottle && input.backward && cs.speed > 0,
+        cs.isDrifting,
+        driveMode,
+        currentVehicleType
       );
 
       // HUD Telemetry (Speed km/h, RPM, Gear)
       const speedKmh = Math.round(Math.abs(cs.speed) * 4.6);
-      const speedRatio = Math.abs(cs.speed) / spec.maxSpeed;
-      const rpm = Math.round(spec.idleRpm + speedRatio * (spec.redlineRpm - spec.idleRpm));
-      const gear =
-        cs.speed < -0.5
-          ? 'R'
-          : Math.abs(cs.speed) < 0.2
-          ? 'P'
-          : speedKmh < 35
-          ? 'D1'
-          : speedKmh < 70
-          ? 'D2'
-          : speedKmh < 110
-          ? 'D3'
-          : speedKmh < 155
-          ? 'D4'
-          : 'D5';
+      const speedRatio = Math.abs(cs.speed) / effectiveMaxSpeed;
+      const rpm = Math.round(baseSpec.idleRpm + speedRatio * (baseSpec.redlineRpm - baseSpec.idleRpm));
+      const gear = !isEngineRunning
+        ? 'OFF'
+        : cs.speed < -0.5
+        ? 'R'
+        : Math.abs(cs.speed) < 0.2
+        ? 'P'
+        : speedKmh < 35
+        ? 'D1'
+        : speedKmh < 70
+        ? 'D2'
+        : speedKmh < 110
+        ? 'D3'
+        : speedKmh < 155
+        ? 'D4'
+        : speedKmh < 205
+        ? 'D5'
+        : 'D6';
 
       if (onSpeedChange) {
         onSpeedChange(speedKmh, rpm, gear);
@@ -561,8 +710,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         detectedZone = 'customizer';
       }
 
-      // 4. VIP Concierge Lounge Check (at [-30, 0, -45])
-      const distToLounge = Math.hypot(cs.x - (-30), cs.z - (-45));
+      // 4. VIP Concierge Lounge Check (at [50, 0, 0])
+      const distToLounge = Math.hypot(cs.x - 50, cs.z - 0);
       if (distToLounge < 9.5) {
         detectedZone = 'dealer-lounge';
       }
@@ -576,6 +725,11 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           if (onSpeedTrapTrigger) {
             onSpeedTrapTrigger(speedKmh);
           }
+          if (speedKmh > 160) {
+            onAwardCredits?.(350, 'High-Speed Trap Milestone (>160 km/h)');
+          } else if (speedKmh > 100) {
+            onAwardCredits?.(150, 'Speed Trap Record Passed');
+          }
         }
       }
 
@@ -586,21 +740,35 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         }
       }
 
-      // CAMERA MODES ORCHESTRATION WITH REALISTIC FORWARD-FACING HEADING
+      // CAMERA MODES ORCHESTRATION
       if (cameraMode === 'COCKPIT') {
-        // First-person driver cockpit view with clear unobstructed forward horizon
-        const offset = spec.cockpitOffset;
-        const driverOffset = new THREE.Vector3(offset.x, offset.y, offset.z).applyAxisAngle(
-          new THREE.Vector3(0, 1, 0),
-          cs.rotation
-        );
+        // Cockpit Camera with Hotspot Focusing
+        const baseOffset = baseSpec.cockpitOffset;
+        let hotspotOffset = new THREE.Vector3(baseOffset.x, baseOffset.y, baseOffset.z);
+        let lookTargetDist = 28;
+        let lookTargetY = baseSpec.lookTargetHeight;
+
+        if (cockpitHotspot === 'DASHBOARD') {
+          hotspotOffset = new THREE.Vector3(baseOffset.x, baseOffset.y - 0.12, baseOffset.z + 0.18);
+          lookTargetDist = 1.2;
+          lookTargetY = baseOffset.y - 0.05;
+        } else if (cockpitHotspot === 'CONSOLE') {
+          hotspotOffset = new THREE.Vector3(0, baseOffset.y - 0.1, baseOffset.z + 0.1);
+          lookTargetDist = 1.5;
+          lookTargetY = baseOffset.y - 0.15;
+        } else if (cockpitHotspot === 'WINDSHIELD') {
+          hotspotOffset = new THREE.Vector3(0, baseOffset.y + 0.1, baseOffset.z + 0.6);
+          lookTargetDist = 35;
+          lookTargetY = baseSpec.lookTargetHeight;
+        }
+
+        const driverOffset = hotspotOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), cs.rotation);
         camera.position.set(cs.x + driverOffset.x, driverOffset.y, cs.z + driverOffset.z);
 
-        // Look straight forward in vehicle heading direction
         const lookTarget = new THREE.Vector3(
-          cs.x + Math.sin(cs.rotation) * 28,
-          spec.lookTargetHeight,
-          cs.z + Math.cos(cs.rotation) * 28
+          cs.x + Math.sin(cs.rotation) * lookTargetDist,
+          lookTargetY,
+          cs.z + Math.cos(cs.rotation) * lookTargetDist
         );
         camera.lookAt(lookTarget);
       } else if (cameraMode === 'ORBIT' || isCustomizerOpen) {
@@ -625,20 +793,17 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         camera.lookAt(cs.x, 0.5, cs.z);
       } else {
         // CHASE CAMERA (Forward-facing responsive 3rd-person)
-        // Positioned behind the vehicle (opposite to velocity heading) looking directly ahead of the car
-        const targetCamX = cs.x - Math.sin(cs.rotation) * spec.chaseDistance;
-        const targetCamZ = cs.z - Math.cos(cs.rotation) * spec.chaseDistance;
+        const targetCamX = cs.x - Math.sin(cs.rotation) * baseSpec.chaseDistance;
+        const targetCamZ = cs.z - Math.cos(cs.rotation) * baseSpec.chaseDistance;
 
-        // Smooth camera follow dampening
         camera.position.x += (targetCamX - camera.position.x) * delta * 6.5;
-        camera.position.y += (spec.chaseHeight - camera.position.y) * delta * 4.5;
+        camera.position.y += (baseSpec.chaseHeight - camera.position.y) * delta * 4.5;
         camera.position.z += (targetCamZ - camera.position.z) * delta * 6.5;
 
-        // Points toward travel direction ahead of the car
         const lookAtTarget = new THREE.Vector3(
-          cs.x + Math.sin(cs.rotation) * spec.chaseLookAhead,
+          cs.x + Math.sin(cs.rotation) * baseSpec.chaseLookAhead,
           0.7,
-          cs.z + Math.cos(cs.rotation) * spec.chaseLookAhead
+          cs.z + Math.cos(cs.rotation) * baseSpec.chaseLookAhead
         );
         camera.lookAt(lookAtTarget);
       }
@@ -661,21 +826,22 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     window.addEventListener('resize', handleResize);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
-      engineAudio.stop();
+      cancelAnimationFrame(animationFrameId);
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
       renderer.dispose();
+      engineAudio.stop();
     };
   }, []);
 
   return (
     <div
       ref={mountRef}
-      className="w-full h-full relative cursor-grab active:cursor-grabbing select-none overflow-hidden"
-      onClick={() => engineAudio.init()}
+      className="absolute inset-0 w-full h-full overflow-hidden cursor-grab active:cursor-grabbing"
+      tabIndex={0}
+      title="MANIFOLD WORLD 3D Proving Ground"
     />
   );
 };

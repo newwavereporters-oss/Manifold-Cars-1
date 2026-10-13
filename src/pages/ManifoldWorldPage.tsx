@@ -5,7 +5,13 @@ import { CustomizerDrawer } from '../components/world/CustomizerDrawer';
 import { MarketplaceGatewayModal } from '../components/world/MarketplaceGatewayModal';
 import { VehicleInspectorModal } from '../components/world/VehicleInspectorModal';
 import { DealerLoungeModal } from '../components/world/DealerLoungeModal';
-import { CarCustomization, VehicleModelType } from '../components/world/worldModels';
+import {
+  CarCustomization,
+  VehicleModelType,
+  VEHICLE_SPEC_PROFILES,
+} from '../components/world/worldModels';
+import { HeadlightState, TurnSignalState, CockpitHotspot } from '../components/world/CockpitDashboardOverlay';
+import { AudioDriveMode, engineAudio } from '../utils/engineAudio';
 import { Car } from '../types';
 import {
   Compass,
@@ -14,6 +20,7 @@ import {
   Flag,
   Building2,
   Car as CarIcon,
+  Coins,
 } from 'lucide-react';
 
 interface ManifoldWorldPageProps {
@@ -45,6 +52,12 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             caliperColor: '#EF233C',
             headlightTint: '#ffffff',
             windowTint: 0.45,
+            spoiler: 'GT_WING',
+            underglow: 'NONE',
+            ecuStage: 0,
+            suspension: 'STOCK',
+            brakes: 'OEM',
+            tires: 'ALL_SEASON',
           };
     } catch {
       return {
@@ -55,6 +68,12 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         caliperColor: '#EF233C',
         headlightTint: '#ffffff',
         windowTint: 0.45,
+        spoiler: 'GT_WING',
+        underglow: 'NONE',
+        ecuStage: 0,
+        suspension: 'STOCK',
+        brakes: 'OEM',
+        tires: 'ALL_SEASON',
       };
     }
   });
@@ -62,15 +81,61 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   useEffect(() => {
     try {
       localStorage.setItem('manifold_world_custom', JSON.stringify(customization));
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, [customization]);
+
+  // Virtual Economy (MANIFOLD Credits)
+  const [playerCredits, setPlayerCredits] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('manifold_player_credits');
+      return saved ? parseInt(saved, 10) : 5000;
+    } catch {
+      return 5000;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('manifold_player_credits', playerCredits.toString());
+    } catch {}
+  }, [playerCredits]);
+
+  const [creditNotification, setCreditNotification] = useState<{
+    amount: number;
+    reason: string;
+  } | null>(null);
+
+  const handleAwardCredits = (amount: number, reason: string) => {
+    setPlayerCredits((prev) => prev + amount);
+    setCreditNotification({ amount, reason });
+    setTimeout(() => {
+      setCreditNotification(null);
+    }, 3500);
+  };
+
+  const handlePurchaseUpgrade = (cost: number, newCustom: CarCustomization) => {
+    if (cost > 0) {
+      if (playerCredits < cost) return;
+      setPlayerCredits((prev) => prev - cost);
+    }
+    setCustomization(newCustom);
+  };
 
   // World & Camera State (Default: DAYLIGHT and CHASE)
   const [cameraMode, setCameraMode] = useState<CameraViewMode>('CHASE');
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('DAYLIGHT');
   const [activeZone, setActiveZone] = useState<string | null>(null);
+
+  // Cockpit & Vehicle Systems State
+  const [isEngineRunning, setIsEngineRunning] = useState<boolean>(true);
+  const [driveMode, setDriveMode] = useState<AudioDriveMode>('SPORT');
+  const [headlightState, setHeadlightState] = useState<HeadlightState>('LOW');
+  const [turnSignal, setTurnSignal] = useState<TurnSignalState>('OFF');
+  const [hazardLights, setHazardLights] = useState<boolean>(false);
+  const [hornActive, setHornActive] = useState<boolean>(false);
+  const [radioStation, setRadioStation] = useState<number>(1);
+  const [radioVolume, setRadioVolume] = useState<number>(0.7);
+  const [cockpitHotspot, setCockpitHotspot] = useState<CockpitHotspot>('DRIVER');
 
   // Vehicle Telemetry
   const [speedKmh, setSpeedKmh] = useState<number>(0);
@@ -106,10 +171,8 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   };
 
   const handleInspectShowroomCar = (carIdentifier: string) => {
-    // Map zone id to real car
     const matched =
-      cars.find((c) => c.id === carIdentifier || c.slug === carIdentifier) ||
-      cars[0];
+      cars.find((c) => c.id === carIdentifier || c.slug === carIdentifier) || cars[0];
     if (matched) {
       setInspectingCar(matched);
     }
@@ -121,6 +184,53 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
       vehicleType: type,
     }));
   };
+
+  const handleToggleEngine = () => {
+    const newState = !isEngineRunning;
+    setIsEngineRunning(newState);
+    engineAudio.setEngineRunning(newState);
+  };
+
+  const handleCycleHeadlights = () => {
+    setHeadlightState((prev) => (prev === 'OFF' ? 'LOW' : prev === 'LOW' ? 'HIGH' : 'OFF'));
+  };
+
+  const handleToggleTurnSignal = (signal: 'LEFT' | 'RIGHT') => {
+    setTurnSignal((prev) => (prev === signal ? 'OFF' : signal));
+  };
+
+  const handleToggleHazard = () => {
+    setHazardLights((prev) => !prev);
+  };
+
+  const handleRadioStation = (st: number) => {
+    setRadioStation(st);
+    engineAudio.setRadioStation(st);
+  };
+
+  const handleRadioVolume = (vol: number) => {
+    setRadioVolume(vol);
+    engineAudio.setRadioVolume(vol);
+  };
+
+  // Keyboard shortcut listener for cockpit systems
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (k === 'q') {
+        handleToggleTurnSignal('LEFT');
+      } else if (k === 'h') {
+        setHornActive(e.type === 'keydown');
+      }
+    };
+
+    window.addEventListener('keydown', handleKey);
+    window.addEventListener('keyup', handleKey);
+    return () => {
+      window.removeEventListener('keydown', handleKey);
+      window.removeEventListener('keyup', handleKey);
+    };
+  }, []);
 
   return (
     <div className="relative w-full h-[calc(100vh-76px)] mt-[76px] bg-[#071A2B] overflow-hidden select-none">
@@ -143,6 +253,14 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         onCarPositionUpdate={(pos) => setCarPosition(pos)}
         isCustomizerOpen={isCustomizerOpen}
         virtualInput={virtualInputState}
+        isEngineRunning={isEngineRunning}
+        driveMode={driveMode}
+        headlightState={headlightState}
+        turnSignal={turnSignal}
+        hazardLights={hazardLights}
+        hornActive={hornActive}
+        cockpitHotspot={cockpitHotspot}
+        onAwardCredits={handleAwardCredits}
       />
 
       {/* Heads-Up Display & Gaming UI */}
@@ -165,6 +283,27 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         speedTrapRecord={speedTrapRecord}
         onVirtualInput={(input) => setVirtualInputState(input)}
         virtualInputState={virtualInputState}
+        playerCredits={playerCredits}
+        creditNotification={creditNotification}
+        isEngineRunning={isEngineRunning}
+        onToggleEngine={handleToggleEngine}
+        driveMode={driveMode}
+        onSelectDriveMode={(mode) => setDriveMode(mode)}
+        headlightState={headlightState}
+        onCycleHeadlights={handleCycleHeadlights}
+        turnSignal={turnSignal}
+        onToggleTurnSignal={handleToggleTurnSignal}
+        hazardLights={hazardLights}
+        onToggleHazard={handleToggleHazard}
+        hornActive={hornActive}
+        onHornDown={() => setHornActive(true)}
+        onHornUp={() => setHornActive(false)}
+        radioStation={radioStation}
+        onSelectRadioStation={handleRadioStation}
+        radioVolume={radioVolume}
+        onRadioVolumeChange={handleRadioVolume}
+        cockpitHotspot={cockpitHotspot}
+        onSelectHotspot={(spot) => setCockpitHotspot(spot)}
       />
 
       {/* Quick World Navigation Dock (Floating Top-Left) */}
@@ -199,7 +338,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             className="flex items-center gap-2 px-3 py-2 text-left text-white hover:bg-white/10 rounded-xl transition-colors group"
           >
             <Palette className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Tuning & Garage Studio</span>
+            <span>Tuning & Upgrades Studio</span>
           </button>
         </div>
       </div>
@@ -210,6 +349,12 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         onClose={() => setIsCustomizerOpen(false)}
         customization={customization}
         onChange={(updated) => setCustomization(updated)}
+        playerCredits={playerCredits}
+        onPurchaseUpgrade={handlePurchaseUpgrade}
+        onViewMarketplaceCar={(carId) => {
+          setIsCustomizerOpen(false);
+          handleInspectShowroomCar(carId);
+        }}
       />
 
       <MarketplaceGatewayModal

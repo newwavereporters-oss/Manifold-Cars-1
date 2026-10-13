@@ -5,8 +5,18 @@ export type VehicleModelType = 'SPORTS_COUPE' | 'LUXURY_SUV' | 'EXECUTIVE_SEDAN'
 export interface VehicleSpecProfile {
   id: VehicleModelType;
   name: string;
+  make: string;
+  model: string;
+  year: number;
+  trim: string;
   category: string;
-  maxSpeed: number; // units/sec (~ 1 unit ≈ 1.5 meter)
+  engineType: string;
+  horsepower: number;
+  torqueNm: number;
+  drivenWheels: 'AWD' | 'RWD' | '4WD';
+  acceleration0To100: number; // seconds
+  curbWeightKg: number;
+  maxSpeed: number; // units/sec (~ 1 unit ≈ 1.5 meter, ~ 4.6 km/h)
   acceleration: number;
   deceleration: number;
   brakeDecel: number;
@@ -23,23 +33,35 @@ export interface VehicleSpecProfile {
   bodyLength: number;
   bodyWidth: number;
   bodyHeight: number;
+  marketplaceMatchId: string;
+  marketplaceMatchTitle: string;
 }
 
 export const VEHICLE_SPEC_PROFILES: Record<VehicleModelType, VehicleSpecProfile> = {
   SPORTS_COUPE: {
     id: 'SPORTS_COUPE',
     name: 'MANIFOLD GT Coupe',
+    make: 'MANIFOLD',
+    model: 'GT Competizione',
+    year: 2024,
+    trim: 'Carbon Track Edition',
     category: 'V8 Twin-Turbo Track Coupe',
-    maxSpeed: 48, // ~220 km/h
+    engineType: '4.0L Twin-Turbo Flat-Plane V8',
+    horsepower: 680,
+    torqueNm: 820,
+    drivenWheels: 'RWD',
+    acceleration0To100: 3.1,
+    curbWeightKg: 1530,
+    maxSpeed: 48, // ~220 km/h baseline
     acceleration: 24,
     deceleration: 14,
-    brakeDecel: 42,
+    brakeDecel: 44,
     maxSteer: 0.54,
     steerSpeed: 3.4,
     gearRatios: [3.4, 2.2, 1.6, 1.2, 0.95, 0.78],
-    redlineRpm: 7500,
+    redlineRpm: 7800,
     idleRpm: 850,
-    cockpitOffset: new THREE.Vector3(-0.35, 0.95, 0.25),
+    cockpitOffset: new THREE.Vector3(-0.35, 0.88, 0.22),
     lookTargetHeight: 0.85,
     chaseDistance: 7.6,
     chaseHeight: 2.2,
@@ -47,21 +69,33 @@ export const VEHICLE_SPEC_PROFILES: Record<VehicleModelType, VehicleSpecProfile>
     bodyLength: 4.3,
     bodyWidth: 1.88,
     bodyHeight: 1.15,
+    marketplaceMatchId: 'car-c63-amg-2021',
+    marketplaceMatchTitle: '2021 Mercedes-AMG C63 S Coupe V8 Biturbo',
   },
   LUXURY_SUV: {
     id: 'LUXURY_SUV',
     name: 'Apex Luxury SUV',
+    make: 'Apex',
+    model: 'Vanguard Bi-Turbo',
+    year: 2023,
+    trim: 'Executive First Edition',
     category: 'Twin-Turbo AWD 7-Seater',
+    engineType: '4.4L Twin-Turbo Dynamic V8',
+    horsepower: 530,
+    torqueNm: 750,
+    drivenWheels: 'AWD',
+    acceleration0To100: 4.3,
+    curbWeightKg: 2480,
     maxSpeed: 42, // ~195 km/h
     acceleration: 19,
     deceleration: 12,
-    brakeDecel: 36,
+    brakeDecel: 38,
     maxSteer: 0.46,
     steerSpeed: 2.7,
     gearRatios: [3.8, 2.4, 1.7, 1.25, 0.98, 0.82],
-    redlineRpm: 6500,
+    redlineRpm: 6600,
     idleRpm: 750,
-    cockpitOffset: new THREE.Vector3(-0.42, 1.48, 0.35),
+    cockpitOffset: new THREE.Vector3(-0.42, 1.45, 0.35),
     lookTargetHeight: 1.25,
     chaseDistance: 8.8,
     chaseHeight: 2.9,
@@ -69,21 +103,33 @@ export const VEHICLE_SPEC_PROFILES: Record<VehicleModelType, VehicleSpecProfile>
     bodyLength: 4.8,
     bodyWidth: 2.05,
     bodyHeight: 1.72,
+    marketplaceMatchId: 'car-highlander-2021',
+    marketplaceMatchTitle: '2021 Toyota Highlander Platinum AWD V6',
   },
   EXECUTIVE_SEDAN: {
     id: 'EXECUTIVE_SEDAN',
     name: 'Prestige Executive Sedan',
+    make: 'Prestige',
+    model: 'Sovereign Grand Touring',
+    year: 2024,
+    trim: 'Limousine Package',
     category: 'V6 Luxury Comfort Cruiser',
+    engineType: '3.0L Inline-6 Twin-Scroll Turbo',
+    horsepower: 440,
+    torqueNm: 600,
+    drivenWheels: 'AWD',
+    acceleration0To100: 4.6,
+    curbWeightKg: 1940,
     maxSpeed: 44, // ~205 km/h
     acceleration: 21,
     deceleration: 13,
-    brakeDecel: 39,
+    brakeDecel: 40,
     maxSteer: 0.5,
     steerSpeed: 3.0,
     gearRatios: [3.5, 2.3, 1.65, 1.22, 0.96, 0.8],
-    redlineRpm: 6800,
+    redlineRpm: 6900,
     idleRpm: 800,
-    cockpitOffset: new THREE.Vector3(-0.38, 1.08, 0.3),
+    cockpitOffset: new THREE.Vector3(-0.38, 1.05, 0.3),
     lookTargetHeight: 0.95,
     chaseDistance: 8.0,
     chaseHeight: 2.4,
@@ -91,19 +137,31 @@ export const VEHICLE_SPEC_PROFILES: Record<VehicleModelType, VehicleSpecProfile>
     bodyLength: 4.7,
     bodyWidth: 1.9,
     bodyHeight: 1.35,
+    marketplaceMatchId: 'car-e350-2020',
+    marketplaceMatchTitle: '2020 Mercedes-Benz E350 AMG Line Sedan',
   },
   RUGGED_4X4: {
     id: 'RUGGED_4X4',
     name: 'Highland Safari 4x4',
+    make: 'Highland',
+    model: 'Expedition Defender 110',
+    year: 2023,
+    trim: 'Overland Wilderness Spec',
     category: 'Heavy-Duty Overland V8',
+    engineType: '5.0L Supercharged All-Terrain V8',
+    horsepower: 518,
+    torqueNm: 625,
+    drivenWheels: '4WD',
+    acceleration0To100: 5.2,
+    curbWeightKg: 2650,
     maxSpeed: 38, // ~175 km/h
     acceleration: 17,
     deceleration: 11,
-    brakeDecel: 34,
+    brakeDecel: 36,
     maxSteer: 0.44,
     steerSpeed: 2.4,
     gearRatios: [4.1, 2.6, 1.8, 1.3, 1.0, 0.84],
-    redlineRpm: 6000,
+    redlineRpm: 6200,
     idleRpm: 700,
     cockpitOffset: new THREE.Vector3(-0.44, 1.62, 0.25),
     lookTargetHeight: 1.4,
@@ -113,8 +171,16 @@ export const VEHICLE_SPEC_PROFILES: Record<VehicleModelType, VehicleSpecProfile>
     bodyLength: 4.65,
     bodyWidth: 2.1,
     bodyHeight: 1.95,
+    marketplaceMatchId: 'car-prado-txl-2022',
+    marketplaceMatchTitle: '2022 Toyota Land Cruiser Prado TX-L 4x4',
   },
 };
+
+export type UnderglowColor = 'NONE' | 'ICE_BLUE' | 'ACID_GREEN' | 'HOT_PINK' | 'CYBER_AMBER' | 'WHITE';
+export type SpoilerOption = 'NONE' | 'DUCKTAIL' | 'GT_WING';
+export type SuspensionTune = 'STOCK' | 'SPORT' | 'TRACK';
+export type BrakeTune = 'OEM' | 'CARBON_CERAMIC';
+export type TireTune = 'ALL_SEASON' | 'SEMI_SLICK';
 
 export interface CarCustomization {
   vehicleType?: VehicleModelType;
@@ -123,7 +189,13 @@ export interface CarCustomization {
   rimColor: string;
   caliperColor: string;
   headlightTint: string;
-  windowTint: number;
+  windowTint: number; // 0 to 1
+  spoiler?: SpoilerOption;
+  underglow?: UnderglowColor;
+  ecuStage?: number; // 0, 1, 2
+  suspension?: SuspensionTune;
+  brakes?: BrakeTune;
+  tires?: TireTune;
 }
 
 export const CAR_COLOR_PALETTES = [
@@ -137,6 +209,15 @@ export const CAR_COLOR_PALETTES = [
   { name: 'Liquid Silver', hex: '#94A3B8', finish: 'metallic' },
 ];
 
+export const UNDERGLOW_PALETTE: Record<UnderglowColor, { label: string; hex: string }> = {
+  NONE: { label: 'Off', hex: '#000000' },
+  ICE_BLUE: { label: 'Ice Blue', hex: '#00d2ff' },
+  ACID_GREEN: { label: 'Acid Green', hex: '#10b981' },
+  HOT_PINK: { label: 'Hot Pink', hex: '#ec4899' },
+  CYBER_AMBER: { label: 'Cyber Amber', hex: '#f59e0b' },
+  WHITE: { label: 'Hyper White', hex: '#ffffff' },
+};
+
 export interface Vehicle3DResult {
   carGroup: THREE.Group;
   frontLeftWheel: THREE.Group;
@@ -146,6 +227,18 @@ export interface Vehicle3DResult {
   bodyMesh: THREE.Mesh;
   paintMaterial: THREE.MeshStandardMaterial;
   headlightsGroup: THREE.Group;
+  taillightsGroup: THREE.Group;
+  turnSignalMeshes: {
+    frontLeft: THREE.Mesh;
+    frontRight: THREE.Mesh;
+    rearLeft: THREE.Mesh;
+    rearRight: THREE.Mesh;
+  };
+  underglowLight: THREE.PointLight | null;
+  headlightSpotL: THREE.SpotLight | null;
+  headlightSpotR: THREE.SpotLight | null;
+  spoilerGroup: THREE.Group | null;
+  interiorGroup: THREE.Group;
   vehicleType: VehicleModelType;
 }
 
@@ -160,10 +253,11 @@ function buildWheel(
 ): THREE.Group {
   const wheelGroup = new THREE.Group();
 
-  // Rubber Tire (PBR physical realistic response)
+  // Rubber Tire
+  const isSemiSlick = custom.tires === 'SEMI_SLICK';
   const tireMat = new THREE.MeshStandardMaterial({
-    color: 0x1f242d,
-    roughness: 0.8,
+    color: isSemiSlick ? 0x111317 : 0x1f242d,
+    roughness: isSemiSlick ? 0.65 : 0.85,
     metalness: 0.05,
   });
   const tireGeo = new THREE.CylinderGeometry(radius, radius, width, 32);
@@ -191,11 +285,12 @@ function buildWheel(
     wheelGroup.add(spoke);
   }
 
-  // Performance Brake Caliper
+  // Performance Brake Caliper & Rotor
+  const isCarbonCeramic = custom.brakes === 'CARBON_CERAMIC';
   const caliperMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(custom.caliperColor || '#ef233c'),
-    metalness: 0.7,
-    roughness: 0.3,
+    color: new THREE.Color(isCarbonCeramic ? '#f59e0b' : custom.caliperColor || '#ef233c'),
+    metalness: 0.8,
+    roughness: 0.25,
   });
   const caliperGeo = new THREE.BoxGeometry(0.08, radius * 0.48, radius * 0.36);
   const caliper = new THREE.Mesh(caliperGeo, caliperMat);
@@ -203,6 +298,159 @@ function buildWheel(
   wheelGroup.add(caliper);
 
   return wheelGroup;
+}
+
+/**
+ * Creates high-detail cockpit interior (dashboard dials, glowing center infotainment, sport steering wheel, bucket seats)
+ */
+function buildCockpitInterior(
+  seatOffsetZ: number,
+  seatY: number,
+  steerOffset: THREE.Vector3
+): THREE.Group {
+  const interior = new THREE.Group();
+
+  const interiorTrimMat = new THREE.MeshStandardMaterial({
+    color: 0x181c24,
+    roughness: 0.7,
+    metalness: 0.2,
+  });
+
+  const seatMat = new THREE.MeshStandardMaterial({
+    color: 0x0f1218,
+    roughness: 0.6,
+    metalness: 0.1,
+  });
+
+  const screenMat = new THREE.MeshStandardMaterial({
+    color: 0x38bdf8,
+    emissive: 0x0284c7,
+    emissiveIntensity: 1.8,
+    roughness: 0.2,
+  });
+
+  const clusterMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xef233c,
+    emissiveIntensity: 1.6,
+    roughness: 0.2,
+  });
+
+  // Dashboard Main Arch
+  const dashGeo = new THREE.BoxGeometry(1.6, 0.36, 0.65);
+  const dashMesh = new THREE.Mesh(dashGeo, interiorTrimMat);
+  dashMesh.position.set(0, steerOffset.y + 0.05, steerOffset.z + 0.32);
+  interior.add(dashMesh);
+
+  // Digital Gauge Cluster behind steering wheel
+  const clusterGeo = new THREE.BoxGeometry(0.42, 0.16, 0.02);
+  const clusterMesh = new THREE.Mesh(clusterGeo, clusterMat);
+  clusterMesh.position.set(steerOffset.x, steerOffset.y + 0.12, steerOffset.z + 0.08);
+  interior.add(clusterMesh);
+
+  // Center Console Infotainment Display
+  const screenGeo = new THREE.BoxGeometry(0.32, 0.22, 0.02);
+  const screenMesh = new THREE.Mesh(screenGeo, screenMat);
+  screenMesh.position.set(0, steerOffset.y + 0.08, steerOffset.z + 0.06);
+  interior.add(screenMesh);
+
+  // Center Transmission Tunnel & Shifter
+  const tunnelGeo = new THREE.BoxGeometry(0.38, 0.32, 1.4);
+  const tunnelMesh = new THREE.Mesh(tunnelGeo, interiorTrimMat);
+  tunnelMesh.position.set(0, seatY + 0.12, seatOffsetZ);
+  interior.add(tunnelMesh);
+
+  // Sport Steering Wheel
+  const wheelHubGeo = new THREE.TorusGeometry(0.18, 0.028, 12, 28);
+  const wheelHubMat = new THREE.MeshStandardMaterial({ color: 0x1f242d, roughness: 0.4, metalness: 0.6 });
+  const wheelHub = new THREE.Mesh(wheelHubGeo, wheelHubMat);
+  wheelHub.position.copy(steerOffset);
+  wheelHub.rotation.x = Math.PI / 4.5;
+
+  // Steering wheel top center red racing stripe
+  const stripeGeo = new THREE.BoxGeometry(0.04, 0.03, 0.06);
+  const stripeMat = new THREE.MeshStandardMaterial({ color: 0xef233c, emissive: 0xef233c, emissiveIntensity: 2.0 });
+  const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+  stripe.position.set(0, 0.18, 0);
+  wheelHub.add(stripe);
+  interior.add(wheelHub);
+
+  // Driver Bucket Seat
+  const seatGeo = new THREE.BoxGeometry(0.55, 0.65, 0.55);
+  const driverSeat = new THREE.Mesh(seatGeo, seatMat);
+  driverSeat.position.set(steerOffset.x, seatY + 0.25, seatOffsetZ);
+  driverSeat.castShadow = true;
+
+  // Driver Headrest
+  const headrestGeo = new THREE.BoxGeometry(0.28, 0.22, 0.18);
+  const headrest = new THREE.Mesh(headrestGeo, seatMat);
+  headrest.position.set(0, 0.42, 0);
+  driverSeat.add(headrest);
+  interior.add(driverSeat);
+
+  // Passenger Bucket Seat
+  const passengerSeat = driverSeat.clone();
+  passengerSeat.position.x = -steerOffset.x;
+  interior.add(passengerSeat);
+
+  return interior;
+}
+
+/**
+ * Creates dynamic underglow point light & ground reflection mesh
+ */
+function buildUnderglow(custom: CarCustomization): {
+  underglowLight: THREE.PointLight | null;
+  underglowGroup: THREE.Group;
+} {
+  const group = new THREE.Group();
+  const colorKey = custom.underglow || 'NONE';
+  if (colorKey === 'NONE') {
+    return { underglowLight: null, underglowGroup: group };
+  }
+
+  const hexColor = UNDERGLOW_PALETTE[colorKey].hex;
+  const light = new THREE.PointLight(new THREE.Color(hexColor), 4.5, 6.0, 1.8);
+  light.position.set(0, 0.12, 0);
+  group.add(light);
+
+  // Diffuse neon ground projection ring
+  const glowGeo = new THREE.PlaneGeometry(2.4, 4.4);
+  glowGeo.rotateX(-Math.PI / 2);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(hexColor),
+    transparent: true,
+    opacity: 0.42,
+    blending: THREE.AdditiveBlending,
+  });
+  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  glowMesh.position.set(0, 0.05, 0);
+  group.add(glowMesh);
+
+  return { underglowLight: light, underglowGroup: group };
+}
+
+/**
+ * Creates front headlights spotlights projecting on road ahead
+ */
+function buildHeadlightSpotlights(): {
+  spotL: THREE.SpotLight;
+  spotR: THREE.SpotLight;
+  spotGroup: THREE.Group;
+} {
+  const spotGroup = new THREE.Group();
+
+  const spotL = new THREE.SpotLight(0xfffaed, 3.5, 45, Math.PI / 5, 0.35, 1.2);
+  spotL.position.set(-0.65, 0.5, 2.3);
+  spotL.target.position.set(-0.65, 0, 25);
+
+  const spotR = new THREE.SpotLight(0xfffaed, 3.5, 45, Math.PI / 5, 0.35, 1.2);
+  spotR.position.set(0.65, 0.5, 2.3);
+  spotR.target.position.set(0.65, 0, 25);
+
+  spotGroup.add(spotL, spotL.target, spotR, spotR.target);
+
+  return { spotL, spotR, spotGroup };
 }
 
 /**
@@ -224,7 +472,8 @@ export function createSportsCar(custom: CarCustomization): Vehicle3DResult {
     metalness: 0.75,
   });
 
-  // Cockpit-transparent glass with balanced visibility
+  // Cockpit-transparent glass with customizable window tint
+  const tintOpacity = 0.35 + (custom.windowTint || 0.45) * 0.5;
   const glassMaterial = new THREE.MeshPhysicalMaterial({
     color: 0x7dd3fc,
     metalness: 0.1,
@@ -232,7 +481,7 @@ export function createSportsCar(custom: CarCustomization): Vehicle3DResult {
     transmission: 0.82,
     thickness: 0.2,
     transparent: true,
-    opacity: 0.45,
+    opacity: tintOpacity,
   });
 
   const chromeMaterial = new THREE.MeshStandardMaterial({
@@ -297,18 +546,30 @@ export function createSportsCar(custom: CarCustomization): Vehicle3DResult {
   diffuserMesh.position.set(0, 0.2, -2.15);
   carGroup.add(diffuserMesh);
 
-  // Rear GT Wing / Aerofoil Spoiler
-  const wingBladeGeo = new THREE.BoxGeometry(1.84, 0.04, 0.32);
-  const wingBlade = new THREE.Mesh(wingBladeGeo, carbonMaterial);
-  wingBlade.position.set(0, 0.96, -2.05);
-  wingBlade.castShadow = true;
-  carGroup.add(wingBlade);
+  // Dynamic Rear Spoiler Wing Option
+  const spoilerGroup = new THREE.Group();
+  const spoilerOpt = custom.spoiler ?? 'GT_WING';
+  if (spoilerOpt === 'GT_WING') {
+    const wingBladeGeo = new THREE.BoxGeometry(1.84, 0.04, 0.32);
+    const wingBlade = new THREE.Mesh(wingBladeGeo, carbonMaterial);
+    wingBlade.position.set(0, 0.96, -2.05);
+    wingBlade.castShadow = true;
+    spoilerGroup.add(wingBlade);
 
-  const wingPillarL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.25, 0.08), carbonMaterial);
-  wingPillarL.position.set(-0.6, 0.82, -2.02);
-  const wingPillarR = wingPillarL.clone();
-  wingPillarR.position.x = 0.6;
-  carGroup.add(wingPillarL, wingPillarR);
+    const wingPillarL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.25, 0.08), carbonMaterial);
+    wingPillarL.position.set(-0.6, 0.82, -2.02);
+    const wingPillarR = wingPillarL.clone();
+    wingPillarR.position.x = 0.6;
+    spoilerGroup.add(wingPillarL, wingPillarR);
+    carGroup.add(spoilerGroup);
+  } else if (spoilerOpt === 'DUCKTAIL') {
+    const ducktailGeo = new THREE.BoxGeometry(1.72, 0.12, 0.22);
+    const ducktail = new THREE.Mesh(ducktailGeo, carbonMaterial);
+    ducktail.position.set(0, 0.76, -2.12);
+    ducktail.rotation.x = -0.22;
+    spoilerGroup.add(ducktail);
+    carGroup.add(spoilerGroup);
+  }
 
   // Dual Exhaust Outlets
   const exhaustGeo = new THREE.CylinderGeometry(0.065, 0.065, 0.22, 16);
@@ -327,12 +588,9 @@ export function createSportsCar(custom: CarCustomization): Vehicle3DResult {
   mirrorR.position.x = 0.95;
   carGroup.add(mirrorL, mirrorR);
 
-  // Interior steering wheel silhouette
-  const wheelHubGeo = new THREE.TorusGeometry(0.16, 0.025, 8, 24);
-  const wheelHub = new THREE.Mesh(wheelHubGeo, carbonMaterial);
-  wheelHub.position.set(-0.35, 0.78, 0.42);
-  wheelHub.rotation.x = Math.PI / 4;
-  carGroup.add(wheelHub);
+  // Cockpit Detailed Interior
+  const interiorGroup = buildCockpitInterior(-0.15, 0.35, new THREE.Vector3(-0.35, 0.76, 0.42));
+  carGroup.add(interiorGroup);
 
   // Headlights
   const headlightsGroup = new THREE.Group();
@@ -352,7 +610,26 @@ export function createSportsCar(custom: CarCustomization): Vehicle3DResult {
   headlightsGroup.add(headlightL, headlightR);
   carGroup.add(headlightsGroup);
 
+  // Turn Signals (Amber Blinker LEDs)
+  const amberSignalMat = new THREE.MeshStandardMaterial({
+    color: 0xf59e0b,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 0.1,
+  });
+  const turnSignalGeo = new THREE.BoxGeometry(0.14, 0.06, 0.06);
+  const turnFrontL = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnFrontL.position.set(-0.84, 0.44, 2.34);
+  const turnFrontR = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnFrontR.position.set(0.84, 0.44, 2.34);
+
+  const turnRearL = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnRearL.position.set(-0.84, 0.62, -2.16);
+  const turnRearR = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnRearR.position.set(0.84, 0.62, -2.16);
+  carGroup.add(turnFrontL, turnFrontR, turnRearL, turnRearR);
+
   // Taillights
+  const taillightsGroup = new THREE.Group();
   const taillightMat = new THREE.MeshStandardMaterial({
     color: 0xef233c,
     emissive: 0xef233c,
@@ -362,7 +639,16 @@ export function createSportsCar(custom: CarCustomization): Vehicle3DResult {
   const taillightBarGeo = new THREE.BoxGeometry(1.68, 0.06, 0.08);
   const taillightBar = new THREE.Mesh(taillightBarGeo, taillightMat);
   taillightBar.position.set(0, 0.62, -2.16);
-  carGroup.add(taillightBar);
+  taillightsGroup.add(taillightBar);
+  carGroup.add(taillightsGroup);
+
+  // Underglow System
+  const { underglowLight, underglowGroup } = buildUnderglow(custom);
+  carGroup.add(underglowGroup);
+
+  // Headlight Projection Spotlights
+  const { spotL, spotR, spotGroup } = buildHeadlightSpotlights();
+  carGroup.add(spotGroup);
 
   // 4 Wheels
   const frontLeftWheel = buildWheel(custom, 0.36, 0.28, 0.24);
@@ -390,6 +676,18 @@ export function createSportsCar(custom: CarCustomization): Vehicle3DResult {
     bodyMesh,
     paintMaterial,
     headlightsGroup,
+    taillightsGroup,
+    turnSignalMeshes: {
+      frontLeft: turnFrontL,
+      frontRight: turnFrontR,
+      rearLeft: turnRearL,
+      rearRight: turnRearR,
+    },
+    underglowLight,
+    headlightSpotL: spotL,
+    headlightSpotR: spotR,
+    spoilerGroup,
+    interiorGroup,
     vehicleType: 'SPORTS_COUPE',
   };
 }
@@ -419,82 +717,100 @@ export function createLuxurySUV(custom: CarCustomization): Vehicle3DResult {
     roughness: 0.1,
   });
 
+  const tintOpacity = 0.35 + (custom.windowTint || 0.45) * 0.5;
   const glassMaterial = new THREE.MeshPhysicalMaterial({
     color: 0x93c5fd,
     transmission: 0.8,
     thickness: 0.2,
     transparent: true,
-    opacity: 0.4,
+    opacity: tintOpacity,
     roughness: 0.08,
   });
 
-  // Lower rugged body & skid guards
-  const lowerBody = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.36, 4.75), trimMaterial);
-  lowerBody.position.y = 0.46;
-  lowerBody.castShadow = true;
-  lowerBody.receiveShadow = true;
-  carGroup.add(lowerBody);
-
-  // Main SUV Body
-  const bodyGeo = new THREE.BoxGeometry(2.0, 0.68, 4.65);
+  // Lower Body Shell
+  const bodyGeo = new THREE.BoxGeometry(2.02, 0.65, 4.8);
   const bodyMesh = new THREE.Mesh(bodyGeo, paintMaterial);
-  bodyMesh.position.y = 0.88;
+  bodyMesh.position.y = 0.68;
   bodyMesh.castShadow = true;
   bodyMesh.receiveShadow = true;
   carGroup.add(bodyMesh);
 
   // High Hood
-  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.94, 0.26, 1.55), paintMaterial);
-  hood.position.set(0, 1.15, 1.45);
-  hood.castShadow = true;
-  carGroup.add(hood);
+  const hoodGeo = new THREE.BoxGeometry(1.98, 0.32, 1.55);
+  const hoodMesh = new THREE.Mesh(hoodGeo, paintMaterial);
+  hoodMesh.position.set(0, 0.82, 1.62);
+  hoodMesh.castShadow = true;
+  carGroup.add(hoodMesh);
 
-  // Chrome Bold Grille
-  const grille = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.42, 0.1), chromeMaterial);
-  grille.position.set(0, 0.92, 2.36);
+  // Prestige Chrome Grille
+  const grille = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.45, 0.1), chromeMaterial);
+  grille.position.set(0, 0.65, 2.42);
   carGroup.add(grille);
 
-  // Tall Glass Cabin Greenhouse
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.72, 2.7), glassMaterial);
-  cabin.position.set(0, 1.52, -0.3);
-  cabin.castShadow = true;
-  carGroup.add(cabin);
+  // Upright Greenhouse Cabin
+  const cabinGeo = new THREE.BoxGeometry(1.78, 0.68, 2.8);
+  const cabinMesh = new THREE.Mesh(cabinGeo, glassMaterial);
+  cabinMesh.position.set(0, 1.34, -0.22);
+  cabinMesh.castShadow = true;
+  carGroup.add(cabinMesh);
 
-  // Full Length Roof
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.08, 2.65), paintMaterial);
-  roof.position.set(0, 1.9, -0.3);
+  // High Roof
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.08, 2.75), paintMaterial);
+  roof.position.set(0, 1.7, -0.22);
   roof.castShadow = true;
   carGroup.add(roof);
 
-  // Roof Rails
-  const railL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 2.3), chromeMaterial);
-  railL.position.set(-0.76, 1.96, -0.3);
+  // Chrome Roof Rails
+  const railL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 2.4), chromeMaterial);
+  railL.position.set(-0.85, 1.76, -0.22);
   const railR = railL.clone();
-  railR.position.x = 0.76;
+  railR.position.x = 0.85;
   carGroup.add(railL, railR);
 
-  // Side Steps
-  const stepL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.04, 2.4), chromeMaterial);
-  stepL.position.set(-1.08, 0.38, -0.1);
-  const stepR = stepL.clone();
-  stepR.position.x = 1.08;
-  carGroup.add(stepL, stepR);
+  // Tailgate
+  const tailgate = new THREE.Mesh(new THREE.BoxGeometry(1.96, 0.72, 0.3), paintMaterial);
+  tailgate.position.set(0, 0.85, -2.25);
+  tailgate.castShadow = true;
+  carGroup.add(tailgate);
+
+  // Cockpit Detailed Interior
+  const interiorGroup = buildCockpitInterior(-0.2, 0.58, new THREE.Vector3(-0.42, 1.25, 0.45));
+  carGroup.add(interiorGroup);
 
   // Headlights
   const headlightsGroup = new THREE.Group();
   const headlightMat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     emissive: 0xffffff,
-    emissiveIntensity: 2.6,
+    emissiveIntensity: 2.8,
   });
-  const headlightL = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.16, 0.1), headlightMat);
-  headlightL.position.set(-0.75, 1.05, 2.35);
+  const headlightL = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.12), headlightMat);
+  headlightL.position.set(-0.72, 0.78, 2.38);
   const headlightR = headlightL.clone();
-  headlightR.position.x = 0.75;
+  headlightR.position.x = 0.72;
   headlightsGroup.add(headlightL, headlightR);
   carGroup.add(headlightsGroup);
 
+  // Turn Signals (Amber Blinker LEDs)
+  const amberSignalMat = new THREE.MeshStandardMaterial({
+    color: 0xf59e0b,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 0.1,
+  });
+  const turnSignalGeo = new THREE.BoxGeometry(0.15, 0.08, 0.06);
+  const turnFrontL = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnFrontL.position.set(-0.92, 0.78, 2.36);
+  const turnFrontR = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnFrontR.position.set(0.92, 0.78, 2.36);
+
+  const turnRearL = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnRearL.position.set(-0.92, 1.15, -2.35);
+  const turnRearR = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnRearR.position.set(0.92, 1.15, -2.35);
+  carGroup.add(turnFrontL, turnFrontR, turnRearL, turnRearR);
+
   // Taillights
+  const taillightsGroup = new THREE.Group();
   const taillightMat = new THREE.MeshStandardMaterial({
     color: 0xef233c,
     emissive: 0xef233c,
@@ -504,7 +820,18 @@ export function createLuxurySUV(custom: CarCustomization): Vehicle3DResult {
   taillightL.position.set(-0.78, 1.15, -2.35);
   const taillightR = taillightL.clone();
   taillightR.position.x = 0.78;
-  carGroup.add(taillightL, taillightR);
+  taillightsGroup.add(taillightL, taillightR);
+  carGroup.add(taillightsGroup);
+
+  // Underglow System
+  const { underglowLight, underglowGroup } = buildUnderglow(custom);
+  carGroup.add(underglowGroup);
+
+  // Headlight Spotlights
+  const { spotL, spotR, spotGroup } = buildHeadlightSpotlights();
+  spotL.position.set(-0.72, 0.78, 2.4);
+  spotR.position.set(0.72, 0.78, 2.4);
+  carGroup.add(spotGroup);
 
   // SUV Wheels (Larger 20-inch 0.44m radius)
   const frontLeftWheel = buildWheel(custom, 0.44, 0.32, 0.28);
@@ -532,6 +859,18 @@ export function createLuxurySUV(custom: CarCustomization): Vehicle3DResult {
     bodyMesh,
     paintMaterial,
     headlightsGroup,
+    taillightsGroup,
+    turnSignalMeshes: {
+      frontLeft: turnFrontL,
+      frontRight: turnFrontR,
+      rearLeft: turnRearL,
+      rearRight: turnRearR,
+    },
+    underglowLight,
+    headlightSpotL: spotL,
+    headlightSpotR: spotR,
+    spoilerGroup: null,
+    interiorGroup,
     vehicleType: 'LUXURY_SUV',
   };
 }
@@ -555,18 +894,13 @@ export function createExecutiveSedan(custom: CarCustomization): Vehicle3DResult 
     roughness: 0.1,
   });
 
-  const trimMaterial = new THREE.MeshStandardMaterial({
-    color: 0x181a20,
-    roughness: 0.35,
-    metalness: 0.75,
-  });
-
+  const tintOpacity = 0.35 + (custom.windowTint || 0.45) * 0.5;
   const glassMaterial = new THREE.MeshPhysicalMaterial({
     color: 0x7dd3fc,
     transmission: 0.82,
     thickness: 0.2,
     transparent: true,
-    opacity: 0.45,
+    opacity: tintOpacity,
     roughness: 0.08,
   });
 
@@ -614,6 +948,10 @@ export function createExecutiveSedan(custom: CarCustomization): Vehicle3DResult 
   windowTrimR.position.x = 0.8;
   carGroup.add(windowTrimL, windowTrimR);
 
+  // Cockpit Detailed Interior
+  const interiorGroup = buildCockpitInterior(-0.15, 0.38, new THREE.Vector3(-0.38, 0.88, 0.35));
+  carGroup.add(interiorGroup);
+
   // Headlights
   const headlightsGroup = new THREE.Group();
   const headlightMat = new THREE.MeshStandardMaterial({
@@ -628,7 +966,26 @@ export function createExecutiveSedan(custom: CarCustomization): Vehicle3DResult 
   headlightsGroup.add(headlightL, headlightR);
   carGroup.add(headlightsGroup);
 
+  // Turn Signals (Amber Blinker LEDs)
+  const amberSignalMat = new THREE.MeshStandardMaterial({
+    color: 0xf59e0b,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 0.1,
+  });
+  const turnSignalGeo = new THREE.BoxGeometry(0.14, 0.07, 0.06);
+  const turnFrontL = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnFrontL.position.set(-0.86, 0.52, 2.3);
+  const turnFrontR = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnFrontR.position.set(0.86, 0.52, 2.3);
+
+  const turnRearL = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnRearL.position.set(-0.86, 0.64, -2.32);
+  const turnRearR = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnRearR.position.set(0.86, 0.64, -2.32);
+  carGroup.add(turnFrontL, turnFrontR, turnRearL, turnRearR);
+
   // Taillights
+  const taillightsGroup = new THREE.Group();
   const taillightMat = new THREE.MeshStandardMaterial({
     color: 0xef233c,
     emissive: 0xef233c,
@@ -636,7 +993,18 @@ export function createExecutiveSedan(custom: CarCustomization): Vehicle3DResult 
   });
   const taillight = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.08, 0.08), taillightMat);
   taillight.position.set(0, 0.64, -2.32);
-  carGroup.add(taillight);
+  taillightsGroup.add(taillight);
+  carGroup.add(taillightsGroup);
+
+  // Underglow System
+  const { underglowLight, underglowGroup } = buildUnderglow(custom);
+  carGroup.add(underglowGroup);
+
+  // Headlight Spotlights
+  const { spotL, spotR, spotGroup } = buildHeadlightSpotlights();
+  spotL.position.set(-0.68, 0.52, 2.35);
+  spotR.position.set(0.68, 0.52, 2.35);
+  carGroup.add(spotGroup);
 
   // 4 Wheels
   const frontLeftWheel = buildWheel(custom, 0.38, 0.28, 0.26);
@@ -664,6 +1032,18 @@ export function createExecutiveSedan(custom: CarCustomization): Vehicle3DResult 
     bodyMesh,
     paintMaterial,
     headlightsGroup,
+    taillightsGroup,
+    turnSignalMeshes: {
+      frontLeft: turnFrontL,
+      frontRight: turnFrontR,
+      rearLeft: turnRearL,
+      rearRight: turnRearR,
+    },
+    underglowLight,
+    headlightSpotL: spotL,
+    headlightSpotR: spotR,
+    spoilerGroup: null,
+    interiorGroup,
     vehicleType: 'EXECUTIVE_SEDAN',
   };
 }
@@ -693,12 +1073,13 @@ export function createRugged4x4(custom: CarCustomization): Vehicle3DResult {
     metalness: 0.85,
   });
 
+  const tintOpacity = 0.35 + (custom.windowTint || 0.45) * 0.5;
   const glassMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xbae6fd,
     transmission: 0.78,
     thickness: 0.25,
     transparent: true,
-    opacity: 0.45,
+    opacity: tintOpacity,
     roughness: 0.08,
   });
 
@@ -737,6 +1118,10 @@ export function createRugged4x4(custom: CarCustomization): Vehicle3DResult {
   spareWheel.position.set(0, 1.1, -2.35);
   carGroup.add(spareWheel);
 
+  // Cockpit Detailed Interior
+  const interiorGroup = buildCockpitInterior(-0.35, 0.82, new THREE.Vector3(-0.44, 1.48, 0.35));
+  carGroup.add(interiorGroup);
+
   // Round Retro Headlights
   const headlightsGroup = new THREE.Group();
   const headlightMat = new THREE.MeshStandardMaterial({
@@ -753,7 +1138,26 @@ export function createRugged4x4(custom: CarCustomization): Vehicle3DResult {
   headlightsGroup.add(headlightL, headlightR);
   carGroup.add(headlightsGroup);
 
+  // Turn Signals (Amber Blinker LEDs)
+  const amberSignalMat = new THREE.MeshStandardMaterial({
+    color: 0xf59e0b,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 0.1,
+  });
+  const turnSignalGeo = new THREE.BoxGeometry(0.16, 0.1, 0.08);
+  const turnFrontL = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnFrontL.position.set(-0.95, 1.05, 2.24);
+  const turnFrontR = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnFrontR.position.set(0.95, 1.05, 2.24);
+
+  const turnRearL = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnRearL.position.set(-0.95, 1.1, -2.22);
+  const turnRearR = new THREE.Mesh(turnSignalGeo, amberSignalMat.clone());
+  turnRearR.position.set(0.95, 1.1, -2.22);
+  carGroup.add(turnFrontL, turnFrontR, turnRearL, turnRearR);
+
   // Taillights
+  const taillightsGroup = new THREE.Group();
   const taillightMat = new THREE.MeshStandardMaterial({
     color: 0xef233c,
     emissive: 0xef233c,
@@ -763,7 +1167,18 @@ export function createRugged4x4(custom: CarCustomization): Vehicle3DResult {
   taillightL.position.set(-0.85, 1.1, -2.22);
   const taillightR = taillightL.clone();
   taillightR.position.x = 0.85;
-  carGroup.add(taillightL, taillightR);
+  taillightsGroup.add(taillightL, taillightR);
+  carGroup.add(taillightsGroup);
+
+  // Underglow System
+  const { underglowLight, underglowGroup } = buildUnderglow(custom);
+  carGroup.add(underglowGroup);
+
+  // Headlight Spotlights
+  const { spotL, spotR, spotGroup } = buildHeadlightSpotlights();
+  spotL.position.set(-0.72, 1.05, 2.28);
+  spotR.position.set(0.72, 1.05, 2.28);
+  carGroup.add(spotGroup);
 
   // Overland Deep-Tread Wheels (0.48m radius)
   const frontLeftWheel = buildWheel(custom, 0.48, 0.36, 0.26);
@@ -791,6 +1206,18 @@ export function createRugged4x4(custom: CarCustomization): Vehicle3DResult {
     bodyMesh,
     paintMaterial,
     headlightsGroup,
+    taillightsGroup,
+    turnSignalMeshes: {
+      frontLeft: turnFrontL,
+      frontRight: turnFrontR,
+      rearLeft: turnRearL,
+      rearRight: turnRearR,
+    },
+    underglowLight,
+    headlightSpotL: spotL,
+    headlightSpotR: spotR,
+    spoilerGroup: null,
+    interiorGroup,
     vehicleType: 'RUGGED_4X4',
   };
 }
@@ -826,7 +1253,6 @@ export function createWorldEnvironment(): {
   const podiums: { group: THREE.Group; carMesh: THREE.Group; carId: string }[] = [];
 
   // 1. HIGH-VISIBILITY DAYLIGHT GROUND PLAZA & SURROUNDING LANDSCAPE
-  // Bright modern pavers texture and contrast
   const terrainGeo = new THREE.PlaneGeometry(600, 600, 32, 32);
   const terrainMat = new THREE.MeshStandardMaterial({
     color: 0x94a3b8, // Balanced slate neutral ground
@@ -851,302 +1277,215 @@ export function createWorldEnvironment(): {
   plaza.receiveShadow = true;
   environmentGroup.add(plaza);
 
-  // Subtle architectural grid for distance perception
-  const gridHelper = new THREE.GridHelper(280, 70, 0xef233c, 0x475569);
-  gridHelper.position.y = 0.01;
-  environmentGroup.add(gridHelper);
-
-  // 2. CLEAR ROAD NETWORK & TRACK WITH WHITE/YELLOW PAINTED MARKINGS
-  // Main Entrance Avenue connecting Plaza to Marketplace Gate & Showroom
-  const mainAvenueGeo = new THREE.PlaneGeometry(24, 140);
-  const mainAvenueMat = new THREE.MeshStandardMaterial({
+  // 2. MODERN TEST TRACK RING AROUND PROVING GROUND
+  const trackOuterGeo = new THREE.RingGeometry(85, 145, 64);
+  const trackMat = new THREE.MeshStandardMaterial({
     color: 0x1e293b,
     roughness: 0.5,
-    metalness: 0.25,
+    metalness: 0.3,
   });
-  const mainAvenue = new THREE.Mesh(mainAvenueGeo, mainAvenueMat);
-  mainAvenue.rotation.x = -Math.PI / 2;
-  mainAvenue.position.set(0, 0.02, 0);
-  mainAvenue.receiveShadow = true;
-  environmentGroup.add(mainAvenue);
+  const track = new THREE.Mesh(trackOuterGeo, trackMat);
+  track.rotation.x = -Math.PI / 2;
+  track.position.y = 0.01;
+  track.receiveShadow = true;
+  environmentGroup.add(track);
 
-  // Bright Yellow Center Line Markings along Main Avenue
-  for (let z = -60; z <= 60; z += 8) {
-    const dash = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.4, 4.5),
-      new THREE.MeshStandardMaterial({
-        color: 0xfacc15, // High-contrast amber/yellow
-        roughness: 0.3,
-        emissive: 0xca8a04,
-        emissiveIntensity: 0.4,
-      })
-    );
-    dash.rotation.x = -Math.PI / 2;
-    dash.position.set(0, 0.03, z);
-    environmentGroup.add(dash);
-  }
-
-  // White Outer Lane Edge Markings
-  [-11, 11].forEach((x) => {
-    const laneLine = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.35, 130),
-      new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        roughness: 0.2,
-        emissive: 0xffffff,
-        emissiveIntensity: 0.3,
-      })
-    );
-    laneLine.rotation.x = -Math.PI / 2;
-    laneLine.position.set(x, 0.03, 0);
-    environmentGroup.add(laneLine);
-  });
-
-  // 3. COASTAL TEST TRACK CIRCUIT ROAD (Ring with curbs and apex stripes)
-  const trackRadiusX = 90;
-  const trackRadiusZ = 80;
-
-  // Track Asphalt Ribbon
-  const ringGeo = new THREE.RingGeometry(76, 102, 64);
-  const ringMat = new THREE.MeshStandardMaterial({
-    color: 0x1e293b,
-    roughness: 0.55,
-    metalness: 0.2,
-    side: THREE.DoubleSide,
-  });
-  const trackRing = new THREE.Mesh(ringGeo, ringMat);
-  trackRing.rotation.x = -Math.PI / 2;
-  trackRing.position.y = 0.015;
-  trackRing.receiveShadow = true;
-  environmentGroup.add(trackRing);
-
-  // Red and White Racing Apex Curbs
-  const trackCurve = new THREE.EllipseCurve(0, 0, trackRadiusX, trackRadiusZ, 0, 2 * Math.PI, false, 0);
-  const trackPoints = trackCurve.getPoints(120);
-
-  trackPoints.forEach((pt, idx) => {
-    if (idx % 2 === 0) {
-      const isRed = (idx / 2) % 2 === 0;
-      const curbGeo = new THREE.BoxGeometry(1.6, 0.18, 0.8);
-      const curbMat = new THREE.MeshStandardMaterial({
-        color: isRed ? 0xef233c : 0xffffff,
-        roughness: 0.3,
-      });
-      const curb = new THREE.Mesh(curbGeo, curbMat);
-      curb.position.set(pt.x, 0.09, pt.y);
-      curb.rotation.y = -Math.atan2(pt.y, pt.x) + Math.PI / 2;
-      environmentGroup.add(curb);
-    }
-  });
-
-  // Track Lampposts with clear daylight fixtures
-  for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 6) {
-    const lx = Math.cos(angle) * 105;
-    const lz = Math.sin(angle) * 92;
-
-    const postGroup = new THREE.Group();
-    postGroup.position.set(lx, 0, lz);
-
-    const postPole = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.12, 0.2, 9.5, 8),
-      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.2 })
-    );
-    postPole.position.y = 4.75;
-    postPole.castShadow = true;
-    postGroup.add(postPole);
-
-    const lampHead = new THREE.Mesh(
-      new THREE.BoxGeometry(1.0, 0.2, 0.45),
-      new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0xfef08a,
-        emissiveIntensity: 1.5,
-      })
-    );
-    lampHead.position.set(0, 9.5, 0);
-    postGroup.add(lampHead);
-
-    environmentGroup.add(postGroup);
-  }
-
-  // 4. MANIFOLD SHOWROOM PAVILION STRUCTURE
-  const showroomGroup = new THREE.Group();
-  showroomGroup.position.set(0, 0, -45);
-
-  // Showroom Floor (Polished White/Grey Terrazzo for bright daylight reflection)
-  const floorGeo = new THREE.BoxGeometry(68, 0.4, 42);
-  const floorMat = new THREE.MeshStandardMaterial({
-    color: 0xe2e8f0, // Bright terrazzo showroom floor
-    roughness: 0.15,
-    metalness: 0.35,
-  });
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.position.y = 0.2;
-  floor.receiveShadow = true;
-  showroomGroup.add(floor);
-
-  // Showroom Roof
-  const roofGeo = new THREE.BoxGeometry(70, 1.2, 44);
-  const roofMat = new THREE.MeshStandardMaterial({
-    color: 0x0f172a,
+  // Track Curbs (Red and White Racing Kerbs)
+  const curbGeo = new THREE.RingGeometry(83.5, 85, 64);
+  const curbMat = new THREE.MeshStandardMaterial({
+    color: 0xef233c,
     roughness: 0.4,
-    metalness: 0.6,
   });
-  const roof = new THREE.Mesh(roofGeo, roofMat);
-  roof.position.y = 12.5;
-  roof.castShadow = true;
-  showroomGroup.add(roof);
+  const curb = new THREE.Mesh(curbGeo, curbMat);
+  curb.rotation.x = -Math.PI / 2;
+  curb.position.y = 0.02;
+  environmentGroup.add(curb);
 
-  // High-Transparency Glass Front & Side Walls
-  const glassMat = new THREE.MeshPhysicalMaterial({
+  const outerCurbGeo = new THREE.RingGeometry(145, 146.5, 64);
+  const outerCurb = new THREE.Mesh(outerCurbGeo, curbMat);
+  outerCurb.rotation.x = -Math.PI / 2;
+  outerCurb.position.y = 0.02;
+  environmentGroup.add(outerCurb);
+
+  // Center Line Markings
+  const centerLineGeo = new THREE.RingGeometry(114.6, 115.4, 64);
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const centerLine = new THREE.Mesh(centerLineGeo, lineMat);
+  centerLine.rotation.x = -Math.PI / 2;
+  centerLine.position.y = 0.03;
+  environmentGroup.add(centerLine);
+
+  // 3. SHOWROOM ARCHITECTURAL PAVILION (North at [0, 0, -45])
+  const pavilionGroup = new THREE.Group();
+  pavilionGroup.position.set(0, 0, -45);
+
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    metalness: 0.1,
+    roughness: 0.12,
+  });
+  const pavilionFloor = new THREE.Mesh(new THREE.BoxGeometry(50, 0.4, 30), floorMat);
+  pavilionFloor.position.y = 0.2;
+  pavilionFloor.receiveShadow = true;
+  pavilionGroup.add(pavilionFloor);
+
+  // Glass Walls
+  const pavilionGlassMat = new THREE.MeshPhysicalMaterial({
     color: 0xe0f2fe,
-    transmission: 0.88,
-    opacity: 0.3,
+    transmission: 0.92,
+    opacity: 0.35,
     transparent: true,
     roughness: 0.05,
     metalness: 0.1,
   });
 
-  const frontGlass = new THREE.Mesh(new THREE.BoxGeometry(66, 11.5, 0.3), glassMat);
-  frontGlass.position.set(0, 6.2, 20.8);
-  showroomGroup.add(frontGlass);
+  const backWall = new THREE.Mesh(new THREE.BoxGeometry(50, 8, 0.4), pavilionGlassMat);
+  backWall.position.set(0, 4.2, -15);
+  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 8, 30), pavilionGlassMat);
+  leftWall.position.set(-25, 4.2, 0);
+  const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 8, 30), pavilionGlassMat);
+  rightWall.position.set(25, 4.2, 0);
+  pavilionGroup.add(backWall, leftWall, rightWall);
 
-  const backWall = new THREE.Mesh(
-    new THREE.BoxGeometry(68, 12, 0.6),
-    new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 })
-  );
-  backWall.position.set(0, 6.2, -20.8);
-  showroomGroup.add(backWall);
-
-  // Structural Titanium Columns
-  const columnMat = new THREE.MeshStandardMaterial({
-    color: 0x334155,
+  // Modern Cantilevered Roof
+  const roofMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
     metalness: 0.8,
     roughness: 0.2,
   });
-  const colPositions = [
-    [-32, 21], [32, 21], [-16, 21], [16, 21],
-    [-32, -21], [32, -21], [-16, -21], [16, -21],
-  ];
-  colPositions.forEach(([x, z]) => {
-    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 12, 16), columnMat);
-    col.position.set(x, 6.2, z);
-    col.castShadow = true;
-    showroomGroup.add(col);
-  });
+  const pavilionRoof = new THREE.Mesh(new THREE.BoxGeometry(54, 0.8, 34), roofMat);
+  pavilionRoof.position.set(0, 8.4, 0);
+  pavilionRoof.castShadow = true;
+  pavilionGroup.add(pavilionRoof);
 
-  // Neon Light Strips along ceiling
-  for (let z = -15; z <= 15; z += 7.5) {
-    const strip = new THREE.Mesh(
-      new THREE.BoxGeometry(62, 0.1, 0.25),
-      new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0xffffff,
-        emissiveIntensity: 2.2,
-      })
-    );
-    strip.position.set(0, 11.8, z);
-    showroomGroup.add(strip);
-  }
-
-  // Large 3D Marquee Sign on Showroom Header
-  const marqueeGroup = new THREE.Group();
-  marqueeGroup.position.set(0, 14.2, 21.5);
-
-  const signBacking = new THREE.Mesh(
-    new THREE.BoxGeometry(34, 2.4, 0.4),
-    new THREE.MeshStandardMaterial({ color: 0x050c17, roughness: 0.3 })
-  );
-  marqueeGroup.add(signBacking);
-
-  const brandTitleBar = new THREE.Mesh(
-    new THREE.BoxGeometry(28, 0.9, 0.2),
+  // Neon Showroom Sign
+  const signMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(22, 1.4, 0.2),
     new THREE.MeshStandardMaterial({
       color: 0xffffff,
       emissive: 0xffffff,
-      emissiveIntensity: 2.8,
+      emissiveIntensity: 3.0,
     })
   );
-  brandTitleBar.position.z = 0.25;
-  marqueeGroup.add(brandTitleBar);
+  signMesh.position.set(0, 7.2, 14.8);
+  pavilionGroup.add(signMesh);
 
-  const redAccentBar = new THREE.Mesh(
-    new THREE.BoxGeometry(4.5, 0.9, 0.22),
-    new THREE.MeshStandardMaterial({
-      color: 0xef233c,
-      emissive: 0xef233c,
-      emissiveIntensity: 3.5,
-    })
-  );
-  redAccentBar.position.set(13.8, 0, 0.25);
-  marqueeGroup.add(redAccentBar);
-  showroomGroup.add(marqueeGroup);
+  environmentGroup.add(pavilionGroup);
 
-  // 5. ROTATING SHOWROOM PODIUMS (Display vehicles with different classes)
-  const podiumCoords = [
-    { x: -18, z: 0, carId: 'car-gle450-2022', color: '#0B0D11', name: 'Mercedes-Benz GLE 450', type: 'LUXURY_SUV' as VehicleModelType },
-    { x: 0, z: 2, carId: 'car-highlander-2021', color: '#F8FAFC', name: 'Toyota Highlander', type: 'SPORTS_COUPE' as VehicleModelType },
-    { x: 18, z: 0, carId: 'car-lexus-rx-2020', color: '#1D4ED8', name: 'Lexus RX 350', type: 'EXECUTIVE_SEDAN' as VehicleModelType },
+  // 4. SHOWROOM DISPLAY VEHICLES (Rotating Turntable Podiums)
+  const displayConfigs = [
+    {
+      carId: 'car-highlander-2021',
+      x: -14,
+      z: -45,
+      type: 'LUXURY_SUV' as VehicleModelType,
+      color: '#F8FAFC',
+    },
+    {
+      carId: 'car-c63-amg-2021',
+      x: 0,
+      z: -45,
+      type: 'SPORTS_COUPE' as VehicleModelType,
+      color: '#DC2626',
+    },
+    {
+      carId: 'car-e350-2020',
+      x: 14,
+      z: -45,
+      type: 'EXECUTIVE_SEDAN' as VehicleModelType,
+      color: '#0B0D11',
+    },
   ];
 
-  podiumCoords.forEach((p) => {
+  displayConfigs.forEach((cfg) => {
     const podGroup = new THREE.Group();
-    podGroup.position.set(p.x, 0.4, p.z);
+    podGroup.position.set(cfg.x, 0.4, cfg.z);
 
-    const podMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(4.4, 4.6, 0.4, 32),
-      new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.2 })
-    );
-    podMesh.receiveShadow = true;
-    podGroup.add(podMesh);
+    const turntableGeo = new THREE.CylinderGeometry(4.2, 4.4, 0.25, 32);
+    const turntableMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      metalness: 0.7,
+      roughness: 0.25,
+    });
+    const turntable = new THREE.Mesh(turntableGeo, turntableMat);
+    turntable.receiveShadow = true;
+    podGroup.add(turntable);
 
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(4.42, 0.08, 8, 48).rotateX(Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0xef233c, emissive: 0xef233c, emissiveIntensity: 2.6 })
-    );
-    ring.position.y = 0.2;
+    // Illuminated edge ring
+    const ringGeo = new THREE.RingGeometry(4.1, 4.35, 32);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.13;
     podGroup.add(ring);
 
-    const showcaseCar = createVehicleByType({
-      vehicleType: p.type,
-      paintColor: p.color,
+    // Display Vehicle
+    const displayCar = createVehicleByType({
+      vehicleType: cfg.type,
+      paintColor: cfg.color,
       finish: 'metallic',
-      rimColor: '#e2e8f0',
-      caliperColor: '#ef233c',
+      rimColor: '#E2E8F0',
+      caliperColor: '#EF233C',
       headlightTint: '#ffffff',
-      windowTint: 0.4,
+      windowTint: 0.45,
     });
-    showcaseCar.carGroup.position.y = 0.2;
-    podGroup.add(showcaseCar.carGroup);
+    displayCar.carGroup.position.set(0, 0.13, 0);
+    podGroup.add(displayCar.carGroup);
 
-    showroomGroup.add(podGroup);
-    podiums.push({ group: podGroup, carMesh: showcaseCar.carGroup, carId: p.carId });
+    podiums.push({
+      group: podGroup,
+      carMesh: displayCar.carGroup,
+      carId: cfg.carId,
+    });
+    environmentGroup.add(podGroup);
   });
 
-  environmentGroup.add(showroomGroup);
+  // 5. VIP DEALER LOUNGE & CONCIERGE BUILDING (East at [50, 0, 0])
+  const loungeGroup = new THREE.Group();
+  loungeGroup.position.set(50, 0, 0);
+  loungeGroup.rotation.y = -Math.PI / 2;
 
-  // 6. GRAND MARKETPLACE PORTAL GATE (Prominent Landmark at [0, 0, 32])
+  const loungeBase = new THREE.Mesh(
+    new THREE.BoxGeometry(26, 6.5, 18),
+    new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.3, metalness: 0.5 })
+  );
+  loungeBase.position.y = 3.25;
+  loungeBase.castShadow = true;
+  loungeGroup.add(loungeBase);
+
+  // Illuminated Sign
+  const loungeSign = new THREE.Mesh(
+    new THREE.BoxGeometry(14, 1.2, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 2.5 })
+  );
+  loungeSign.position.set(0, 5.8, 9.1);
+  loungeGroup.add(loungeSign);
+  environmentGroup.add(loungeGroup);
+
+  // 6. GRAND MARKETPLACE GATEWAY (South at [0, 0, 32])
   const marketplacePortal = new THREE.Group();
   marketplacePortal.position.set(0, 0, 32);
 
-  const archMat = new THREE.MeshStandardMaterial({
-    color: 0x0f172a,
+  const portalMat = new THREE.MeshStandardMaterial({
+    color: 0x071a2b,
     metalness: 0.85,
     roughness: 0.15,
   });
-  const pillarL = new THREE.Mesh(new THREE.BoxGeometry(1.8, 8.0, 2.4), archMat);
-  pillarL.position.set(-7.0, 4.0, 0);
+
+  const pillarL = new THREE.Mesh(new THREE.BoxGeometry(2.2, 9.5, 2.2), portalMat);
+  pillarL.position.set(-6.5, 4.75, 0);
   pillarL.castShadow = true;
 
   const pillarR = pillarL.clone();
-  pillarR.position.x = 7.0;
+  pillarR.position.x = 6.5;
 
-  const archTop = new THREE.Mesh(new THREE.BoxGeometry(15.8, 1.6, 2.4), archMat);
-  archTop.position.set(0, 8.4, 0);
+  const archTop = new THREE.Mesh(new THREE.BoxGeometry(15.2, 1.8, 2.4), portalMat);
+  archTop.position.set(0, 9.2, 0);
+  archTop.castShadow = true;
 
-  // Holographic Portal Plane
+  // Holographic Drive-Through Energy Portal
   const holoPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(12.2, 7.2),
+    new THREE.PlaneGeometry(10.8, 7.6),
     new THREE.MeshPhysicalMaterial({
       color: 0xef233c,
       emissive: 0xef233c,
@@ -1210,7 +1549,7 @@ export function createWorldEnvironment(): {
   // 8. DAYLIGHT ATMOSPHERIC SKY DOME
   const skyGeo = new THREE.SphereGeometry(320, 32, 24);
   const skyMat = new THREE.MeshBasicMaterial({
-    color: 0x38bdf8, // Vibrant sunny daylight sky
+    color: 0x38bdf8,
     side: THREE.BackSide,
   });
   const skyDome = new THREE.Mesh(skyGeo, skyMat);
