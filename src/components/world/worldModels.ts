@@ -1462,9 +1462,9 @@ export function createWorldEnvironment(): {
   loungeGroup.add(loungeSign);
   environmentGroup.add(loungeGroup);
 
-  // 6. GRAND MARKETPLACE GATEWAY (South at [0, 0, 32])
+  // 6. GRAND MARKETPLACE GATEWAY (South at [0, 0, 100])
   const marketplacePortal = new THREE.Group();
-  marketplacePortal.position.set(0, 0, 32);
+  marketplacePortal.position.set(0, 0, 100);
 
   const portalMat = new THREE.MeshStandardMaterial({
     color: 0x071a2b,

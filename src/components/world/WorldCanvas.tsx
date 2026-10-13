@@ -10,6 +10,12 @@ import {
 } from './worldModels';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
 import { HeadlightState, TurnSignalState, CockpitHotspot } from './CockpitDashboardOverlay';
+import { buildLagosCityDistrict, LagosCityResult } from './lagosCityBuilder';
+import { TrafficEngine } from './trafficEngine';
+import { RivalsEngine } from './rivalsEngine';
+import { CollisionEngine } from './collisionEngine';
+import { findShortestRoadPath, RIVAL_RACE_CHECKPOINTS } from './lagosCityData';
+import { ActiveMissionSession } from './missionEngine';
 
 export type CameraViewMode = 'CHASE' | 'COCKPIT' | 'ORBIT' | 'DRONE';
 export type TimeOfDay = 'DAYLIGHT' | 'SUNSET' | 'MIDNIGHT' | 'GOLDEN_HOUR';
@@ -42,6 +48,13 @@ export interface WorldCanvasProps {
   hornActive?: boolean;
   cockpitHotspot?: CockpitHotspot;
   onAwardCredits?: (amount: number, reason: string) => void;
+  activeDestination?: { x: number; z: number; name: string } | null;
+  activeMissionSession?: ActiveMissionSession | null;
+  onMissionUpdate?: (delta: number, playerPos: { x: number; z: number; speed: number }, onCollisionImpact?: boolean) => void;
+  onRaceCheckpointPassed?: (cpIdx: number, rank: number) => void;
+  onTrafficPositionsUpdate?: (positions: { x: number; z: number }[]) => void;
+  onRivalPositionsUpdate?: (positions: { name: string; x: number; z: number }[]) => void;
+  resetVehicleTrigger?: number;
 }
 
 export const WorldCanvas: React.FC<WorldCanvasProps> = ({
@@ -66,6 +79,13 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   hornActive = false,
   cockpitHotspot = 'DRIVER',
   onAwardCredits,
+  activeDestination,
+  activeMissionSession,
+  onMissionUpdate,
+  onRaceCheckpointPassed,
+  onTrafficPositionsUpdate,
+  onRivalPositionsUpdate,
+  resetVehicleTrigger,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -78,6 +98,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const dirLightRef = useRef<THREE.DirectionalLight | null>(null);
   const hemiLightRef = useRef<THREE.HemisphereLight | null>(null);
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
+
+  // Engines and City Subsystems Refs
+  const trafficEngineRef = useRef<TrafficEngine | null>(null);
+  const rivalsEngineRef = useRef<RivalsEngine | null>(null);
+  const collisionEngineRef = useRef<CollisionEngine | null>(null);
+  const cityDataRef = useRef<LagosCityResult | null>(null);
+  const playerRaceCheckpointIdx = useRef<number>(1);
+  const lastGPSCalcTime = useRef<number>(0);
+  const lastTelemetrySendTime = useRef<number>(0);
 
   // Dynamic Component Refs
   const wheelsRef = useRef<{
@@ -139,6 +168,24 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
   const onAwardCreditsRef = useRef(onAwardCredits);
   onAwardCreditsRef.current = onAwardCredits;
+
+  const activeDestinationRef = useRef(activeDestination);
+  activeDestinationRef.current = activeDestination;
+
+  const activeMissionSessionRef = useRef(activeMissionSession);
+  activeMissionSessionRef.current = activeMissionSession;
+
+  const onMissionUpdateRef = useRef(onMissionUpdate);
+  onMissionUpdateRef.current = onMissionUpdate;
+
+  const onRaceCheckpointPassedRef = useRef(onRaceCheckpointPassed);
+  onRaceCheckpointPassedRef.current = onRaceCheckpointPassed;
+
+  const onTrafficPositionsUpdateRef = useRef(onTrafficPositionsUpdate);
+  onTrafficPositionsUpdateRef.current = onTrafficPositionsUpdate;
+
+  const onRivalPositionsUpdateRef = useRef(onRivalPositionsUpdate);
+  onRivalPositionsUpdateRef.current = onRivalPositionsUpdate;
 
   // Vehicle Physics & Dynamics State
   const carState = useRef({
@@ -351,6 +398,26 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       if (k === 'c') {
         onOpenCustomizer?.();
       }
+
+      // Vehicle Recovery / Reset on 'R'
+      if (k === 'r') {
+        const cs = carState.current;
+        cs.speed = 0;
+        cs.steeringAngle = 0;
+        if (activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE') {
+          cs.x = -50;
+          cs.z = -130;
+          cs.rotation = Math.PI / 2;
+        } else {
+          cs.x = 0;
+          cs.z = 10;
+          cs.rotation = Math.PI;
+        }
+        if (playerCarGroupRef.current) {
+          playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
+          playerCarGroupRef.current.rotation.y = cs.rotation;
+        }
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -373,6 +440,27 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [onEnterMarketplace, onInspectCar, onOpenCustomizer, onOpenDealerLounge]);
+
+  // Reset Vehicle Trigger Prop Effect
+  useEffect(() => {
+    if (!resetVehicleTrigger) return;
+    const cs = carState.current;
+    cs.speed = 0;
+    cs.steeringAngle = 0;
+    if (activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE') {
+      cs.x = -50;
+      cs.z = -130;
+      cs.rotation = Math.PI / 2;
+    } else {
+      cs.x = 0;
+      cs.z = 10;
+      cs.rotation = Math.PI;
+    }
+    if (playerCarGroupRef.current) {
+      playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
+      playerCarGroupRef.current.rotation.y = cs.rotation;
+    }
+  }, [resetVehicleTrigger]);
 
   // Main Three.js Lifecycle
   useEffect(() => {
