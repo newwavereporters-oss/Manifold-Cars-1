@@ -97,6 +97,49 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const vehicleSpecRef = useRef(VEHICLE_SPEC_PROFILES[currentVehicleType]);
   vehicleSpecRef.current = VEHICLE_SPEC_PROFILES[currentVehicleType];
 
+  // Dynamic prop refs to prevent stale closure in requestAnimationFrame loop
+  const virtualInputRef = useRef(virtualInput);
+  virtualInputRef.current = virtualInput;
+
+  const isEngineRunningRef = useRef(isEngineRunning);
+  isEngineRunningRef.current = isEngineRunning;
+
+  const driveModeRef = useRef(driveMode);
+  driveModeRef.current = driveMode;
+
+  const customizationRef = useRef(customization);
+  customizationRef.current = customization;
+
+  const cameraModeRef = useRef(cameraMode);
+  cameraModeRef.current = cameraMode;
+
+  const cockpitHotspotRef = useRef(cockpitHotspot);
+  cockpitHotspotRef.current = cockpitHotspot;
+
+  const isCustomizerOpenRef = useRef(isCustomizerOpen);
+  isCustomizerOpenRef.current = isCustomizerOpen;
+
+  const turnSignalRef = useRef(turnSignal);
+  turnSignalRef.current = turnSignal;
+
+  const hazardLightsRef = useRef(hazardLights);
+  hazardLightsRef.current = hazardLights;
+
+  const onZoneChangeRef = useRef(onZoneChange);
+  onZoneChangeRef.current = onZoneChange;
+
+  const onSpeedChangeRef = useRef(onSpeedChange);
+  onSpeedChangeRef.current = onSpeedChange;
+
+  const onSpeedTrapTriggerRef = useRef(onSpeedTrapTrigger);
+  onSpeedTrapTriggerRef.current = onSpeedTrapTrigger;
+
+  const onCarPositionUpdateRef = useRef(onCarPositionUpdate);
+  onCarPositionUpdateRef.current = onCarPositionUpdate;
+
+  const onAwardCreditsRef = useRef(onAwardCredits);
+  onAwardCreditsRef.current = onAwardCredits;
+
   // Vehicle Physics & Dynamics State
   const carState = useRef({
     x: 0,
@@ -464,30 +507,34 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       marketplaceMarkerSprite.position.y = 8.2 + Math.sin(currentTime * 0.003) * 0.35;
 
       // Input Resolution (Keyboard + Touch)
+      const currentVirtual = virtualInputRef.current;
       const input = {
-        forward: Boolean(keys.current['w'] || keys.current['arrowup'] || virtualInput?.forward),
-        backward: Boolean(keys.current['s'] || keys.current['arrowdown'] || virtualInput?.backward),
-        left: Boolean(keys.current['a'] || keys.current['arrowleft'] || virtualInput?.left),
-        right: Boolean(keys.current['d'] || keys.current['arrowright'] || virtualInput?.right),
-        handbrake: Boolean(keys.current[' '] || keys.current['space'] || virtualInput?.handbrake),
+        forward: Boolean(keys.current['w'] || keys.current['arrowup'] || currentVirtual?.forward),
+        backward: Boolean(keys.current['s'] || keys.current['arrowdown'] || currentVirtual?.backward),
+        left: Boolean(keys.current['a'] || keys.current['arrowleft'] || currentVirtual?.left),
+        right: Boolean(keys.current['d'] || keys.current['arrowright'] || currentVirtual?.right),
+        handbrake: Boolean(keys.current[' '] || keys.current['space'] || currentVirtual?.handbrake),
       };
 
       const cs = carState.current;
       const baseSpec = vehicleSpecRef.current;
+      const currentCustom = customizationRef.current;
+      const currentDriveMode = driveModeRef.current;
+      const isEngineOn = isEngineRunningRef.current;
 
       // Calculate installed tuning upgrades modifiers
-      const ecu = customization.ecuStage || 0;
+      const ecu = currentCustom.ecuStage || 0;
       const ecuAccelBonus = ecu === 2 ? 1.45 : ecu === 1 ? 1.2 : 1.0;
       const ecuSpeedBonus = ecu === 2 ? 1.22 : ecu === 1 ? 1.12 : 1.0;
 
-      const isTrackSuspension = customization.suspension === 'TRACK';
-      const isSportSuspension = customization.suspension === 'SPORT';
+      const isTrackSuspension = currentCustom.suspension === 'TRACK';
+      const isSportSuspension = currentCustom.suspension === 'SPORT';
       const steerSpeedMultiplier = isTrackSuspension ? 1.45 : isSportSuspension ? 1.25 : 1.0;
 
-      const isCarbonBrakes = customization.brakes === 'CARBON_CERAMIC';
+      const isCarbonBrakes = currentCustom.brakes === 'CARBON_CERAMIC';
       const brakeDecelEffective = isCarbonBrakes ? 64 : baseSpec.brakeDecel;
 
-      const isSemiSlick = customization.tires === 'SEMI_SLICK';
+      const isSemiSlick = currentCustom.tires === 'SEMI_SLICK';
       const driftControlMultiplier = isSemiSlick ? 0.75 : 1.0;
 
       // Drive Mode Adjustments
@@ -496,17 +543,17 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       let modeSteerMod = 1.0;
       let modeDriftMod = 1.0;
 
-      if (driveMode === 'TRACK') {
+      if (currentDriveMode === 'TRACK') {
         modeAccelMod = 1.28;
         modeSpeedMod = 1.14;
         modeSteerMod = 1.2;
-      } else if (driveMode === 'SPORT') {
+      } else if (currentDriveMode === 'SPORT') {
         modeAccelMod = 1.12;
         modeSpeedMod = 1.06;
-      } else if (driveMode === 'ECO') {
+      } else if (currentDriveMode === 'ECO') {
         modeAccelMod = 0.75;
         modeSpeedMod = 0.82;
-      } else if (driveMode === 'DRIFT') {
+      } else if (currentDriveMode === 'DRIFT') {
         modeAccelMod = 1.1;
         modeDriftMod = 2.4;
       }
@@ -515,21 +562,25 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       const effectiveMaxSpeed = baseSpec.maxSpeed * ecuSpeedBonus * modeSpeedMod;
       const effectiveSteerSpeed = baseSpec.steerSpeed * steerSpeedMultiplier * modeSteerMod;
 
-      // If Engine is OFF, car cannot accelerate
-      const canThrottle = isEngineRunning;
-
       // Throttle & Braking Dynamics
-      if (input.forward && canThrottle) {
-        if (cs.speed < 0) {
-          cs.speed += brakeDecelEffective * delta;
-        } else {
+      // Forward input: brakes if reversing, accelerates if moving forward/stopped and engine is running
+      // Backward input: brakes if moving forward, reverses if stopped/reversing and engine is running
+      if (input.forward) {
+        if (cs.speed < -0.1) {
+          // Brakes reverse motion towards zero
+          cs.speed = Math.min(0, cs.speed + brakeDecelEffective * delta);
+        } else if (isEngineOn) {
+          // Accelerate forward
           cs.speed = Math.min(cs.speed + effectiveAccel * delta, effectiveMaxSpeed);
         }
-      } else if (input.backward && canThrottle) {
-        if (cs.speed > 0) {
-          cs.speed -= brakeDecelEffective * delta;
-        } else {
-          cs.speed = Math.max(cs.speed - effectiveAccel * 0.55 * delta, -18);
+      } else if (input.backward) {
+        if (cs.speed > 0.1) {
+          // Brakes forward motion towards zero
+          cs.speed = Math.max(0, cs.speed - brakeDecelEffective * delta);
+        } else if (isEngineOn) {
+          // Reverse acceleration
+          const maxReverseSpeed = -20;
+          cs.speed = Math.max(cs.speed - effectiveAccel * 0.6 * delta, maxReverseSpeed);
         }
       } else {
         // Natural rolling resistance
@@ -576,7 +627,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       cs.distanceDriven += stepDistance;
       if (cs.distanceDriven - cs.lastDistanceMilestone > 250) {
         cs.lastDistanceMilestone = cs.distanceDriven;
-        onAwardCredits?.(25, 'Distance Cruise Bonus');
+        onAwardCreditsRef.current?.(25, 'Distance Cruise Bonus');
       }
 
       // Track boundaries: -185 to 185
@@ -620,13 +671,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       }
 
       // Exterior Turn Signals & Hazard Blinking sync
+      const currentTurnSignal = turnSignalRef.current;
+      const currentHazard = hazardLightsRef.current;
       const isBlinkingNow =
-        (turnSignal !== 'OFF' || hazardLights) && Math.floor(currentTime / 450) % 2 === 0;
+        (currentTurnSignal !== 'OFF' || currentHazard) && Math.floor(currentTime / 450) % 2 === 0;
 
       if (activeVehicleRef.current?.turnSignalMeshes) {
         const { frontLeft, frontRight, rearLeft, rearRight } = activeVehicleRef.current.turnSignalMeshes;
-        const leftBlink = (turnSignal === 'LEFT' || hazardLights) && isBlinkingNow;
-        const rightBlink = (turnSignal === 'RIGHT' || hazardLights) && isBlinkingNow;
+        const leftBlink = (currentTurnSignal === 'LEFT' || currentHazard) && isBlinkingNow;
+        const rightBlink = (currentTurnSignal === 'RIGHT' || currentHazard) && isBlinkingNow;
 
         (frontLeft.material as THREE.MeshStandardMaterial).emissiveIntensity = leftBlink ? 3.5 : 0.05;
         (rearLeft.material as THREE.MeshStandardMaterial).emissiveIntensity = leftBlink ? 3.5 : 0.05;
@@ -648,10 +701,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       engineAudio.update(
         cs.speed,
         effectiveMaxSpeed,
-        canThrottle && (input.forward || input.backward),
-        canThrottle && input.backward && cs.speed > 0,
+        isEngineOn && (input.forward || input.backward),
+        input.backward && cs.speed > 0,
         cs.isDrifting,
-        driveMode,
+        currentDriveMode,
         currentVehicleType
       );
 
@@ -659,7 +712,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       const speedKmh = Math.round(Math.abs(cs.speed) * 4.6);
       const speedRatio = Math.abs(cs.speed) / effectiveMaxSpeed;
       const rpm = Math.round(baseSpec.idleRpm + speedRatio * (baseSpec.redlineRpm - baseSpec.idleRpm));
-      const gear = !isEngineRunning
+      const gear = !isEngineOn
         ? 'OFF'
         : cs.speed < -0.5
         ? 'R'
@@ -677,13 +730,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         ? 'D5'
         : 'D6';
 
-      if (onSpeedChange) {
-        onSpeedChange(speedKmh, rpm, gear);
-      }
-
-      if (onCarPositionUpdate) {
-        onCarPositionUpdate({ x: cs.x, z: cs.z, heading: cs.rotation });
-      }
+      onSpeedChangeRef.current?.(speedKmh, rpm, gear);
+      onCarPositionUpdateRef.current?.({ x: cs.x, z: cs.z, heading: cs.rotation });
 
       // Zone Detection & Proximity Hotspots
       let detectedZone: string | null = null;
@@ -722,41 +770,41 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         const now = performance.now();
         if (now - lastSpeedTrapTrigger.current > 4000) {
           lastSpeedTrapTrigger.current = now;
-          if (onSpeedTrapTrigger) {
-            onSpeedTrapTrigger(speedKmh);
-          }
+          onSpeedTrapTriggerRef.current?.(speedKmh);
           if (speedKmh > 160) {
-            onAwardCredits?.(350, 'High-Speed Trap Milestone (>160 km/h)');
+            onAwardCreditsRef.current?.(350, 'High-Speed Trap Milestone (>160 km/h)');
           } else if (speedKmh > 100) {
-            onAwardCredits?.(150, 'Speed Trap Record Passed');
+            onAwardCreditsRef.current?.(150, 'Speed Trap Record Passed');
           }
         }
       }
 
       if (detectedZone !== activeZoneRef.current) {
         activeZoneRef.current = detectedZone;
-        if (onZoneChange) {
-          onZoneChange(detectedZone);
-        }
+        onZoneChangeRef.current?.(detectedZone);
       }
 
       // CAMERA MODES ORCHESTRATION
-      if (cameraMode === 'COCKPIT') {
+      const currentCameraMode = cameraModeRef.current;
+      const currentCockpitHotspot = cockpitHotspotRef.current;
+      const isCustomizerOpen = isCustomizerOpenRef.current;
+
+      if (currentCameraMode === 'COCKPIT') {
         // Cockpit Camera with Hotspot Focusing
         const baseOffset = baseSpec.cockpitOffset;
         let hotspotOffset = new THREE.Vector3(baseOffset.x, baseOffset.y, baseOffset.z);
         let lookTargetDist = 28;
         let lookTargetY = baseSpec.lookTargetHeight;
 
-        if (cockpitHotspot === 'DASHBOARD') {
+        if (currentCockpitHotspot === 'DASHBOARD') {
           hotspotOffset = new THREE.Vector3(baseOffset.x, baseOffset.y - 0.12, baseOffset.z + 0.18);
           lookTargetDist = 1.2;
           lookTargetY = baseOffset.y - 0.05;
-        } else if (cockpitHotspot === 'CONSOLE') {
+        } else if (currentCockpitHotspot === 'CONSOLE') {
           hotspotOffset = new THREE.Vector3(0, baseOffset.y - 0.1, baseOffset.z + 0.1);
           lookTargetDist = 1.5;
           lookTargetY = baseOffset.y - 0.15;
-        } else if (cockpitHotspot === 'WINDSHIELD') {
+        } else if (currentCockpitHotspot === 'WINDSHIELD') {
           hotspotOffset = new THREE.Vector3(0, baseOffset.y + 0.1, baseOffset.z + 0.6);
           lookTargetDist = 35;
           lookTargetY = baseSpec.lookTargetHeight;
@@ -771,7 +819,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           cs.z + Math.cos(cs.rotation) * lookTargetDist
         );
         camera.lookAt(lookTarget);
-      } else if (cameraMode === 'ORBIT' || isCustomizerOpen) {
+      } else if (currentCameraMode === 'ORBIT' || isCustomizerOpen) {
         // Showcase Orbit Camera around Vehicle
         const orbitAngle = currentTime * 0.0006;
         const orbitDistance = 8.0;
@@ -781,7 +829,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           cs.z + Math.cos(orbitAngle) * orbitDistance
         );
         camera.lookAt(cs.x, 0.7, cs.z);
-      } else if (cameraMode === 'DRONE') {
+      } else if (currentCameraMode === 'DRONE') {
         // High-angle tactical tracking drone
         const droneDist = 20;
         const targetCamX = cs.x - Math.sin(cs.rotation) * droneDist;

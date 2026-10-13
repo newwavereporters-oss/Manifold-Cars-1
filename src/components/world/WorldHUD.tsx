@@ -18,6 +18,7 @@ import {
   Sliders,
   Power,
   Zap,
+  Smartphone,
 } from 'lucide-react';
 import { CameraViewMode, TimeOfDay } from './WorldCanvas';
 import { VehicleModelType, VEHICLE_SPEC_PROFILES } from './worldModels';
@@ -129,6 +130,16 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   const [isMuted, setIsMuted] = useState(() => engineAudio.getMuted());
   const [showControlsHelp, setShowControlsHelp] = useState(false);
   const [showGarageDropdown, setShowGarageDropdown] = useState(false);
+  const [touchControlsEnabled, setTouchControlsEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return (
+        window.innerWidth < 1024 ||
+        'ontouchstart' in window ||
+        (navigator.maxTouchPoints || 0) > 0
+      );
+    }
+    return true;
+  });
 
   const currentProfile =
     VEHICLE_SPEC_PROFILES[selectedVehicleType] || VEHICLE_SPEC_PROFILES.SPORTS_COUPE;
@@ -309,6 +320,19 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
           </button>
 
+          {/* On-Screen Touch Controls Toggle */}
+          <button
+            onClick={() => setTouchControlsEnabled(!touchControlsEnabled)}
+            className={`p-2 backdrop-blur-md rounded-2xl border transition-all ${
+              touchControlsEnabled
+                ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400 shadow-lg shadow-emerald-500/20'
+                : 'bg-[#071A2B]/90 hover:bg-white/10 border-white/10 text-gray-400 hover:text-white'
+            }`}
+            title={touchControlsEnabled ? 'Hide Touch Driving Controls' : 'Show Touch Driving Controls'}
+          >
+            <Smartphone className="w-4 h-4" />
+          </button>
+
           {/* Controls Help */}
           <button
             onClick={() => setShowControlsHelp(!showControlsHelp)}
@@ -468,26 +492,35 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         />
       )}
 
-      {/* 5. MOBILE TOUCH CONTROLS (Active on mobile viewports) */}
-      <MobileTouchControls
-        onVirtualInput={onVirtualInput || (() => {})}
-        virtualInputState={virtualInputState}
-        isEngineRunning={isEngineRunning}
-        onToggleEngine={onToggleEngine}
-        headlightState={headlightState}
-        onCycleHeadlights={onCycleHeadlights}
-        hazardLights={hazardLights}
-        onToggleHazard={onToggleHazard}
-        onHornDown={onHornDown}
-        onHornUp={onHornUp}
-        cameraMode={cameraMode}
-        onCycleCamera={cycleCamera}
-        driveMode={driveMode}
-        onCycleDriveMode={cycleDriveMode}
-      />
+      {/* 5. MOBILE & ON-SCREEN TOUCH CONTROLS */}
+      {touchControlsEnabled && (
+        <MobileTouchControls
+          onVirtualInput={onVirtualInput || (() => {})}
+          virtualInputState={virtualInputState}
+          isEngineRunning={isEngineRunning}
+          onToggleEngine={onToggleEngine}
+          headlightState={headlightState}
+          onCycleHeadlights={onCycleHeadlights}
+          hazardLights={hazardLights}
+          onToggleHazard={onToggleHazard}
+          onHornDown={onHornDown}
+          onHornUp={onHornUp}
+          cameraMode={cameraMode}
+          onCycleCamera={cycleCamera}
+          driveMode={driveMode}
+          onCycleDriveMode={cycleDriveMode}
+          speedKmh={speedKmh}
+          gear={gear}
+          rpm={rpm}
+        />
+      )}
 
       {/* 6. BOTTOM DESKTOP HUD BAR: TELEMETRY & CONTROLS + MINIMAP */}
-      <footer className="hidden sm:flex items-end justify-between w-full pointer-events-auto gap-4">
+      <footer
+        className={`${
+          touchControlsEnabled ? 'hidden xl:flex' : 'hidden sm:flex'
+        } items-end justify-between w-full pointer-events-auto gap-4`}
+      >
         {/* Left: Camera Selector & Navigation Mini-Compass */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1 bg-[#071A2B]/85 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shadow-lg">
