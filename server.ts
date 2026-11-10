@@ -1,4 +1,6 @@
 import express from 'express';
+import { createServer } from 'node:http';
+import { WebSocketServer, WebSocket } from 'ws';
 import type { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -12,6 +14,120 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
+const httpServer = createServer(app);
+
+const wss = new WebSocketServer({
+  server: httpServer,
+  path: '/ws',
+});
+
+
+type PlayerState = {
+  x: number;
+  z: number;
+  heading: number;
+};
+
+const connectedPlayers = new Map<
+  WebSocket,
+  { playerId: string; state: PlayerState | null }
+>();
+
+wss.on('connection', (socket: WebSocket) => {
+  const playerId = crypto.randomUUID();
+
+  connectedPlayers.set(socket, {
+    playerId,
+    state: null,
+  });
+
+  console.log(`[MANIFOLD Multiplayer] Player connected: ${playerId}`);
+
+  socket.send(JSON.stringify({
+    type: 'connected',
+    playerId,
+    message: 'MANIFOLD multiplayer socket ready',
+  }));
+
+  const existingPlayers = Array.from(connectedPlayers.values())
+    .filter((player) => player.state !== null)
+    .map((player) => ({
+      playerId: player.playerId,
+      ...player.state,
+    }));
+
+  socket.send(JSON.stringify({
+    type: 'players',
+    players: existingPlayers,
+  }));
+
+  socket.on('message', (rawMessage) => {
+    try {
+      const message = JSON.parse(rawMessage.toString());
+console.log('[MANIFOLD Multiplayer] Received:', message);
+      if (message.type !== 'playerState') return;
+
+      const { x, z, heading } = message;
+
+      if (
+        typeof x !== 'number' ||
+        typeof z !== 'number' ||
+        typeof heading !== 'number' ||
+        !Number.isFinite(x) ||
+        !Number.isFinite(z) ||
+        !Number.isFinite(heading) ||
+        Math.abs(x) > 10000 ||
+        Math.abs(z) > 10000 ||
+        Math.abs(heading) > 100000
+      ) return;
+
+      const player = connectedPlayers.get(socket);
+      if (!player) return;
+
+      player.state = { x, z, heading };
+
+      const update = JSON.stringify({
+        type: 'playerMoved',
+        playerId,
+        x,
+        z,
+        heading,
+      });
+
+      for (const [otherSocket] of connectedPlayers) {
+        if (
+          otherSocket !== socket &&
+          otherSocket.readyState === WebSocket.OPEN
+        ) {
+          otherSocket.send(update);
+        }
+      }
+    } catch {
+      // Ignore malformed messages.
+    }
+  });
+
+  socket.on('close', () => {
+    connectedPlayers.delete(socket);
+
+    const departure = JSON.stringify({
+      type: 'playerLeft',
+      playerId,
+    });
+
+    for (const [otherSocket] of connectedPlayers) {
+      if (otherSocket.readyState === WebSocket.OPEN) {
+        otherSocket.send(departure);
+      }
+    }
+
+    console.log(`[MANIFOLD Multiplayer] Player disconnected: ${playerId}`);
+  });
+
+  socket.on('error', (error: Error) => {
+    console.warn('[MANIFOLD Multiplayer] Socket error:', error.message);
+  });
+});
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
@@ -1213,7 +1329,7 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[MANIFOLD Server] Production Ingestion Engine active on http://0.0.0.0:${PORT}`);
   });
 }

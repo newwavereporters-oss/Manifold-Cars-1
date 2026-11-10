@@ -70,6 +70,111 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
   'N_DEPOT_APPROACH': { id: 'N_DEPOT_APPROACH', x: -55, z: 65, name: 'Logistics Way North', neighbors: ['N_WEST_AVE_1', 'N_DEPOT_JCT'], speedLimit: 45 },
   'N_DEPOT_JCT': { id: 'N_DEPOT_JCT', x: -55, z: 100, name: 'Mainland Cargo Depot Entry', neighbors: ['N_DEPOT_APPROACH', 'N_SOUTH_GATE', 'N_DEPOT_WEST'], speedLimit: 40 },
   'N_DEPOT_WEST': { id: 'N_DEPOT_WEST', x: -110, z: 100, name: 'Depot Warehouse Loop', neighbors: ['N_SURULERE_MID', 'N_DEPOT_JCT'], speedLimit: 45 },
+
+
+'N_OUTER_EXPRESS_WEST': {
+  id: 'N_OUTER_EXPRESS_WEST',
+  x: -180,
+  z: -130,
+  name: 'Outer Expressway West',
+  neighbors: ['N_WEST_CORNER_N', 'N_OUTER_EXPRESS_EAST'],
+  speedLimit: 100,
+},
+
+'N_OUTER_EXPRESS_EAST': {
+  id: 'N_OUTER_EXPRESS_EAST',
+  x: 180,
+  z: -130,
+  name: 'Outer Expressway East',
+  neighbors: [
+    'N_OUTER_EXPRESS_WEST',
+    'N_EAST_RING_N',
+    'N_EPE_CORRIDOR',
+  ],
+  speedLimit: 100,
+},
+
+'N_EPE_CORRIDOR': {
+  id: 'N_EPE_CORRIDOR',
+  x: 180,
+  z: -280,
+  name: 'Epe Expressway Approach',
+  neighbors: ['N_OUTER_EXPRESS_EAST', 'N_EPE_AJAH', 'N_BRIDGE_ENTRY'],
+  speedLimit: 100,
+},
+
+'N_EPE_AJAH': {
+  id: 'N_EPE_AJAH',
+  x: 180,
+  z: -430,
+  name: 'Ajah and Abraham Adesanya',
+  neighbors: ['N_EPE_CORRIDOR', 'N_EPE_SANGOTEDO'],
+  speedLimit: 100,
+},
+
+'N_EPE_SANGOTEDO': {
+  id: 'N_EPE_SANGOTEDO',
+  x: 180,
+  z: -600,
+  name: 'Sangotedo and Lakowe',
+  neighbors: ['N_EPE_AJAH', 'N_EPE_ELEKO'],
+  speedLimit: 100,
+},
+
+'N_EPE_ELEKO': {
+  id: 'N_EPE_ELEKO',
+  x: 180,
+  z: -780,
+  name: 'Eleko and Ibeju-Lekki',
+  neighbors: ['N_EPE_SANGOTEDO', 'N_EPE_ARRIVAL'],
+  speedLimit: 100,
+},
+
+'N_EPE_ARRIVAL': {
+  id: 'N_EPE_ARRIVAL',
+  x: 180,
+  z: -960,
+  name: 'Epe Arrival',
+  neighbors: ['N_EPE_ELEKO'],
+  speedLimit: 80,
+},
+
+'N_BRIDGE_ENTRY': {
+  id: 'N_BRIDGE_ENTRY',
+  x: 180,
+  z: -990,
+  name: 'Lagos River Bridge Entry',
+  neighbors: ['N_EPE_ARRIVAL', 'N_BRIDGE_EXIT'],
+  speedLimit: 60,
+},
+
+'N_BRIDGE_EXIT': {
+  id: 'N_BRIDGE_EXIT',
+  x: 180,
+  z: -1080,
+  name: 'River Bridge Exit',
+  neighbors: ['N_BRIDGE_ENTRY', 'N_OGUN_GATE'],
+  speedLimit: 40,
+},
+
+'N_OGUN_GATE': {
+  id: 'N_OGUN_GATE',
+  x: 180,
+  z: -1130,
+  name: 'Ogun State Arrival',
+  neighbors: ['N_BRIDGE_EXIT', 'N_OGUN_TURNAROUND'],
+  speedLimit: 30,
+},
+
+'N_OGUN_TURNAROUND': {
+  id: 'N_OGUN_TURNAROUND',
+  x: 180,
+  z: -1180,
+  name: 'Ogun Border Viewing Point',
+  neighbors: ['N_OGUN_GATE'],
+  speedLimit: 20,
+},
+
 };
 
 // 2. City Districts & Meaningful Interactive Landmarks
@@ -169,6 +274,7 @@ export const RIVAL_RACE_CHECKPOINTS: RaceCheckpoint[] = [
   { id: 9, x: -110, z: -130, name: 'Expressway Final Hairpin', radius: 12 },
   { id: 10, x: -50, z: -130, name: 'Finish Line Gantry', radius: 10 },
 ];
+
 
 // 4. Urban Buildings & Collision Footprints for Lagos Mainland
 export const LAGOS_BUILDINGS: BuildingBox[] = [

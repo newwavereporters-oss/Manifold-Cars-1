@@ -364,6 +364,7 @@ function buildCockpitInterior(
   const wheelHubGeo = new THREE.TorusGeometry(0.18, 0.028, 12, 28);
   const wheelHubMat = new THREE.MeshStandardMaterial({ color: 0x1f242d, roughness: 0.4, metalness: 0.6 });
   const wheelHub = new THREE.Mesh(wheelHubGeo, wheelHubMat);
+  
   wheelHub.position.copy(steerOffset);
   wheelHub.rotation.x = Math.PI / 4.5;
 
@@ -374,6 +375,55 @@ function buildCockpitInterior(
   stripe.position.set(0, 0.18, 0);
   wheelHub.add(stripe);
   interior.add(wheelHub);
+    // Windscreen frame: dark A-pillars and upper crossbar
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x111720,
+    roughness: 0.42,
+    metalness: 0.55,
+  });
+
+  const pillarGeo = new THREE.BoxGeometry(0.075, 0.68, 0.09);
+
+  const leftPillar = new THREE.Mesh(pillarGeo, frameMat);
+  leftPillar.position.set(-0.70, steerOffset.y + 0.42, steerOffset.z + 0.43);
+  leftPillar.rotation.z = -0.10;
+  interior.add(leftPillar);
+
+  const rightPillar = new THREE.Mesh(pillarGeo, frameMat);
+  rightPillar.position.set(0.70, steerOffset.y + 0.42, steerOffset.z + 0.43);
+  rightPillar.rotation.z = 0.10;
+  interior.add(rightPillar);
+
+  const upperFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(1.42, 0.075, 0.09),
+    frameMat
+  );
+  upperFrame.position.set(0, steerOffset.y + 0.76, steerOffset.z + 0.43);
+  interior.add(upperFrame);
+
+  // Driver's hands resting on the steering wheel
+  const skinMat = new THREE.MeshStandardMaterial({
+    color: 0x9b6848,
+    roughness: 0.78,
+  });
+
+  const handGeo = new THREE.SphereGeometry(0.065, 12, 10);
+
+  const leftHand = new THREE.Mesh(handGeo, skinMat);
+  leftHand.position.set(
+    steerOffset.x - 0.14,
+    steerOffset.y + 0.02,
+    steerOffset.z + 0.015
+  );
+  wheelHub.add(leftHand);
+
+  const rightHand = new THREE.Mesh(handGeo, skinMat);
+  rightHand.position.set(
+    steerOffset.x + 0.14,
+    steerOffset.y + 0.02,
+    steerOffset.z + 0.015
+  );
+  wheelHub.add(rightHand);
 
   // Driver Bucket Seat
   const seatGeo = new THREE.BoxGeometry(0.55, 0.65, 0.55);
@@ -1253,7 +1303,7 @@ export function createWorldEnvironment(): {
   const podiums: { group: THREE.Group; carMesh: THREE.Group; carId: string }[] = [];
 
   // 1. HIGH-VISIBILITY DAYLIGHT GROUND PLAZA & SURROUNDING LANDSCAPE
-  const terrainGeo = new THREE.PlaneGeometry(600, 600, 32, 32);
+  const terrainGeo = new THREE.PlaneGeometry(600, 1800, 32, 96);
   const terrainMat = new THREE.MeshStandardMaterial({
     color: 0x94a3b8, // Balanced slate neutral ground
     roughness: 0.75,
@@ -1261,7 +1311,7 @@ export function createWorldEnvironment(): {
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
   terrain.rotation.x = -Math.PI / 2;
-  terrain.position.y = -0.05;
+terrain.position.set(0, -0.05, -600);
   terrain.receiveShadow = true;
   environmentGroup.add(terrain);
 

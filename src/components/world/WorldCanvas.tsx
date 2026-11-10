@@ -1,5 +1,22 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+
+type RemotePlayerState = {
+  playerId: string;
+  x: number;
+  z: number;
+  heading: number;
+};
+
+type MultiplayerMessage = {
+  type: 'connected' | 'players' | 'playerMoved' | 'playerLeft';
+  playerId?: string;
+  x?: number;
+  z?: number;
+  heading?: number;
+  players?: RemotePlayerState[];
+};
+
 import {
   createVehicleByType,
   createWorldEnvironment,
@@ -12,6 +29,8 @@ import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
 import { HeadlightState, TurnSignalState, CockpitHotspot } from './CockpitDashboardOverlay';
 import { buildLagosCityDistrict, LagosCityResult } from './lagosCityBuilder';
 import { TrafficEngine } from './trafficEngine';
+import { BirdsSystem } from './birdsSystem';
+import { AircraftSystem } from './aircraftSystem';
 import { RivalsEngine } from './rivalsEngine';
 import { CollisionEngine } from './collisionEngine';
 import { findShortestRoadPath, RIVAL_RACE_CHECKPOINTS } from './lagosCityData';
@@ -88,6 +107,35 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   resetVehicleTrigger,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  // Interactive cockpit steering handlers
+const handleCockpitSteeringPointerDown = (
+  event: React.PointerEvent<HTMLElement>
+) => {
+  cockpitSteeringDraggingRef.current = true;
+  steeringPointerStartXRef.current = event.clientX;
+  steeringPointerStartAngleRef.current = cockpitSteeringInputRef.current;
+
+  event.currentTarget.setPointerCapture(event.pointerId);
+};
+
+const handleCockpitSteeringPointerMove = (
+  event: React.PointerEvent<HTMLElement>
+) => {
+  if (!cockpitSteeringDraggingRef.current) return;
+
+  const dragDistance = event.clientX - steeringPointerStartXRef.current;
+  const sensitivity = 0.012;
+
+  cockpitSteeringInputRef.current = THREE.MathUtils.clamp(
+    steeringPointerStartAngleRef.current + dragDistance * sensitivity,
+    -0.65,
+    0.65
+  );
+};
+
+const handleCockpitSteeringPointerUp = () => {
+  cockpitSteeringDraggingRef.current = false;
+};
 
   // References to preserve Three.js state across re-renders
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -98,6 +146,19 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const dirLightRef = useRef<THREE.DirectionalLight | null>(null);
   const hemiLightRef = useRef<THREE.HemisphereLight | null>(null);
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
+  
+const multiplayerSocketRef = useRef<WebSocket | null>(null);
+const lastMultiplayerSendTimeRef = useRef<number>(0);
+
+const remotePlayersRef = useRef(
+  new Map<string, {
+    group: THREE.Group;
+    targetX: number;
+    targetZ: number;
+    targetHeading: number;
+  }>()
+);
+
 
   // Engines and City Subsystems Refs
   const trafficEngineRef = useRef<TrafficEngine | null>(null);
@@ -200,9 +261,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     lastDistanceMilestone: 0,
   });
 
-  // Keyboard input tracker
-  const keys = useRef<{ [key: string]: boolean }>({});
-  const lastHornState = useRef<boolean>(false);
+ // Keyboard input tracker
+const keys = useRef<{ [key: string]: boolean }>({});
+const lastHornState = useRef<boolean>(false);
+
+// Interactive cockpit steering state
+const cockpitSteeringInputRef = useRef(0);
+const cockpitSteeringDraggingRef = useRef(false);
+const steeringPointerStartXRef = useRef(0);
+const steeringPointerStartAngleRef = useRef(0);
 
   // Speed trap & indicator timers
   const lastSpeedTrapTrigger = useRef<number>(0);
@@ -487,11 +554,11 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       powerPreference: 'high-performance',
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.25;
+    renderer.toneMappingExposure = 1.0;
     rendererRef.current = renderer;
 
     container.appendChild(renderer.domElement);
@@ -530,6 +597,25 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     // 4. Build Procedural Environment & Assets
     const { environmentGroup, podiums } = createWorldEnvironment();
     scene.add(environmentGroup);
+    
+const birdsSystem = new BirdsSystem();
+scene.add(birdsSystem.group);
+
+const aircraftSystem = new AircraftSystem();
+scene.add(aircraftSystem.group);
+
+
+
+// 4.1 Build Lagos City District
+const cityData = buildLagosCityDistrict({ includeGround: false });
+scene.add(cityData.cityGroup);
+cityDataRef.current = cityData;
+
+    // 4.2 Initialize autonomous traffic
+    const trafficEngine = new TrafficEngine();
+    scene.add(trafficEngine.group);
+    trafficEngineRef.current = trafficEngine;
+
 
     // 5. Build Drivable Player Car (from active customization type)
     const playerCar = createVehicleByType(customization);
@@ -576,6 +662,146 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     marketplaceMarkerSprite.scale.set(11, 2.8, 1);
     scene.add(marketplaceMarkerSprite);
 
+    
+    // 5.1 MANIFOLD Multiplayer Connection
+    const multiplayerUrl =
+      `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+
+    const multiplayerSocket = new WebSocket(multiplayerUrl);
+    multiplayerSocketRef.current = multiplayerSocket;
+    let myMultiplayerPlayerId: string | null = null;
+    
+    // Create a simple prototype avatar for each remote player
+    const addOrUpdateRemotePlayer = (player: RemotePlayerState) => {
+      // Never create an avatar for our own connection
+      if (player.playerId === myMultiplayerPlayerId) return;
+
+      let remote = remotePlayersRef.current.get(player.playerId);
+
+      if (!remote) {
+        const group = new THREE.Group();
+
+        const bodyMaterial = new THREE.MeshStandardMaterial({
+          color: 0x16a34a,
+          roughness: 0.8,
+        });
+
+        const headMaterial = new THREE.MeshStandardMaterial({
+          color: 0xd6a078,
+          roughness: 0.9,
+        });
+
+        const body = new THREE.Mesh(
+          new THREE.CapsuleGeometry(0.28, 0.65, 4, 8),
+          bodyMaterial
+        );
+        body.position.y = 0.75;
+        body.castShadow = true;
+        group.add(body);
+
+        const head = new THREE.Mesh(
+          new THREE.SphereGeometry(0.2, 12, 10),
+          headMaterial
+        );
+        head.position.y = 1.35;
+        head.castShadow = true;
+        group.add(head);
+
+        scene.add(group);
+
+        remote = {
+          group,
+          targetX: player.x,
+          targetZ: player.z,
+          targetHeading: player.heading,
+        };
+
+        remotePlayersRef.current.set(player.playerId, remote);
+      }
+
+      remote.targetX = player.x;
+      remote.targetZ = player.z;
+      remote.targetHeading = player.heading;
+    };
+
+
+
+
+    multiplayerSocket.onopen = () => {
+      console.log('[MANIFOLD Multiplayer] Connected to server');
+    };
+
+    multiplayerSocket.onmessage = (event: MessageEvent) => {
+      try {
+        const message = JSON.parse(event.data) as MultiplayerMessage;
+
+        if (message.type === 'connected' && message.playerId) {
+  myMultiplayerPlayerId = message.playerId;
+  console.log('[MANIFOLD Multiplayer] My player ID:', myMultiplayerPlayerId);
+}
+
+
+       
+        if (message.type === 'players' && message.players) {
+          message.players.forEach((player) => {
+            addOrUpdateRemotePlayer(player);
+          });
+        }
+
+
+        
+        if (
+          message.type === 'playerMoved' &&
+          message.playerId &&
+          typeof message.x === 'number' &&
+          typeof message.z === 'number' &&
+          typeof message.heading === 'number'
+        ) {
+          addOrUpdateRemotePlayer({
+            playerId: message.playerId,
+            x: message.x,
+            z: message.z,
+            heading: message.heading,
+          });
+        }
+
+
+        
+        if (message.type === 'playerLeft' && message.playerId) {
+          const remote = remotePlayersRef.current.get(message.playerId);
+
+          if (remote) {
+            scene.remove(remote.group);
+
+            remote.group.traverse((object) => {
+              if (object instanceof THREE.Mesh) {
+                object.geometry.dispose();
+
+                const materials = Array.isArray(object.material)
+                  ? object.material
+                  : [object.material];
+
+                materials.forEach((material) => material.dispose());
+              }
+            });
+
+            remotePlayersRef.current.delete(message.playerId);
+          }
+        }
+
+
+
+        // We will add remote-player handling in the next step.
+      } catch (error) {
+        console.warn('[MANIFOLD Multiplayer] Invalid message:', error);
+      }
+    };
+
+    multiplayerSocket.onerror = () => {
+      console.warn('[MANIFOLD Multiplayer] Connection error');
+    };
+
+
     // 6. Animation & Physics Game Loop
     let animationFrameId: number;
     let lastTime = performance.now();
@@ -584,6 +810,39 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       animationFrameId = requestAnimationFrame(animate);
 
       const delta = Math.min((currentTime - lastTime) / 1000, 0.08);
+
+      // Smoothly move remote-player avatars toward their latest positions
+      remotePlayersRef.current.forEach((remote) => {
+        const smoothing = Math.min(1, delta * 10);
+
+        remote.group.position.x +=
+          (remote.targetX - remote.group.position.x) * smoothing;
+
+        remote.group.position.z +=
+          (remote.targetZ - remote.group.position.z) * smoothing;
+
+        const headingDifference = Math.atan2(
+          Math.sin(remote.targetHeading - remote.group.rotation.y),
+          Math.cos(remote.targetHeading - remote.group.rotation.y)
+        );
+
+        remote.group.rotation.y += headingDifference * smoothing;
+      });
+
+
+      birdsSystem.update(delta);
+      aircraftSystem.update(delta);
+      
+      // Update autonomous traffic every animation frame
+      if (trafficEngineRef.current) {
+        trafficEngineRef.current.update(
+          delta,
+          carState.current.x,
+          carState.current.z,
+          carState.current.speed
+        );
+      }
+    
       lastTime = currentTime;
 
       // Turntables continuous rotation
@@ -689,11 +948,26 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
       // Speed-based steering damping
       const speedSteerFactor = Math.max(0.32, 1 - Math.abs(cs.speed) / (effectiveMaxSpeed * 1.35));
-      const targetSteer = input.left
-        ? baseSpec.maxSteer * speedSteerFactor
-        : input.right
-        ? -baseSpec.maxSteer * speedSteerFactor
-        : 0;
+      // Combine keyboard, touchscreen and cockpit steering.
+
+// Combine keyboard, touchscreen and cockpit steering.
+const keyboardSteer = input.left
+  ? 1
+  : input.right
+  ? -1
+  : 0;
+
+const cockpitSteer = cockpitSteeringInputRef.current / 0.65;
+
+// Keyboard/touch steering takes priority when pressed.
+// Otherwise, use the cockpit steering wheel.
+const combinedSteer =
+  keyboardSteer !== 0
+    ? keyboardSteer
+    : cockpitSteer;
+
+const targetSteer =
+  combinedSteer * baseSpec.maxSteer * speedSteerFactor;
 
       cs.steeringAngle += (targetSteer - cs.steeringAngle) * effectiveSteerSpeed * delta * 4;
 
@@ -718,21 +992,95 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         onAwardCreditsRef.current?.(25, 'Distance Cruise Bonus');
       }
 
-      // Track boundaries: -185 to 185
+      
+      // Extended MANIFOLD WORLD driving boundaries.
+      // Keep the original lateral limit while extending the Epe route.
       const nextX = cs.x + vx;
-      const nextZ = cs.z + vz;
+const nextZ = cs.z + vz;
 
-      if (Math.abs(nextX) < 185) {
-        cs.x = nextX;
-      } else {
-        cs.speed = -cs.speed * 0.25;
+// Prevent the car from entering building footprints.
+const buildings = cityDataRef.current?.collidableBuildings ?? [];
+const carClearance = 2.2;
+
+const hitsBuilding = (x: number, z: number) =>
+  buildings.some((building) => {
+    const halfWidth = building.width / 2 + carClearance;
+    const halfDepth = building.depth / 2 + carClearance;
+
+    return (
+      x > building.x - halfWidth &&
+      x < building.x + halfWidth &&
+      z > building.z - halfDepth &&
+      z < building.z + halfDepth
+    );
+  });
+
+const blockedX = hitsBuilding(nextX, cs.z);
+const blockedZ = hitsBuilding(cs.x, nextZ);
+
+      const WORLD_X_LIMIT = 185;
+      const WORLD_Z_MIN = -1205;
+      const WORLD_Z_MAX = 185;
+
+    
+
+if (
+  nextX > -WORLD_X_LIMIT &&
+  nextX < WORLD_X_LIMIT &&
+  !blockedX
+) {
+  cs.x = nextX;
+} else if (blockedX) {
+  cs.speed *= 0.65;
+} else {
+  cs.speed = -cs.speed * 0.25;
+}
+
+if (
+  nextZ > WORLD_Z_MIN &&
+  nextZ < WORLD_Z_MAX &&
+  !blockedZ
+) {
+  cs.z = nextZ;
+} else if (blockedZ) {
+  cs.speed *= 0.65;
+} else {
+  cs.speed = -cs.speed * 0.25;
+}
+
+
+
+
+      // Epe expressway central median protection.
+      // Keep both carriageways drivable while preventing crossings
+      // through the physical central divider.
+      const onEpeExpressway =
+        cs.z < -135 &&
+        cs.z > -1205 &&
+        Math.abs(cs.x - 180) < 30;
+
+      if (onEpeExpressway) {
+        const MEDIAN_CENTER_X = 180;
+        const MEDIAN_CLEARANCE = 2.0;
+
+        // Prevent a vehicle from entering or crossing the median.
+        if (
+          cs.x < MEDIAN_CENTER_X &&
+          cs.x > MEDIAN_CENTER_X - 30 &&
+          cs.x + vx >= MEDIAN_CENTER_X - MEDIAN_CLEARANCE
+        ) {
+          cs.x = MEDIAN_CENTER_X - MEDIAN_CLEARANCE;
+          cs.speed *= 0.65;
+        } else if (
+          cs.x > MEDIAN_CENTER_X &&
+          cs.x < MEDIAN_CENTER_X + 30 &&
+          cs.x + vx <= MEDIAN_CENTER_X + MEDIAN_CLEARANCE
+        ) {
+          cs.x = MEDIAN_CENTER_X + MEDIAN_CLEARANCE;
+          cs.speed *= 0.65;
+        }
       }
 
-      if (Math.abs(nextZ) < 185) {
-        cs.z = nextZ;
-      } else {
-        cs.speed = -cs.speed * 0.25;
-      }
 
       // Sync 3D model with physics state
       if (playerCarGroupRef.current) {
@@ -746,6 +1094,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         wheels.frontLeftWheel.rotation.y = cs.steeringAngle;
         wheels.frontRightWheel.rotation.y = Math.PI + cs.steeringAngle;
       }
+// Animate the steering wheel inside the active cockpit.
+const cockpitSteeringWheel =
+  activeVehicleRef.current?.interiorGroup.getObjectByName(
+    'cockpitSteeringWheel'
+  );
+
+if (cockpitSteeringWheel) {
+  cockpitSteeringWheel.rotation.z = -cs.steeringAngle * 3.5;
+}
 
       const wheelCircumference = 2 * Math.PI * 0.38;
       const wheelDelta = (cs.speed * delta) / wheelCircumference;
@@ -821,6 +1178,25 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       onSpeedChangeRef.current?.(speedKmh, rpm, gear);
       onCarPositionUpdateRef.current?.({ x: cs.x, z: cs.z, heading: cs.rotation });
 
+      
+      // Send our car position to other connected players (10 times per second)
+      if (
+        multiplayerSocketRef.current?.readyState === WebSocket.OPEN &&
+        currentTime - lastMultiplayerSendTimeRef.current >= 100
+      ) {
+        multiplayerSocketRef.current.send(
+          JSON.stringify({
+            type: 'playerState',
+            x: cs.x,
+            z: cs.z,
+            heading: cs.rotation,
+          })
+        );
+
+        lastMultiplayerSendTimeRef.current = currentTime;
+      }
+
+
       // Zone Detection & Proximity Hotspots
       let detectedZone: string | null = null;
 
@@ -880,9 +1256,14 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       if (currentCameraMode === 'COCKPIT') {
         // Cockpit Camera with Hotspot Focusing
         const baseOffset = baseSpec.cockpitOffset;
-        let hotspotOffset = new THREE.Vector3(baseOffset.x, baseOffset.y, baseOffset.z);
-        let lookTargetDist = 28;
-        let lookTargetY = baseSpec.lookTargetHeight;
+       // Keep the driver's camera clear of the seat geometry.
+let hotspotOffset = new THREE.Vector3(
+  baseOffset.x,
+  baseOffset.y + 0.05,
+  baseOffset.z + 0.05
+);
+        let lookTargetDist = 50;
+let lookTargetY = baseSpec.cockpitOffset.y - 0.30;
 
         if (currentCockpitHotspot === 'DASHBOARD') {
           hotspotOffset = new THREE.Vector3(baseOffset.x, baseOffset.y - 0.12, baseOffset.z + 0.18);
@@ -901,11 +1282,11 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         const driverOffset = hotspotOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), cs.rotation);
         camera.position.set(cs.x + driverOffset.x, driverOffset.y, cs.z + driverOffset.z);
 
-        const lookTarget = new THREE.Vector3(
-          cs.x + Math.sin(cs.rotation) * lookTargetDist,
-          lookTargetY,
-          cs.z + Math.cos(cs.rotation) * lookTargetDist
-        );
+       const lookTarget = new THREE.Vector3(
+  cs.x + Math.sin(cs.rotation) * lookTargetDist,
+  lookTargetY,
+  cs.z + Math.cos(cs.rotation) * lookTargetDist
+);
         camera.lookAt(lookTarget);
       } else if (currentCameraMode === 'ORBIT' || isCustomizerOpen) {
         // Showcase Orbit Camera around Vehicle
@@ -961,23 +1342,71 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
     window.addEventListener('resize', handleResize);
 
+    
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
+
+      // Close the multiplayer connection
+      if (multiplayerSocketRef.current) {
+        multiplayerSocketRef.current.close();
+        multiplayerSocketRef.current = null;
+      }
+
+      // Remove remote-player avatars and release their resources
+      remotePlayersRef.current.forEach((remote) => {
+        scene.remove(remote.group);
+
+        remote.group.traverse((object) => {
+          if (object instanceof THREE.Mesh) {
+            object.geometry.dispose();
+
+            const materials = Array.isArray(object.material)
+              ? object.material
+              : [object.material];
+
+            materials.forEach((material) => material.dispose());
+          }
+        });
+      });
+
+      remotePlayersRef.current.clear();
+
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
+
       renderer.dispose();
       engineAudio.stop();
     };
   }, []);
 
+
   return (
-    <div
-      ref={mountRef}
-      className="absolute inset-0 w-full h-full overflow-hidden cursor-grab active:cursor-grabbing"
-      tabIndex={0}
-      title="MANIFOLD WORLD 3D Proving Ground"
-    />
+    <div className="absolute inset-0 w-full h-full overflow-hidden">
+      {/* 3D driving world */}
+      <div
+        ref={mountRef}
+        className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"
+        tabIndex={0}
+        title="MANIFOLD WORLD 3D Proving Ground"
+      />
+
+      {/* Interactive steering control */}
+      {cameraMode === 'COCKPIT' && (
+        <div
+          className="absolute bottom-8 left-8 z-50 flex h-28 w-28 items-center justify-center rounded-full border-4 border-white/40 bg-black/60 shadow-2xl touch-none select-none"
+          style={{ touchAction: 'none' }}
+          onPointerDown={handleCockpitSteeringPointerDown}
+          onPointerMove={handleCockpitSteeringPointerMove}
+          onPointerUp={handleCockpitSteeringPointerUp}
+          onPointerCancel={handleCockpitSteeringPointerUp}
+        >
+          <div className="flex h-20 w-20 items-center justify-center rounded-full border-[8px] border-gray-300">
+            <div className="h-3 w-12 rounded-full bg-red-500" />
+          </div>
+        </div>
+      )}
+    </div>
   );
 };

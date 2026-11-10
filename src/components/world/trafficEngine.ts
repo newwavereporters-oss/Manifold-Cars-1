@@ -223,17 +223,27 @@ export class TrafficEngine {
         }
       }
 
-      // 2. Check distance to other traffic cars ahead
+      
+      // 2. Check distance to other traffic cars ahead.
+      // Only brake for vehicles genuinely ahead and close enough to matter.
       this.vehicles.forEach((other, otherIdx) => {
         if (index === otherIdx) return;
-        const dOther = Math.hypot(other.x - car.x, other.z - car.z);
-        if (dOther < 12) {
-          const dotToOther = (other.x - car.x) * Math.sin(heading) + (other.z - car.z) * Math.cos(heading);
-          if (dotToOther > 0) {
-            obstacleAhead = true;
-          }
+
+        const dxToOther = other.x - car.x;
+        const dzToOther = other.z - car.z;
+        const dOther = Math.hypot(dxToOther, dzToOther);
+
+        if (dOther >= 8) return;
+
+        const dotToOther =
+          dxToOther * Math.sin(heading) +
+          dzToOther * Math.cos(heading);
+
+        if (dotToOther > 0) {
+          obstacleAhead = true;
         }
       });
+
 
       // 3. Speed Adaptation
       if (obstacleAhead) {
@@ -251,21 +261,34 @@ export class TrafficEngine {
         car.progress += (car.speed * delta) / car.segmentLength;
       }
 
-      // Reached target intersection node: choose next node
+      
+      // Reached target intersection node: continue from the new node
       if (car.progress >= 1.0) {
+        const previousNodeId = car.currentNodeId;
         car.currentNodeId = car.targetNodeId;
-        const nextNode = LAGOS_ROAD_NODES[car.currentNodeId];
-        if (nextNode && nextNode.neighbors.length > 0) {
-          // Avoid immediately reversing back to fromNode unless dead-end
-          const eligible = nextNode.neighbors.filter((n) => n !== fromNode.id);
-          const nextChoice =
-            eligible.length > 0
-              ? eligible[Math.floor(Math.random() * eligible.length)]
-              : nextNode.neighbors[0];
 
-          car.targetNodeId = nextChoice;
-          const nextTarget = LAGOS_ROAD_NODES[nextChoice];
-          car.segmentLength = Math.hypot(nextTarget.x - nextNode.x, nextTarget.z - nextNode.z);
+        const nextNode = LAGOS_ROAD_NODES[car.currentNodeId];
+
+        if (nextNode && nextNode.neighbors.length > 0) {
+          const eligible = nextNode.neighbors.filter(
+            (nodeId) => nodeId !== previousNodeId
+          );
+
+          const choices =
+            eligible.length > 0 ? eligible : nextNode.neighbors;
+
+          car.targetNodeId =
+            choices[Math.floor(Math.random() * choices.length)];
+
+          const nextTarget = LAGOS_ROAD_NODES[car.targetNodeId];
+
+          car.segmentLength = nextTarget
+            ? Math.hypot(
+                nextTarget.x - nextNode.x,
+                nextTarget.z - nextNode.z
+              )
+            : 0;
+
           car.progress = 0;
         }
       }
