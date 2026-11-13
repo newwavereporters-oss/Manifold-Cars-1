@@ -405,6 +405,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         onOpenMissions={() => setIsMissionDrawerOpen(true)}
         onResetVehicle={() => setResetVehicleTrigger((prev) => prev + 1)}
         activeDestination={activeDestination}
+        onClearDestination={() => setActiveDestination(null)}
       />
 
       {/* Mission Operations HUD Overlay */}

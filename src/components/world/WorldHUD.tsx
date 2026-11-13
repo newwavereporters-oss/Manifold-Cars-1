@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Volume2,
   VolumeX,
@@ -22,12 +22,19 @@ import {
   Map as MapIcon,
   Flag,
   RotateCcw,
+  Route,
+  X,
 } from 'lucide-react';
 import { CameraViewMode, TimeOfDay } from './WorldCanvas';
 import { VehicleModelType, VEHICLE_SPEC_PROFILES } from './worldModels';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
 import { CockpitDashboardOverlay, HeadlightState, TurnSignalState, CockpitHotspot } from './CockpitDashboardOverlay';
 import { MobileTouchControls } from './MobileTouchControls';
+import {
+  LAGOS_ROAD_NODES,
+  CITY_LANDMARKS,
+  findShortestRoadPathDetailed,
+} from './lagosCityData';
 
 interface WorldHUDProps {
   speedKmh: number;
@@ -85,6 +92,7 @@ interface WorldHUDProps {
   onOpenMissions?: () => void;
   onResetVehicle?: () => void;
   activeDestination?: { x: number; z: number; name: string } | null;
+  onClearDestination?: () => void;
 }
 
 export const WorldHUD: React.FC<WorldHUDProps> = ({
@@ -137,6 +145,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   onOpenMissions,
   onResetVehicle,
   activeDestination,
+  onClearDestination,
 }) => {
   const [isMuted, setIsMuted] = useState(() => engineAudio.getMuted());
   const [showControlsHelp, setShowControlsHelp] = useState(false);
@@ -182,17 +191,57 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
     onSelectDriveMode(next);
   };
 
-  // Minimap Coordinates Translation: Track is [-180, 180] in world space
-  const worldRadius = 180;
-  const mapXPercent = Math.max(5, Math.min(95, 50 + (carPosition.x / worldRadius) * 45));
-  const mapZPercent = Math.max(5, Math.min(95, 50 + (carPosition.z / worldRadius) * 45));
+  // Deduplicated Road Segments for Live Centered Minimap
+  const radarRoadEdges = useMemo(() => {
+    const seen = new Set<string>();
+    const list: { key: string; x1: number; z1: number; x2: number; z2: number; isDual: boolean; isBridge: boolean }[] = [];
+    Object.values(LAGOS_ROAD_NODES).forEach((node) => {
+      node.neighbors.forEach((nId) => {
+        const nb = LAGOS_ROAD_NODES[nId];
+        if (!nb) return;
+        const key = [node.id, nb.id].sort().join('--');
+        if (seen.has(key)) return;
+        seen.add(key);
+        list.push({
+          key,
+          x1: node.x,
+          z1: node.z,
+          x2: nb.x,
+          z2: nb.z,
+          isDual: Boolean(node.isDualCarriageway && nb.isDualCarriageway),
+          isBridge: Boolean(node.isBridge || nb.isBridge),
+        });
+      });
+    });
+    return list;
+  }, []);
 
-  const showroomX = 50 + (0 / worldRadius) * 45;
-  const showroomY = 50 + (-35 / worldRadius) * 45;
-  const portalX = 50 + (0 / worldRadius) * 45;
-  const portalY = 50 + (100 / worldRadius) * 45;
-  const speedTrapX = 50 + (-55 / worldRadius) * 45;
-  const speedTrapY = 50 + (0 / worldRadius) * 45;
+  // Live shortest-path GPS route & turn-by-turn guidance
+  const gpsRouteInfo = useMemo(() => {
+    if (!activeDestination) return null;
+    return findShortestRoadPathDetailed(carPosition, activeDestination);
+  }, [Math.round(carPosition.x / 3), Math.round(carPosition.z / 3), activeDestination]);
+
+  // Nearest district / road label for radar caption
+  const nearestAreaLabel = useMemo(() => {
+    let bestName = 'Lagos Mainland';
+    let bestDist = Infinity;
+    for (const node of Object.values(LAGOS_ROAD_NODES)) {
+      const d = Math.hypot(node.x - carPosition.x, node.z - carPosition.z);
+      if (d < bestDist) {
+        bestDist = d;
+        bestName = node.district || node.name || 'Lagos';
+      }
+    }
+    return bestName;
+  }, [Math.round(carPosition.x / 10), Math.round(carPosition.z / 10)]);
+
+  // Centered local radar window: 280x280 world units centered on player car
+  const radarHalfSpan = 140;
+  const vbLeft = carPosition.x - radarHalfSpan;
+  const vbTop = carPosition.z - radarHalfSpan;
+  const vbSize = radarHalfSpan * 2;
+  const formatDist = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`);
 
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-6 select-none z-20">
@@ -451,8 +500,37 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         </div>
       )}
 
-      {/* 3. CENTER NOTIFICATION BANNERS */}
+      {/* 3. CENTER NOTIFICATION & LIVE GPS GUIDANCE BANNERS */}
       <div className="self-center flex flex-col items-center gap-2">
+        {/* Active Turn-by-Turn GPS Guidance Pill */}
+        {activeDestination && gpsRouteInfo && (
+          <div className="pointer-events-auto bg-[#071A2B]/90 backdrop-blur-xl border border-emerald-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 max-w-md">
+            <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <Navigation className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                <span className="truncate">{activeDestination.name}</span>
+                <span>•</span>
+                <span className="font-mono shrink-0">{formatDist(gpsRouteInfo.totalMeters)}</span>
+              </div>
+              <div className="text-xs font-bold text-white flex items-center gap-1 truncate">
+                <Route className="w-3 h-3 text-amber-300 shrink-0" />
+                <span className="truncate">{gpsRouteInfo.nextTurnText}</span>
+              </div>
+            </div>
+            {onClearDestination && (
+              <button
+                onClick={onClearDestination}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-red-500/30 text-gray-300 hover:text-white transition-colors shrink-0"
+                title="Clear GPS Route"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Speed Trap Banner */}
         {speedTrapRecord && (
           <div className="bg-[#10b981]/95 backdrop-blur-md border border-[#10b981] px-6 py-2.5 rounded-2xl shadow-2xl animate-bounce">
@@ -605,49 +683,82 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           </div>
         </div>
 
-        {/* Center: Interactive High-Precision Minimap Radar */}
-        <div className="hidden lg:flex flex-col items-center bg-[#071A2B]/85 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-2xl">
-          <div className="w-32 h-32 relative rounded-xl bg-slate-900/90 overflow-hidden border border-white/15">
-            <div className="absolute inset-2 rounded-full border border-dashed border-white/20" />
+        {/* Center: Live Centered Vector Road & GPS Minimap Radar */}
+        <div className="hidden lg:flex flex-col items-center bg-[#071A2B]/88 backdrop-blur-md p-2 rounded-2xl border border-white/15 shadow-2xl">
+          <div
+            onClick={onOpenCityMap}
+            className="w-36 h-36 relative rounded-xl bg-[#04101d] overflow-hidden border border-white/15 cursor-pointer group"
+            title="Click to open Full Lagos Metro GPS Map [M]"
+          >
+            <svg viewBox={`${vbLeft} ${vbTop} ${vbSize} ${vbSize}`} className="w-full h-full">
+              {/* Lagos Lagoon & Coastal Water Channels */}
+              <rect x={-1200} y={-585} width={3050} height={420} fill="#0b3b59" fillOpacity="0.65" />
+              <rect x={445} y={-165} width={150} height={420} fill="#0b3b59" fillOpacity="0.65" />
+              <rect x={1350} y={-165} width={75} height={420} fill="#0b3b59" fillOpacity="0.65" />
+              <rect x={1600} y={-165} width={450} height={420} fill="#0b3b59" fillOpacity="0.6" />
+              <rect x={-1200} y={250} width={3250} height={260} fill="#0b3b59" fillOpacity="0.6" />
 
-            {/* Showroom POI Dot */}
-            <div
-              className="absolute w-2 h-2 rounded-full bg-blue-400 -translate-x-1/2 -translate-y-1/2 shadow-sm"
-              style={{ left: `${showroomX}%`, top: `${showroomY}%` }}
-              title="Showroom Pavilion"
-            />
-            {/* Marketplace Portal POI Dot */}
-            <div
-              className="absolute w-2.5 h-2.5 rounded-full bg-[#EF233C] -translate-x-1/2 -translate-y-1/2 shadow-md animate-pulse"
-              style={{ left: `${portalX}%`, top: `${portalY}%` }}
-              title="Marketplace Gate"
-            />
-            {/* Speed Trap POI Dot */}
-            <div
-              className="absolute w-2 h-2 rounded-full bg-emerald-400 -translate-x-1/2 -translate-y-1/2"
-              style={{ left: `${speedTrapX}%`, top: `${speedTrapY}%` }}
-              title="Speed Trap Gate"
-            />
+              {/* Real Nearby Roads */}
+              {radarRoadEdges.map((e) => (
+                <line
+                  key={e.key}
+                  x1={e.x1}
+                  y1={e.z1}
+                  x2={e.x2}
+                  y2={e.z2}
+                  stroke={e.isBridge ? '#38bdf8' : e.isDual ? '#64748b' : '#475569'}
+                  strokeWidth={e.isDual ? 13 : 9}
+                  strokeLinecap="round"
+                />
+              ))}
 
-            {/* Player Car Arrow Position and Heading */}
-            <div
-              className="absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none"
-              style={{
-                left: `${mapXPercent}%`,
-                top: `${mapZPercent}%`,
-                transform: `translate(-50%, -50%) rotate(${carPosition.heading}rad)`,
-              }}
-            >
-              <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[9px] border-b-yellow-400" />
+              {/* Active GPS Polyline */}
+              {gpsRouteInfo && gpsRouteInfo.path.length >= 2 && (
+                <polyline
+                  points={gpsRouteInfo.path.map((pt) => `${pt.x.toFixed(1)},${pt.z.toFixed(1)}`).join(' ')}
+                  fill="none"
+                  stroke="#10b981"
+                  strokeWidth="6"
+                  strokeDasharray="10 6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+
+              {/* Landmarks inside/near window */}
+              {CITY_LANDMARKS.map((lm) => (
+                <circle
+                  key={lm.id}
+                  cx={lm.x}
+                  cy={lm.z}
+                  r="7"
+                  fill={lm.color}
+                  stroke="#071A2B"
+                  strokeWidth="2"
+                />
+              ))}
+
+              {/* Centered Player Arrow */}
+              <g
+                transform={`translate(${carPosition.x}, ${carPosition.z}) rotate(${
+                  180 - (carPosition.heading * 180) / Math.PI
+                })`}
+              >
+                <circle cx="0" cy="0" r="14" fill="rgba(250, 204, 21, 0.22)" />
+                <polygon points="0,-13 9,9 0,3 -9,9" fill="#facc15" stroke="#071A2B" strokeWidth="2" />
+              </g>
+            </svg>
+
+            {/* District & Coordinate Overlay */}
+            <div className="absolute top-1 left-1.5 px-1.5 py-0.5 rounded bg-black/55 text-[8px] font-extrabold uppercase text-sky-300 truncate max-w-[110px]">
+              {nearestAreaLabel}
             </div>
-
-            {/* Radar Coordinates Label */}
-            <div className="absolute bottom-1 right-1 text-[8px] font-mono text-gray-400">
+            <div className="absolute bottom-1 right-1.5 text-[8px] font-mono text-gray-300 bg-black/45 px-1 rounded">
               {Math.round(carPosition.x)}, {Math.round(carPosition.z)}
             </div>
           </div>
           <span className="text-[9px] text-gray-400 uppercase tracking-widest font-bold mt-1">
-            Proving Ground Radar
+            Lagos GPS Radar [M]
           </span>
         </div>
 

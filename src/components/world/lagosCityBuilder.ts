@@ -8,10 +8,15 @@ import {
   LAGOS_BUILDINGS,
   CITY_LANDMARKS,
   RIVAL_RACE_CHECKPOINTS,
+  SIGNALIZED_INTERSECTIONS,
+  getTrafficSignalState,
   BuildingBox,
+  getRoadSurfaceY,
 } from './lagosCityData';
 import { createLagosTexturePack } from './lagosTextures';
+import { buildExpandedLagosRegions } from './lagosRegionBuilders';
 import type { TimeOfDay } from './WorldCanvas';
+export { createThirdMainlandBridge } from '../../three/lagosCityBuilder';
 
 export interface LagosCityResult {
   cityGroup: THREE.Group;
@@ -20,16 +25,23 @@ export interface LagosCityResult {
   landmarkMarkers: { id: string; group: THREE.Group }[];
   gpsRouteLine: THREE.Line;
   updateGPSRoute: (path: { x: number; z: number }[]) => void;
+  updateTrafficSignals?: (timeSec: number) => void;
   updateTimeOfDay?: (mode: TimeOfDay) => void;
   dispose?: () => void;
 }
 
 interface RoadSegment {
+  aId: string;
+  bId: string;
   aX: number;
+  aY: number;
   aZ: number;
   bX: number;
+  bY: number;
   bZ: number;
   isExpressway: boolean;
+  isDualCarriageway: boolean;
+  isBridge: boolean;
   width: number;
   length: number;
   angle: number;
@@ -102,20 +114,45 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
   );
 
   // =========================================================================
-  // 1. TERRAIN, HORIZON & ROAD NETWORK EXTRACTION
+  // 1. TERRAIN (4 COASTAL LANDMASSES + MAINLAND NORTH — ZERO VOID HOLES)
   // =========================================================================
-  const groundGeo = trackGeo(new THREE.PlaneGeometry(760, 760, 12, 12));
-  const ground = new THREE.Mesh(groundGeo, texPack.groundTerrainMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.08;
-  ground.receiveShadow = true;
-  cityGroup.add(ground);
+  // A. Lagos Island + Obalende + Ikoyi (x = -460..+445, z = -165..+270)
+  const southWestLandGeo = trackGeo(new THREE.PlaneGeometry(905, 435, 10, 6));
+  const southWestLand = new THREE.Mesh(southWestLandGeo, texPack.groundTerrainMat);
+  southWestLand.rotation.x = -Math.PI / 2;
+  southWestLand.position.set(-7.5, -0.08, 52.5);
+  southWestLand.receiveShadow = true;
+  cityGroup.add(southWestLand);
 
-  // Inner district concrete-earth base slab
-  const districtBaseGeo = trackGeo(new THREE.PlaneGeometry(360, 360));
+  // B. Lekki Peninsula + Ikate + Eleganza + VGC + Ajah + Eleko (x = +595..+1350, z = -165..+270)
+  const lekkiAjahLandGeo = trackGeo(new THREE.PlaneGeometry(755, 435, 10, 6));
+  const lekkiAjahLand = new THREE.Mesh(lekkiAjahLandGeo, texPack.groundTerrainMat);
+  lekkiAjahLand.rotation.x = -Math.PI / 2;
+  lekkiAjahLand.position.set(972.5, -0.08, 52.5);
+  lekkiAjahLand.receiveShadow = true;
+  cityGroup.add(lekkiAjahLand);
+
+  // C. Epe Town & Waterfront Peninsula (x = +1425..+1600, z = -165..+270)
+  const epeLandGeo = trackGeo(new THREE.PlaneGeometry(175, 435, 4, 4));
+  const epeLand = new THREE.Mesh(epeLandGeo, texPack.groundTerrainMat);
+  epeLand.rotation.x = -Math.PI / 2;
+  epeLand.position.set(1512.5, -0.08, 52.5);
+  epeLand.receiveShadow = true;
+  cityGroup.add(epeLand);
+
+  // D. Mainland North: Iyana-Oworo -> Oshodi -> Ikeja -> LASU (x = -1200..+1900, z = -1150..-585)
+  const northMainlandGeo = trackGeo(new THREE.PlaneGeometry(3100, 565, 18, 8));
+  const northMainland = new THREE.Mesh(northMainlandGeo, texPack.groundTerrainMat);
+  northMainland.rotation.x = -Math.PI / 2;
+  northMainland.position.set(350, -0.08, -867.5);
+  northMainland.receiveShadow = true;
+  cityGroup.add(northMainland);
+
+  // Inner Lagos Island proving base slab
+  const districtBaseGeo = trackGeo(new THREE.PlaneGeometry(340, 320));
   const districtBase = new THREE.Mesh(districtBaseGeo, texPack.groundTerrainMat);
   districtBase.rotation.x = -Math.PI / 2;
-  districtBase.position.y = -0.06;
+  districtBase.position.set(0, -0.06, -5);
   districtBase.receiveShadow = true;
   cityGroup.add(districtBase);
 
@@ -135,16 +172,28 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       const dz = neighbor.z - node.z;
       const length = Math.hypot(dx, dz);
       const angle = Math.atan2(dx, dz);
+      const isDualCarriageway = Boolean(
+        node.isDualCarriageway && neighbor.isDualCarriageway
+      );
+      const isBridge = Boolean(node.isBridge || neighbor.isBridge);
       const isExpressway =
-        (node.speedLimit || 50) >= 65 || (neighbor.speedLimit || 50) >= 65;
+        isDualCarriageway ||
+        (node.speedLimit || 50) >= 65 ||
+        (neighbor.speedLimit || 50) >= 65;
 
       roadSegments.push({
+        aId: node.id,
+        bId: neighbor.id,
         aX: node.x,
+        aY: node.y ?? 0,
         aZ: node.z,
         bX: neighbor.x,
+        bY: neighbor.y ?? 0,
         bZ: neighbor.z,
         isExpressway,
-        width: isExpressway ? 15.6 : 13.8,
+        isDualCarriageway,
+        isBridge,
+        width: isDualCarriageway ? 22.0 : isExpressway ? 15.6 : 13.8,
         length,
         angle,
       });
@@ -192,7 +241,41 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
   );
   const stencilGeo = trackGeo(new THREE.PlaneGeometry(2.8, 3.4));
 
-  roadSegments.forEach((seg) => {
+  roadSegments.forEach((segRaw) => {
+    // Elevated bridge/flyover/ramp decks are built in three/lagosCityBuilder.ts;
+    // keep only exact flat Y=0 approach stubs to Third Mainland Bridge South & North ramps.
+    let seg = segRaw;
+    const isTmbSouthApproach =
+      (segRaw.aId === 'N_YABA_TECH_JCT' && segRaw.bId === 'N_TMB_FORK') ||
+      (segRaw.bId === 'N_YABA_TECH_JCT' && segRaw.aId === 'N_TMB_FORK');
+    const isTmbNorthApproach =
+      (segRaw.aId === 'N_TMB_NORTH' && segRaw.bId === 'N_IYANA_OWORO') ||
+      (segRaw.bId === 'N_TMB_NORTH' && segRaw.aId === 'N_IYANA_OWORO');
+
+    if (isTmbSouthApproach) {
+      seg = {
+        ...segRaw,
+        aX: 0,
+        aZ: -130,
+        bX: 0,
+        bZ: -146,
+        length: 16,
+        angle: Math.PI,
+      };
+    } else if (isTmbNorthApproach) {
+      seg = {
+        ...segRaw,
+        aX: 0,
+        aZ: -614,
+        bX: 0,
+        bZ: -640,
+        length: 26,
+        angle: Math.PI,
+      };
+    } else if (segRaw.aY > 0 || segRaw.bY > 0 || segRaw.isBridge) {
+      return;
+    }
+
     const midX = (seg.aX + seg.bX) / 2;
     const midZ = (seg.aZ + seg.bZ) / 2;
     const roadWidth = seg.width;
@@ -200,8 +283,8 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     const angle = seg.angle;
 
     // Right-hand perpendicular vector for lateral offsets
-    const rightX = Math.cos(angle);
-    const rightZ = -Math.sin(angle);
+    const rightX = -Math.cos(angle);
+    const rightZ = Math.sin(angle);
     const fwdX = Math.sin(angle);
     const fwdZ = Math.cos(angle);
 
@@ -270,9 +353,10 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       }
     });
 
-    // Center Markings: Double yellow centerline + lane dividers
+    // Center Markings: Double yellow centerline flanking raised median on dual carriageways
     const centerLineLen = Math.max(4, roadLength - 19);
-    [-0.22, 0.22].forEach((offset) => {
+    const yellowOffset = seg.isDualCarriageway ? 0.56 : 0.22;
+    [-yellowOffset, yellowOffset].forEach((offset) => {
       const yGeo = trackGeo(new THREE.PlaneGeometry(0.16, centerLineLen));
       const yMesh = new THREE.Mesh(yGeo, texPack.yellowMarkMat);
       yMesh.rotation.x = -Math.PI / 2;
@@ -281,12 +365,15 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       cityGroup.add(yMesh);
     });
 
-    // Raised median curb along long Expressways (breaks safely outside intersections)
-    if (seg.isExpressway && centerLineLen > 26) {
-      const medianGeo = trackGeo(new THREE.BoxGeometry(0.46, 0.28, centerLineLen - 8));
+    // Raised concrete median along dual carriageways & Expressways (breaks safely outside intersections)
+    if ((seg.isDualCarriageway || seg.isExpressway) && centerLineLen > 24) {
+      const medianLen = Math.max(6, centerLineLen - 10);
+      const medianGeo = trackGeo(
+        new THREE.BoxGeometry(seg.isDualCarriageway ? 0.68 : 0.46, seg.isDualCarriageway ? 0.34 : 0.28, medianLen)
+      );
       const medianMesh = new THREE.Mesh(medianGeo, texPack.curbMat);
       medianMesh.rotation.y = angle;
-      medianMesh.position.set(midX, 0.14, midZ);
+      medianMesh.position.set(midX, seg.isDualCarriageway ? 0.17 : 0.14, midZ);
       cityGroup.add(medianMesh);
     }
 
@@ -488,13 +575,47 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     cityGroup.add(studInst);
   }
 
-  // Intersection Junction Pads, Zebra Crosswalks & Traffic Signals
+  // Intersection Junction Pads, Zebra Crosswalks & Synchronized Traffic Signals
   const zebraStripeGeo = trackGeo(new THREE.PlaneGeometry(0.65, 3.0));
-  const majorSignalNodes = new Set(['N_CENTRAL_JCT', 'N_EAST_AVE_2', 'N_YABA_TECH_JCT', 'N_SOUTH_GATE']);
+  const signalPhaseGroups = new Map<
+    number,
+    {
+      nsRed: THREE.MeshBasicMaterial;
+      nsAmber: THREE.MeshBasicMaterial;
+      nsGreen: THREE.MeshBasicMaterial;
+      ewRed: THREE.MeshBasicMaterial;
+      ewAmber: THREE.MeshBasicMaterial;
+      ewGreen: THREE.MeshBasicMaterial;
+      repNodeId: string;
+    }
+  >();
+
+  const getSignalPhaseMats = (nodeId: string, phaseOffsetSec: number) => {
+    const existing = signalPhaseGroups.get(phaseOffsetSec);
+    if (existing) return existing;
+    const group = {
+      nsRed: trackMat(new THREE.MeshBasicMaterial({ color: 0x3f1515 })),
+      nsAmber: trackMat(new THREE.MeshBasicMaterial({ color: 0x3b2f0b })),
+      nsGreen: trackMat(new THREE.MeshBasicMaterial({ color: 0x22c55e })),
+      ewRed: trackMat(new THREE.MeshBasicMaterial({ color: 0xef4444 })),
+      ewAmber: trackMat(new THREE.MeshBasicMaterial({ color: 0x3b2f0b })),
+      ewGreen: trackMat(new THREE.MeshBasicMaterial({ color: 0x0f3b22 })),
+      repNodeId: nodeId,
+    };
+    signalPhaseGroups.set(phaseOffsetSec, group);
+    return group;
+  };
+
+  const signalDefByNode = Object.fromEntries(
+    SIGNALIZED_INTERSECTIONS.map((s) => [s.nodeId, s])
+  );
 
   Object.values(LAGOS_ROAD_NODES).forEach((node) => {
-    const isExpress = (node.speedLimit || 50) >= 65;
-    const jctGeo = trackGeo(new THREE.CircleGeometry(isExpress ? 11.4 : 10.6, 28));
+    if ((node.y ?? 0) > 0 || node.isBridge) return; // Elevated deck nodes live above ground
+    const isDual = Boolean(node.isDualCarriageway);
+    const isExpress = isDual || (node.speedLimit || 50) >= 65;
+    const jctRadius = isDual ? 13.6 : isExpress ? 11.4 : 10.6;
+    const jctGeo = trackGeo(new THREE.CircleGeometry(jctRadius, 28));
     const jctMesh = new THREE.Mesh(
       jctGeo,
       isExpress ? texPack.expresswayRoadMat : texPack.commercialRoadMat
@@ -504,10 +625,10 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     jctMesh.receiveShadow = true;
     cityGroup.add(jctMesh);
 
-    // Crosswalks along connected neighbor approaches
+    // Crosswalks along connected ground neighbor approaches
     node.neighbors.forEach((nId) => {
       const nb = LAGOS_ROAD_NODES[nId];
-      if (!nb) return;
+      if (!nb || (nb.y ?? 0) > 0 || nb.isBridge) return;
       const dx = nb.x - node.x;
       const dz = nb.z - node.z;
       const ang = Math.atan2(dx, dz);
@@ -520,8 +641,8 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       const rightZ = -Math.sin(ang);
 
       for (let i = -3; i <= 3; i++) {
-        const cx = node.x + dirX * 9.5 + rightX * (i * 1.45);
-        const cz = node.z + dirZ * 9.5 + rightZ * (i * 1.45);
+        const cx = node.x + dirX * (jctRadius - 1.5) + rightX * (i * 1.45);
+        const cz = node.z + dirZ * (jctRadius - 1.5) + rightZ * (i * 1.45);
         const stripe = new THREE.Mesh(zebraStripeGeo, texPack.whiteMarkMat);
         stripe.rotation.x = -Math.PI / 2;
         stripe.rotation.z = -ang;
@@ -530,34 +651,46 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       }
     });
 
-    // Traffic Signal Poles at Major 3/4-Way Intersections
-    if (majorSignalNodes.has(node.id)) {
+    // Dynamic Synchronized Traffic Signal Mast Poles at Signalized Intersections
+    const sigDef = signalDefByNode[node.id];
+    if (sigDef) {
+      const pMats = getSignalPhaseMats(node.id, sigDef.phaseOffsetSec);
+      const cornerOff = isDual ? 12.2 : 9.6;
       const sigCorners = [
-        { ox: 9.2, oz: 9.2, rot: Math.PI / 4 },
-        { ox: -9.2, oz: -9.2, rot: -Math.PI * 0.75 },
+        { ox: cornerOff, oz: cornerOff, rot: 0, axis: 'NS' as const },
+        { ox: -cornerOff, oz: -cornerOff, rot: Math.PI, axis: 'NS' as const },
+        { ox: -cornerOff, oz: cornerOff, rot: -Math.PI / 2, axis: 'EW' as const },
+        { ox: cornerOff, oz: -cornerOff, rot: Math.PI / 2, axis: 'EW' as const },
       ];
-      sigCorners.forEach((sc, idx) => {
+      sigCorners.forEach((sc) => {
         const sigGroup = new THREE.Group();
         sigGroup.position.set(node.x + sc.ox, 0, node.z + sc.oz);
         sigGroup.rotation.y = sc.rot;
 
-        const sigPole = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.12, 0.15, 5.2, 8)), steelDarkMat);
-        sigPole.position.y = 2.6;
-        const sigArm = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.6, 0.14, 0.14)), steelDarkMat);
-        sigArm.position.set(-1.1, 5.0, 0);
-        const headBox = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.45, 1.25, 0.35)), darkMetalMat);
-        headBox.position.set(-2.1, 4.5, 0);
+        const sigPole = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.11, 0.14, 4.9, 8)), steelDarkMat);
+        sigPole.position.y = 2.45;
+        const sigArm = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.8, 0.14, 0.14)), steelDarkMat);
+        sigArm.position.set(-1.2, 4.75, 0);
+        const headBox = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.46, 1.35, 0.34)), darkMetalMat);
+        headBox.position.set(-2.2, 4.25, 0);
 
-        const redLamp = new THREE.Mesh(
-          trackGeo(new THREE.CircleGeometry(0.13, 12)),
-          trackMat(new THREE.MeshBasicMaterial({ color: idx === 0 ? 0x22c55e : 0xef4444 }))
-        );
-        redLamp.position.set(-2.1, idx === 0 ? 4.15 : 4.85, 0.19);
-        const redLampBack = redLamp.clone();
-        redLampBack.position.z = -0.19;
-        redLampBack.rotation.y = Math.PI;
+        const rMat = sc.axis === 'NS' ? pMats.nsRed : pMats.ewRed;
+        const aMat = sc.axis === 'NS' ? pMats.nsAmber : pMats.ewAmber;
+        const gMat = sc.axis === 'NS' ? pMats.nsGreen : pMats.ewGreen;
 
-        sigGroup.add(sigPole, sigArm, headBox, redLamp, redLampBack);
+        const addLensPair = (yPos: number, mat: THREE.MeshBasicMaterial) => {
+          const lensF = new THREE.Mesh(trackGeo(new THREE.CircleGeometry(0.13, 10)), mat);
+          lensF.position.set(-2.2, yPos, 0.18);
+          const lensB = lensF.clone();
+          lensB.position.z = -0.18;
+          lensB.rotation.y = Math.PI;
+          sigGroup.add(lensF, lensB);
+        };
+        addLensPair(4.65, rMat);
+        addLensPair(4.25, aMat);
+        addLensPair(3.85, gMat);
+
+        sigGroup.add(sigPole, sigArm, headBox);
         cityGroup.add(sigGroup);
       });
     }
@@ -667,7 +800,7 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
 
   // Validate that no infill building overlaps any road
   const validatedInfill = extraInfillBuildings.filter((b) => {
-    const clearMargin = Math.max(b.width, b.depth) / 2 + 8.5;
+    const clearMargin = Math.max(b.width, b.depth) / 2 + 11.5;
     return distToNearestRoad(b.x, b.z) >= clearMargin;
   });
 
@@ -682,8 +815,9 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     if (b.type === 'tech_hub') facadeMat = texPack.glassTowerMat;
     else if (b.type === 'bank') facadeMat = texPack.bankGlassMat;
     else if (b.type === 'depot') facadeMat = texPack.corrugatedDepotMat;
+    else if (b.type === 'campus') facadeMat = texPack.stuccoCreamMat;
     else if (b.type === 'commercial') {
-      facadeMat = b.id.includes('HOTEL') || b.id.includes('GALLERIA')
+      facadeMat = b.id.includes('HOTEL') || b.id.includes('GALLERIA') || b.id.includes('MALL')
         ? texPack.stuccoSlateMat
         : texPack.stuccoOchreMat;
     } else if (b.type === 'residential') {
@@ -694,7 +828,58 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       new THREE.MeshStandardMaterial({ color: b.roofColor, roughness: 0.42, metalness: 0.45 })
     );
 
-    if (b.type === 'tech_hub' || b.type === 'bank') {
+    if (b.type === 'campus') {
+      // University Institutional Architecture: Grand Entrance Columns, Glass Atrium & Emerald/Gold Roof Fascia
+      const plinth = new THREE.Mesh(
+        trackGeo(new THREE.BoxGeometry(b.width + 0.8, 1.0, b.depth + 0.8)),
+        texPack.curbMat
+      );
+      plinth.position.y = 0.5;
+      plinth.receiveShadow = true;
+
+      const mainBody = new THREE.Mesh(
+        trackGeo(new THREE.BoxGeometry(b.width, b.height - 1.0, b.depth)),
+        facadeMat
+      );
+      mainBody.position.y = 1.0 + (b.height - 1.0) / 2;
+      mainBody.castShadow = true;
+      mainBody.receiveShadow = true;
+
+      const roofCap = new THREE.Mesh(
+        trackGeo(new THREE.BoxGeometry(b.width + 1.2, 1.1, b.depth + 1.2)),
+        trimMat
+      );
+      roofCap.position.y = b.height + 0.55;
+
+      // Classical Colonnade Pillars on Entrance Facade
+      const numCols = Math.max(4, Math.floor(b.width / 5.5));
+      for (let i = 0; i < numCols; i++) {
+        const cx = -b.width * 0.42 + (i / Math.max(1, numCols - 1)) * (b.width * 0.84);
+        const col = new THREE.Mesh(
+          trackGeo(new THREE.CylinderGeometry(0.32, 0.36, b.height * 0.68, 10)),
+          texPack.stuccoCreamMat
+        );
+        col.position.set(cx, 1.0 + b.height * 0.34, b.depth / 2 + 0.6);
+        col.castShadow = true;
+        bGroup.add(col);
+      }
+
+      // Academic window bands across upper floors
+      const floors = Math.max(2, Math.floor((b.height - 3) / 3.6));
+      const winBandGeo = trackGeo(new THREE.PlaneGeometry(b.width * 0.86, 1.4));
+      for (let f = 0; f < floors; f++) {
+        const wy = 3.2 + f * 3.5;
+        if (wy > b.height - 1.5) break;
+        const bandF = new THREE.Mesh(winBandGeo, texPack.nightWindowCoolMat);
+        bandF.position.set(0, wy, b.depth / 2 + 0.08);
+        const bandB = bandF.clone();
+        bandB.position.z = -b.depth / 2 - 0.08;
+        bandB.rotation.y = Math.PI;
+        bGroup.add(bandF, bandB);
+      }
+
+      bGroup.add(plinth, mainBody, roofCap);
+    } else if (b.type === 'tech_hub' || b.type === 'bank') {
       // Modern Multi-Tiered Tower: Granite Podium + Glazed Tower + Roof Crown & Comms Mast
       const podiumH = Math.min(5.2, b.height * 0.25);
       const podiumMesh = new THREE.Mesh(
@@ -923,6 +1108,18 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
 
   allCollidableBuildings.forEach(buildCompositeBuilding);
 
+  // Build Expanded Regions: Lagos Lagoon, Third Mainland Bridge, Epe Corridor,
+  // Iyana-Oworo, Oshodi, Ikeja, Iyana Ipaja, Egbeda, Igando, Akesan, Road Signs & LASU Campus
+  buildExpandedLagosRegions({
+    cityGroup,
+    texPack,
+    trackGeo,
+    trackMat,
+    distToNearestRoad,
+    allCollidableBuildings,
+    buildCompositeBuilding,
+  });
+
   // =========================================================================
   // 4. IN-WORLD SPECIALTY: PETROL & EV STATION + HORIZON SKYLINE TOWERS
   // =========================================================================
@@ -996,7 +1193,7 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     }
   }
 
-  // Distant Outer Horizon Skyline Silhouette (framed smoothly into FogExp2 so world feels vast)
+  // Distant Outer Horizon Skyline Silhouette (kept outside Lagoon & Epe/Mainland road corridors)
   {
     const skylineMat = trackMat(
       new THREE.MeshStandardMaterial({
@@ -1006,19 +1203,18 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       })
     );
     const skylineConfigs: [number, number, number, number, number][] = [
-      [-210, -195, 32, 30, 58],
-      [-120, -215, 28, 28, 46],
-      [-35, -220, 36, 30, 68],
-      [75, -215, 30, 28, 52],
-      [185, -195, 34, 34, 62],
-      [215, -80, 28, 32, 48],
-      [220, 40, 32, 34, 64],
-      [205, 165, 30, 30, 44],
-      [90, 215, 34, 28, 54],
-      [-25, 220, 38, 30, 60],
-      [-145, 210, 32, 32, 42],
-      [-215, 120, 30, 30, 50],
-      [-220, -20, 34, 34, 66],
+      // Victoria Island / Ikoyi distant horizon south
+      [160, 215, 36, 32, 62],
+      [60, 220, 38, 30, 56],
+      [-45, 225, 36, 30, 64],
+      [-155, 215, 34, 32, 48],
+      // Mainland far western & northern skyline beyond Ikeja/LASU
+      [-235, -90, 32, 32, 54],
+      [-235, 60, 32, 30, 46],
+      [-1035, -720, 36, 36, 48],
+      [110, -980, 40, 36, 68],
+      [-120, -995, 38, 34, 62],
+      [-360, -980, 34, 34, 52],
     ];
 
     skylineConfigs.forEach(([sx, sz, w, d, h]) => {
@@ -1194,7 +1390,8 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
 
   CITY_LANDMARKS.forEach((lm) => {
     const lmGroup = new THREE.Group();
-    lmGroup.position.set(lm.x, 0.04, lm.z);
+    const lmY = getRoadSurfaceY(lm.x, lm.z) + 0.04;
+    lmGroup.position.set(lm.x, lmY, lm.z);
 
     // Sleek ground objective zone ring (non-Z-fighting)
     const ringGeo = trackGeo(new THREE.RingGeometry(lm.radius * 0.84, lm.radius, 36));
@@ -1443,11 +1640,12 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
 
   // Place curated boulevard palms & shade trees around city blocks + perimeter parkland
   for (let gx = -165; gx <= 165; gx += 18) {
-    for (let gz = -165; gz <= 165; gz += 18) {
+    for (let gz = -155; gz <= 165; gz += 18) {
       const jx = gx + (rand() - 0.5) * 8;
       const jz = gz + (rand() - 0.5) * 8;
+      if (jz < -158) continue;
       const roadDist = distToNearestRoad(jx, jz);
-      if (roadDist < 12.6) continue;
+      if (roadDist < 14.5) continue;
       if (isInsideAnyBuilding(jx, jz, 3.2)) continue;
 
       const r = rand();
@@ -1626,17 +1824,31 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
   );
   const gpsRouteLine = new THREE.Line(gpsLineGeo, gpsLineMat);
   gpsRouteLine.visible = false;
+  gpsRouteLine.frustumCulled = false;
   cityGroup.add(gpsRouteLine);
 
-  const updateGPSRoute = (path: { x: number; z: number }[]) => {
+  const updateGPSRoute = (path: { x: number; z: number; y?: number }[]) => {
     if (!path || path.length < 2) {
       gpsRouteLine.visible = false;
       return;
     }
     gpsRouteLine.visible = true;
-    const pts = path.map((p) => new THREE.Vector3(p.x, 0.26, p.z));
+    const pts = path.map((p) => new THREE.Vector3(p.x, (p.y ?? getRoadSurfaceY(p.x, p.z)) + 0.3, p.z));
     gpsRouteLine.geometry.dispose();
     gpsRouteLine.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  };
+
+  const updateTrafficSignals = (timeSec: number) => {
+    signalPhaseGroups.forEach((group) => {
+      const ns = getTrafficSignalState(group.repNodeId, 'NS', timeSec);
+      const ew = getTrafficSignalState(group.repNodeId, 'EW', timeSec);
+      group.nsRed.color.setHex(ns === 'RED' ? 0xef4444 : 0x3b1212);
+      group.nsAmber.color.setHex(ns === 'AMBER' ? 0xfacc15 : 0x382b08);
+      group.nsGreen.color.setHex(ns === 'GREEN' ? 0x22c55e : 0x0c381c);
+      group.ewRed.color.setHex(ew === 'RED' ? 0xef4444 : 0x3b1212);
+      group.ewAmber.color.setHex(ew === 'AMBER' ? 0xfacc15 : 0x382b08);
+      group.ewGreen.color.setHex(ew === 'GREEN' ? 0x22c55e : 0x0c381c);
+    });
   };
 
   const updateTimeOfDay = (mode: TimeOfDay) => {
@@ -1657,6 +1869,7 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     landmarkMarkers,
     gpsRouteLine,
     updateGPSRoute,
+    updateTrafficSignals,
     updateTimeOfDay,
     dispose,
   };

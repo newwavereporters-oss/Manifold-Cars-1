@@ -15,7 +15,14 @@ import { buildLagosCityDistrict, LagosCityResult } from './lagosCityBuilder';
 import { TrafficEngine } from './trafficEngine';
 import { RivalsEngine } from './rivalsEngine';
 import { CollisionEngine } from './collisionEngine';
-import { findShortestRoadPath, RIVAL_RACE_CHECKPOINTS } from './lagosCityData';
+import {
+  findShortestRoadPath,
+  RIVAL_RACE_CHECKPOINTS,
+  resolveSurfaceY,
+  getBridgePitchAt,
+  enforceBridgeAndWaterBarriers,
+  WORLD_BOUNDS,
+} from './lagosCityData';
 import { ActiveMissionSession } from './missionEngine';
 
 export type CameraViewMode = 'CHASE' | 'COCKPIT' | 'ORBIT' | 'DRONE';
@@ -100,7 +107,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const hemiLightRef = useRef<THREE.HemisphereLight | null>(null);
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
   const skyMatRef = useRef<THREE.MeshBasicMaterial | null>(null);
+  const skyDomeRef = useRef<THREE.Mesh | null>(null);
   const showroomSpotRef = useRef<THREE.SpotLight | null>(null);
+  const sunOffsetRef = useRef<{ x: number; y: number; z: number }>({ x: 75, y: 95, z: 50 });
 
   // Engines and City Subsystems Refs
   const trafficEngineRef = useRef<TrafficEngine | null>(null);
@@ -194,6 +203,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   // Vehicle Physics & Dynamics State
   const carState = useRef({
     x: 0,
+    y: 0,
     z: 10,
     rotation: Math.PI, // yaw in radians (facing showroom towards z-minus)
     speed: 0, // units/sec (~ 1 unit ≈ 1.5 meter)
@@ -222,6 +232,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
     // Build new car group with latest customization (spoiler, underglow, paint, wheels)
     const newCar = createVehicleByType(customization);
+    newCar.carGroup.rotation.order = 'YXZ';
     sceneRef.current.add(newCar.carGroup);
     playerCarGroupRef.current = newCar.carGroup;
     activeVehicleRef.current = newCar;
@@ -233,9 +244,17 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       rearRightWheel: newCar.rearRightWheel,
     };
 
-    // Restore position & heading
-    newCar.carGroup.position.set(carState.current.x, 0, carState.current.z);
+    // Restore position, elevation & heading
+    const restoreY = resolveSurfaceY(carState.current.x, carState.current.z, carState.current.y);
+    carState.current.y = restoreY;
+    newCar.carGroup.position.set(carState.current.x, restoreY, carState.current.z);
     newCar.carGroup.rotation.y = carState.current.rotation;
+    newCar.carGroup.rotation.x = getBridgePitchAt(
+      carState.current.x,
+      carState.current.z,
+      carState.current.rotation,
+      restoreY
+    );
   }, [
     customization.vehicleType,
     customization.paintColor,
@@ -262,12 +281,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     switch (timeOfDay) {
       case 'SUNSET':
         scene.background = new THREE.Color(0xf9a875);
-        scene.fog = new THREE.FogExp2(0xfdba74, 0.0022);
+        scene.fog = new THREE.FogExp2(0xfdba74, 0.00042);
         scene.environmentIntensity = 0.72;
         if (skyMat) skyMat.color.setHex(0xfb923c);
         dirLight.color.setHex(0xf97316);
         dirLight.intensity = 2.1;
-        dirLight.position.set(85, 28, 65);
+        sunOffsetRef.current = { x: 85, y: 28, z: 65 };
         hemiLight.color.setHex(0xfdba74);
         hemiLight.groundColor.setHex(0x431407);
         hemiLight.intensity = 1.05;
@@ -278,12 +297,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
       case 'MIDNIGHT':
         scene.background = new THREE.Color(0x050b1a);
-        scene.fog = new THREE.FogExp2(0x091326, 0.0032);
+        scene.fog = new THREE.FogExp2(0x091326, 0.00085);
         scene.environmentIntensity = 0.36;
         if (skyMat) skyMat.color.setHex(0x050b1a);
         dirLight.color.setHex(0x93c5fd);
         dirLight.intensity = 0.65;
-        dirLight.position.set(45, 75, 35);
+        sunOffsetRef.current = { x: 45, y: 75, z: 35 };
         hemiLight.color.setHex(0x1e293b);
         hemiLight.groundColor.setHex(0x020617);
         hemiLight.intensity = 0.45;
@@ -294,12 +313,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
       case 'GOLDEN_HOUR':
         scene.background = new THREE.Color(0xfde68a);
-        scene.fog = new THREE.FogExp2(0xfef3c7, 0.002);
+        scene.fog = new THREE.FogExp2(0xfef3c7, 0.00035);
         scene.environmentIntensity = 0.78;
         if (skyMat) skyMat.color.setHex(0xfacc15);
         dirLight.color.setHex(0xfacc15);
         dirLight.intensity = 2.5;
-        dirLight.position.set(75, 42, 55);
+        sunOffsetRef.current = { x: 75, y: 42, z: 55 };
         hemiLight.color.setHex(0xfef08a);
         hemiLight.groundColor.setHex(0x713f12);
         hemiLight.intensity = 1.15;
@@ -311,12 +330,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       case 'DAYLIGHT':
       default:
         scene.background = new THREE.Color(0xbfe3f7);
-        scene.fog = new THREE.FogExp2(0xd2e8f7, 0.0017);
+        scene.fog = new THREE.FogExp2(0xd2e8f7, 0.00028);
         scene.environmentIntensity = 0.85;
         if (skyMat) skyMat.color.setHex(0x7dd3fc);
         dirLight.color.setHex(0xfffaed);
         dirLight.intensity = 2.4;
-        dirLight.position.set(75, 95, 50);
+        sunOffsetRef.current = { x: 75, y: 95, z: 50 };
         hemiLight.color.setHex(0xdbeafe);
         hemiLight.groundColor.setHex(0x64748b);
         hemiLight.intensity = 1.25;
@@ -326,6 +345,11 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         break;
     }
 
+    dirLight.position.set(
+      carState.current.x + sunOffsetRef.current.x,
+      sunOffsetRef.current.y,
+      carState.current.z + sunOffsetRef.current.z
+    );
     cityDataRef.current?.updateTimeOfDay?.(timeOfDay);
   }, [timeOfDay]);
 
@@ -498,6 +522,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         const cs = carState.current;
         cs.speed = 0;
         cs.steeringAngle = 0;
+        cs.y = 0;
         if (activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE') {
           cs.x = -50;
           cs.z = -130;
@@ -510,6 +535,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         if (playerCarGroupRef.current) {
           playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
           playerCarGroupRef.current.rotation.y = cs.rotation;
+          playerCarGroupRef.current.rotation.x = 0;
         }
       }
     };
@@ -541,6 +567,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     const cs = carState.current;
     cs.speed = 0;
     cs.steeringAngle = 0;
+    cs.y = 0;
     if (activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE') {
       cs.x = -50;
       cs.z = -130;
@@ -553,6 +580,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     if (playerCarGroupRef.current) {
       playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
       playerCarGroupRef.current.rotation.y = cs.rotation;
+      playerCarGroupRef.current.rotation.x = 0;
     }
   }, [resetVehicleTrigger]);
 
@@ -566,13 +594,13 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     sceneRef.current = scene;
 
     scene.background = new THREE.Color(0xbfe3f7);
-    scene.fog = new THREE.FogExp2(0xd2e8f7, 0.0017);
+    scene.fog = new THREE.FogExp2(0xd2e8f7, 0.00028);
 
     const camera = new THREE.PerspectiveCamera(
       56,
       container.clientWidth / container.clientHeight,
       0.1,
-      1000
+      3600
     );
 
     // 2. Software WebGL Guard + Renderer Setup with ACES Filmic & sRGB Color Management
@@ -609,8 +637,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     scene.environmentIntensity = 0.85;
     roomEnv.dispose();
 
-    // Atmospheric Sky Dome
-    const skyGeo = new THREE.SphereGeometry(380, 28, 18);
+    // Atmospheric Sky Dome (tracks player XZ in animate() for seamless horizon everywhere)
+    const skyGeo = new THREE.SphereGeometry(2400, 28, 18);
     const skyMat = new THREE.MeshBasicMaterial({
       color: 0x7dd3fc,
       side: THREE.BackSide,
@@ -619,6 +647,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     const skyDome = new THREE.Mesh(skyGeo, skyMat);
     scene.add(skyDome);
     skyMatRef.current = skyMat;
+    skyDomeRef.current = skyDome;
 
     // 3. Balanced Lighting Setup (Hemisphere + Sun + Ambient Fill)
     const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x64748b, 1.25);
@@ -643,6 +672,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     dirLight.shadow.bias = -0.0004;
     dirLight.shadow.normalBias = 0.025;
     scene.add(dirLight);
+    scene.add(dirLight.target);
     dirLightRef.current = dirLight;
 
     // Accent Showroom Spotlight
@@ -677,6 +707,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
     // 5. Build Drivable Player Car (from active customization type)
     const playerCar = createVehicleByType(customization);
+    playerCar.carGroup.rotation.order = 'YXZ';
     scene.add(playerCar.carGroup);
     playerCarGroupRef.current = playerCar.carGroup;
     activeVehicleRef.current = playerCar;
@@ -690,6 +721,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
     playerCar.carGroup.position.set(0, 0, 10);
     carState.current.x = 0;
+    carState.current.y = 0;
     carState.current.z = 10;
     carState.current.rotation = Math.PI;
 
@@ -872,25 +904,31 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         onAwardCreditsRef.current?.(25, 'Distance Cruise Bonus');
       }
 
-      // Track boundaries: -176 to 176
-      const nextX = cs.x + vx;
-      const nextZ = cs.z + vz;
+      // Expanded World Boundaries (Island + Epe + Third Mainland Bridge + Mainland + LASU)
+      let nextX = cs.x + vx;
+      let nextZ = cs.z + vz;
 
-      if (Math.abs(nextX) < 176) {
+      if (nextX >= WORLD_BOUNDS.minX && nextX <= WORLD_BOUNDS.maxX) {
         cs.x = nextX;
       } else {
+        cs.x = Math.max(WORLD_BOUNDS.minX, Math.min(WORLD_BOUNDS.maxX, nextX));
         cs.speed = -cs.speed * 0.25;
       }
 
-      if (Math.abs(nextZ) < 176) {
+      if (nextZ >= WORLD_BOUNDS.minZ && nextZ <= WORLD_BOUNDS.maxZ) {
         cs.z = nextZ;
       } else {
+        cs.z = Math.max(WORLD_BOUNDS.minZ, Math.min(WORLD_BOUNDS.maxZ, nextZ));
         cs.speed = -cs.speed * 0.25;
       }
 
-      // Autonomous Traffic AI & Rival Racers Update
+      // Bridge Parapet Guardrails (respecting Adekunle Exit Gore) & Coastal Seawall Barriers
+      enforceBridgeAndWaterBarriers(cs, cs.y);
+
+      // Autonomous Traffic AI, Rival Racers & Live Traffic Signals Update
       trafficEngine.update(delta, cs.x, cs.z, cs.speed);
       rivalsEngine.update(delta, currentTime);
+      cityData.updateTrafficSignals?.(currentTime / 1000);
 
       // Building, Traffic & Rival Collision Resolution
       const collisionEvent = collisionEngine.checkAndResolvePlayerCollisions(
@@ -902,10 +940,26 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         rivalsEngine.isRaceActive ? rivalsEngine.getRivalsBoundingBoxes() : []
       );
 
+      // Compute exact level-aware road/bridge/ramp elevation Y and heading-aligned pitch
+      const carY = resolveSurfaceY(cs.x, cs.z, cs.y);
+      cs.y = carY;
+      const bridgePitch = getBridgePitchAt(cs.x, cs.z, cs.rotation, carY);
+
       // Sync 3D model with physics state
       if (playerCarGroupRef.current) {
-        playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
+        playerCarGroupRef.current.position.set(cs.x, carY, cs.z);
         playerCarGroupRef.current.rotation.y = cs.rotation;
+        playerCarGroupRef.current.rotation.x = bridgePitch;
+      }
+
+      // Track sun shadow frustum & skyDome to player position (texel-snapped to prevent shimmer)
+      const snapX = Math.round(cs.x / 2) * 2;
+      const snapZ = Math.round(cs.z / 2) * 2;
+      const sunOff = sunOffsetRef.current;
+      dirLight.position.set(snapX + sunOff.x, sunOff.y, snapZ + sunOff.z);
+      dirLight.target.position.set(snapX, carY, snapZ);
+      if (skyDomeRef.current) {
+        skyDomeRef.current.position.set(cs.x, 0, cs.z);
       }
 
       // Mission Update & Street Race Checkpoint Detection
@@ -949,7 +1003,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         lastGPSCalcTime.current = currentTime;
         const dest = activeDestinationRef.current;
         if (dest) {
-          const path = findShortestRoadPath({ x: cs.x, z: cs.z }, dest);
+          const path = findShortestRoadPath({ x: cs.x, z: cs.z, y: cs.y }, dest);
           cityData.updateGPSRoute(path);
         } else {
           cityData.updateGPSRoute([]);
@@ -1016,6 +1070,20 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             engineAudio.playTurnSignalClick(isBlinkingNow ? 'on' : 'off');
           }
         }
+      }
+
+      // Player Brake Lights & Reverse Lights Feedback
+      const isBrakingNow = Boolean((input.backward && cs.speed > 0.15) || (input.forward && cs.speed < -0.15) || input.handbrake);
+      const isReversingNow = cs.speed < -0.15;
+      if (activeVehicleRef.current?.brakeLightMats) {
+        activeVehicleRef.current.brakeLightMats.forEach((mat) => {
+          mat.emissiveIntensity = isBrakingNow ? 4.2 : 0.75;
+        });
+      }
+      if (activeVehicleRef.current?.reverseLights) {
+        activeVehicleRef.current.reverseLights.forEach((mesh) => {
+          mesh.visible = isReversingNow;
+        });
       }
 
       // Engine audio synthesis update with dynamic acceleration load and vehicle profile
@@ -1137,11 +1205,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         }
 
         tmpDriverOffset.set(ox, oy, oz).applyAxisAngle(tmpUpAxis, cs.rotation);
-        camera.position.set(cs.x + tmpDriverOffset.x, tmpDriverOffset.y, cs.z + tmpDriverOffset.z);
+        camera.position.set(
+          cs.x + tmpDriverOffset.x,
+          carY + tmpDriverOffset.y,
+          cs.z + tmpDriverOffset.z
+        );
 
         tmpLookTarget.set(
           cs.x + Math.sin(cs.rotation) * lookTargetDist,
-          lookTargetY,
+          carY + lookTargetY,
           cs.z + Math.cos(cs.rotation) * lookTargetDist
         );
         camera.lookAt(tmpLookTarget);
@@ -1150,30 +1222,30 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         const orbitDistance = 8.0;
         camera.position.set(
           cs.x + Math.sin(orbitAngle) * orbitDistance,
-          2.6,
+          carY + 2.6,
           cs.z + Math.cos(orbitAngle) * orbitDistance
         );
-        camera.lookAt(cs.x, 0.7, cs.z);
+        camera.lookAt(cs.x, carY + 0.7, cs.z);
       } else if (currentCameraMode === 'DRONE') {
         const droneDist = 20;
         const targetCamX = cs.x - Math.sin(cs.rotation) * droneDist;
         const targetCamZ = cs.z - Math.cos(cs.rotation) * droneDist;
 
         camera.position.x += (targetCamX - camera.position.x) * delta * 2.2;
-        camera.position.y += (14 - camera.position.y) * delta * 2.2;
+        camera.position.y += (carY + 14 - camera.position.y) * delta * 2.2;
         camera.position.z += (targetCamZ - camera.position.z) * delta * 2.2;
-        camera.lookAt(cs.x, 0.5, cs.z);
+        camera.lookAt(cs.x, carY + 0.5, cs.z);
       } else {
         const targetCamX = cs.x - Math.sin(cs.rotation) * baseSpec.chaseDistance;
         const targetCamZ = cs.z - Math.cos(cs.rotation) * baseSpec.chaseDistance;
 
         camera.position.x += (targetCamX - camera.position.x) * delta * 6.5;
-        camera.position.y += (baseSpec.chaseHeight - camera.position.y) * delta * 4.5;
+        camera.position.y += (carY + baseSpec.chaseHeight - camera.position.y) * delta * 4.5;
         camera.position.z += (targetCamZ - camera.position.z) * delta * 6.5;
 
         tmpLookTarget.set(
           cs.x + Math.sin(cs.rotation) * baseSpec.chaseLookAhead,
-          0.7,
+          carY + 0.7,
           cs.z + Math.cos(cs.rotation) * baseSpec.chaseLookAhead
         );
         camera.lookAt(tmpLookTarget);
@@ -1201,6 +1273,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
       cityData.dispose?.();
+      trafficEngine.dispose?.();
       skyGeo.dispose();
       skyMat.dispose();
       markerTex.dispose();
