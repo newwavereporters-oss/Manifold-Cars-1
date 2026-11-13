@@ -43,13 +43,17 @@ interface CockpitDashboardOverlayProps {
   onRadioVolumeChange: (vol: number) => void;
   cockpitHotspot: CockpitHotspot;
   onSelectHotspot: (spot: CockpitHotspot) => void;
+  isMusicLocked?: boolean;
 }
 
 const RADIO_STATION_NAMES: Record<number, string> = {
-  0: 'Radio Off (Acoustic)',
-  1: 'Manifold FM • Synthwave Midnight',
-  2: 'Apex Lounge • Cyber Lo-Fi',
-  3: 'Turbine Beats • Apex Adrenaline',
+  0: 'No music (Acoustic)',
+  1: 'Afrobeats FM',
+  2: 'Hip-hop Street',
+  3: 'R&B Midnight',
+  4: 'Gospel Praise',
+  5: 'Instrumental Lounge',
+  6: 'Electronic / House',
 };
 
 export const CockpitDashboardOverlay: React.FC<CockpitDashboardOverlayProps> = ({
@@ -76,6 +80,7 @@ export const CockpitDashboardOverlay: React.FC<CockpitDashboardOverlayProps> = (
   onRadioVolumeChange,
   cockpitHotspot,
   onSelectHotspot,
+  isMusicLocked = false,
 }) => {
   // Speedometer needle angle calculation (-120 deg to +120 deg)
   const maxDisplaySpeed = 280;
@@ -381,15 +386,19 @@ export const CockpitDashboardOverlay: React.FC<CockpitDashboardOverlayProps> = (
           </div>
 
           <div className="flex items-center gap-1">
-            {[0, 1, 2, 3].map((st) => (
+            {[0, 1, 2, 3, 4, 5, 6].map((st) => (
               <button
                 key={st}
-                onClick={() => onSelectRadioStation(st)}
-                className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase transition-all ${
+                disabled={isMusicLocked && st !== radioStation}
+                onClick={() => !isMusicLocked && onSelectRadioStation(st)}
+                className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase transition-all ${
+                  isMusicLocked && st !== radioStation ? 'opacity-40 cursor-not-allowed' : ''
+                } ${
                   radioStation === st ? 'bg-blue-500 text-white shadow' : 'bg-white/5 text-gray-400'
                 }`}
+                title={isMusicLocked ? 'Music preference locked for 24h' : RADIO_STATION_NAMES[st]}
               >
-                {st === 0 ? 'Off' : `CH ${st}`}
+                {st === 0 ? 'Off' : `${st}`}
               </button>
             ))}
           </div>

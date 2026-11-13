@@ -24,14 +24,30 @@ import {
   WORLD_BOUNDS,
 } from './lagosCityData';
 import { ActiveMissionSession } from './missionEngine';
+import type { RemotePlayerPeer } from '../../services/worldMultiplayerService';
 
 export type CameraViewMode = 'CHASE' | 'COCKPIT' | 'ORBIT' | 'DRONE';
 export type TimeOfDay = 'DAYLIGHT' | 'SUNSET' | 'MIDNIGHT' | 'GOLDEN_HOUR';
+
+export interface ProjectedRemotePlayer {
+  playerId: string;
+  nickname: string;
+  vehicleModel: VehicleModelType;
+  worldRegion: string;
+  distance: number;
+  screenX: number;
+  screenY: number;
+  visible: boolean;
+  speedKmh: number;
+}
 
 export interface WorldCanvasProps {
   customization: CarCustomization;
   cameraMode: CameraViewMode;
   timeOfDay: TimeOfDay;
+  presentationMode?: boolean;
+  remotePlayers?: RemotePlayerPeer[];
+  onProjectedRemotePlayers?: (projected: ProjectedRemotePlayer[]) => void;
   onZoneChange?: (zone: string | null) => void;
   onSpeedChange?: (speedKmh: number, rpm: number, gear: string) => void;
   onSpeedTrapTrigger?: (speedKmh: number) => void;
@@ -39,7 +55,7 @@ export interface WorldCanvasProps {
   onEnterMarketplace?: () => void;
   onOpenCustomizer?: () => void;
   onOpenDealerLounge?: () => void;
-  onCarPositionUpdate?: (pos: { x: number; z: number; heading: number }) => void;
+  onCarPositionUpdate?: (pos: { x: number; y?: number; z: number; heading: number; speed?: number }) => void;
   isCustomizerOpen?: boolean;
   virtualInput?: {
     forward: boolean;
@@ -69,6 +85,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   customization,
   cameraMode,
   timeOfDay,
+  presentationMode = false,
+  remotePlayers = [],
+  onProjectedRemotePlayers,
   onZoneChange,
   onSpeedChange,
   onSpeedTrapTrigger,
@@ -200,6 +219,35 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const onRivalPositionsUpdateRef = useRef(onRivalPositionsUpdate);
   onRivalPositionsUpdateRef.current = onRivalPositionsUpdate;
 
+  const presentationModeRef = useRef(presentationMode);
+  presentationModeRef.current = presentationMode;
+
+  const remotePlayersRef = useRef<RemotePlayerPeer[]>(remotePlayers);
+  remotePlayersRef.current = remotePlayers;
+
+  const onProjectedRemotePlayersRef = useRef(onProjectedRemotePlayers);
+  onProjectedRemotePlayersRef.current = onProjectedRemotePlayers;
+
+  const remoteCarMeshesRef = useRef<
+    Map<
+      string,
+      {
+        group: THREE.Group;
+        modelKey: string;
+        x: number;
+        y: number;
+        z: number;
+        heading: number;
+        nickname: string;
+        vehicleModel: VehicleModelType;
+        worldRegion: string;
+        distance: number;
+        speedKmh: number;
+      }
+    >
+  >(new Map());
+  const lastRemoteProjTime = useRef<number>(0);
+
   // Vehicle Physics & Dynamics State
   const carState = useRef({
     x: 0,
@@ -264,6 +312,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     customization.spoiler,
     customization.underglow,
     customization.windowTint,
+    customization.interiorTheme,
   ]);
 
   // Lighting & Time-of-Day updates
@@ -485,9 +534,28 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     }
   }, [hornActive]);
 
-  // Keyboard Listeners
+  // Keyboard Listeners (guarded when typing in chat/auth inputs or in presentationMode)
   useEffect(() => {
+    const isEditableFocused = (target: EventTarget | null) => {
+      const el = (target as HTMLElement | null) || (document.activeElement as HTMLElement | null);
+      if (!el) return false;
+      const tag = el.tagName?.toUpperCase();
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(el.isContentEditable);
+    };
+
+    const clearHeldKeys = () => {
+      keys.current = {};
+      if (lastHornState.current) {
+        lastHornState.current = false;
+        engineAudio.playHorn(false);
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (presentationModeRef.current || isEditableFocused(e.target)) {
+        clearHeldKeys();
+        return;
+      }
       engineAudio.init();
       const k = e.key.toLowerCase();
       keys.current[k] = true;
@@ -545,7 +613,6 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       keys.current[k] = false;
       keys.current[e.code] = false;
 
-      // Release Horn on 'h'
       if (k === 'h' && lastHornState.current) {
         lastHornState.current = false;
         engineAudio.playHorn(false);
@@ -554,10 +621,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', clearHeldKeys);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', clearHeldKeys);
     };
   }, [onEnterMarketplace, onInspectCar, onOpenCustomizer, onOpenDealerLounge]);
 
@@ -758,6 +827,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     const tmpDriverOffset = new THREE.Vector3();
     const tmpUpAxis = new THREE.Vector3(0, 1, 0);
     const tmpLookTarget = new THREE.Vector3();
+    const tmpProjVec = new THREE.Vector3();
 
     // 6. Animation & Physics Game Loop
     let animationFrameId: number;
@@ -776,6 +846,26 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
       // Holographic marker float pulse
       marketplaceMarkerSprite.position.y = 13.0 + Math.sin(currentTime * 0.003) * 0.35;
+
+      // Presentation / Unauthenticated Aerial Mode (Background world only — no driving session)
+      if (presentationModeRef.current) {
+        if (playerCarGroupRef.current) playerCarGroupRef.current.visible = false;
+        trafficEngine.update(delta, 0, -40, 0);
+        cityData.updateTrafficSignals?.(currentTime / 1000);
+        const orbitAngle = currentTime * 0.00012;
+        const camX = Math.sin(orbitAngle) * 165;
+        const camZ = -35 + Math.cos(orbitAngle) * 165;
+        camera.position.set(camX, 58, camZ);
+        camera.lookAt(0, 4, -35);
+        const sunOff = sunOffsetRef.current;
+        dirLight.position.set(sunOff.x, sunOff.y, sunOff.z);
+        dirLight.target.position.set(0, 0, 0);
+        if (skyDomeRef.current) skyDomeRef.current.position.set(0, 0, 0);
+        renderer.render(scene, camera);
+        return;
+      }
+
+      if (playerCarGroupRef.current) playerCarGroupRef.current.visible = true;
 
       // Input Resolution (Keyboard + Touch), locked during Race Countdown
       const isRaceCountdown = activeMissionSessionRef.current?.state === 'COUNTDOWN';
@@ -1120,7 +1210,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         : 'D6';
 
       onSpeedChangeRef.current?.(speedKmh, rpm, gear);
-      onCarPositionUpdateRef.current?.({ x: cs.x, z: cs.z, heading: cs.rotation });
+      onCarPositionUpdateRef.current?.({ x: cs.x, y: cs.y, z: cs.z, heading: cs.rotation, speed: cs.speed });
 
       // Zone Detection & Proximity Hotspots
       let detectedZone: string | null = null;
@@ -1251,7 +1341,101 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         camera.lookAt(tmpLookTarget);
       }
 
+      // Remote Active Player Vehicles (Smooth interpolation + projected roof badge coords)
+      const remotePool = remoteCarMeshesRef.current;
+      const incomingPeers = remotePlayersRef.current;
+      const activeIds = new Set(incomingPeers.map((p) => p.playerId));
+
+      for (const [pid, entry] of remotePool.entries()) {
+        if (!activeIds.has(pid)) {
+          scene.remove(entry.group);
+          remotePool.delete(pid);
+        }
+      }
+
+      for (const peer of incomingPeers) {
+        const mKey = `${peer.vehicleModel}|${peer.paintColor}`;
+        let entry = remotePool.get(peer.playerId);
+        if (!entry || entry.modelKey !== mKey) {
+          if (entry) scene.remove(entry.group);
+          const remoteModel = createVehicleByType({
+            vehicleType: peer.vehicleModel,
+            paintColor: peer.paintColor,
+            finish: 'metallic',
+            rimColor: '#E2E8F0',
+            caliperColor: '#EF233C',
+            headlightTint: '#ffffff',
+            windowTint: 0.4,
+          });
+          remoteModel.carGroup.rotation.order = 'YXZ';
+          remoteModel.carGroup.position.set(peer.x, peer.y, peer.z);
+          remoteModel.carGroup.rotation.y = peer.heading;
+          scene.add(remoteModel.carGroup);
+          entry = {
+            group: remoteModel.carGroup,
+            modelKey: mKey,
+            x: peer.x,
+            y: peer.y,
+            z: peer.z,
+            heading: peer.heading,
+            nickname: peer.nickname,
+            vehicleModel: peer.vehicleModel,
+            worldRegion: peer.worldRegion,
+            distance: peer.distance,
+            speedKmh: Math.round(Math.abs(peer.speed) * 4.6),
+          };
+          remotePool.set(peer.playerId, entry);
+        } else {
+          const lerpAlpha = Math.min(1, delta * 8.5);
+          entry.x += (peer.x - entry.x) * lerpAlpha;
+          entry.z += (peer.z - entry.z) * lerpAlpha;
+          let angleDiff = peer.heading - entry.heading;
+          while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+          while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+          entry.heading += angleDiff * lerpAlpha;
+          entry.y = resolveSurfaceY(entry.x, entry.z, peer.y);
+          entry.distance = peer.distance;
+          entry.worldRegion = peer.worldRegion;
+          entry.speedKmh = Math.round(Math.abs(peer.speed) * 4.6);
+
+          entry.group.position.set(entry.x, entry.y, entry.z);
+          entry.group.rotation.y = entry.heading;
+          entry.group.rotation.x = getBridgePitchAt(entry.x, entry.z, entry.heading, entry.y);
+        }
+      }
+
       renderer.render(scene, camera);
+
+      // Emit throttled screen-projected coordinates for clickable driver tags
+      if (onProjectedRemotePlayersRef.current && currentTime - lastRemoteProjTime.current > 45) {
+        lastRemoteProjTime.current = currentTime;
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        const projected: ProjectedRemotePlayer[] = [];
+        for (const [pid, entry] of remotePool.entries()) {
+          tmpProjVec.set(entry.x, entry.y + 2.45, entry.z);
+          tmpProjVec.project(camera);
+          const visible =
+            tmpProjVec.z > -1 &&
+            tmpProjVec.z < 1 &&
+            tmpProjVec.x >= -0.92 &&
+            tmpProjVec.x <= 0.92 &&
+            tmpProjVec.y >= -0.92 &&
+            tmpProjVec.y <= 0.92;
+          projected.push({
+            playerId: pid,
+            nickname: entry.nickname,
+            vehicleModel: entry.vehicleModel,
+            worldRegion: entry.worldRegion,
+            distance: entry.distance,
+            screenX: (tmpProjVec.x * 0.5 + 0.5) * w,
+            screenY: (-tmpProjVec.y * 0.5 + 0.5) * h,
+            visible,
+            speedKmh: entry.speedKmh,
+          });
+        }
+        onProjectedRemotePlayersRef.current(projected);
+      }
     };
 
     animationFrameId = requestAnimationFrame(animate);
@@ -1272,6 +1456,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
+      for (const entry of remoteCarMeshesRef.current.values()) {
+        scene.remove(entry.group);
+      }
+      remoteCarMeshesRef.current.clear();
       cityData.dispose?.();
       trafficEngine.dispose?.();
       skyGeo.dispose();

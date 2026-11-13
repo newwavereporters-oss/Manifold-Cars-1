@@ -41,8 +41,10 @@ import {
   Loader2,
   Globe,
   Sparkles,
+  ShieldAlert,
 } from 'lucide-react';
 import { AdminMarketIntelligenceView } from '../../components/admin/AdminMarketIntelligenceView';
+import { AdminModerationView } from '../../components/admin/AdminModerationView';
 import { useAuth } from '../../context/AuthContext';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../../data/mockCars';
 import { Car, CarBrand, BodyTypeCategory } from '../../types';
@@ -78,6 +80,7 @@ export type AdminTabType =
   | 'sales'
   | 'commissions'
   | 'intelligence'
+  | 'moderation'
   | 'settings';
 
 interface AdminDashboardPageProps {
@@ -105,6 +108,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     if (route.startsWith('/admin/commissions') || route.startsWith('/admin/commission-rules')) return 'commissions';
     if (route.startsWith('/admin/sales')) return 'sales';
     if (route.startsWith('/admin/market-intelligence') || route.startsWith('/admin/intelligence')) return 'intelligence';
+    if (route.startsWith('/admin/moderation')) return 'moderation';
     if (route.startsWith('/admin/settings')) return 'settings';
     return defaultTab;
   };
@@ -133,6 +137,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       sales: '/admin/sales',
       commissions: '/admin/commissions',
       intelligence: '/admin/market-intelligence',
+      moderation: '/admin/moderation',
       settings: '/admin/settings',
     };
     navigate(routeMap[tab]);
@@ -945,6 +950,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             >
               <Globe className="w-4 h-4" />
               <span>Market Intelligence</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('moderation')}
+              className={`py-3 px-1 border-b-2 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer ${
+                activeTab === 'moderation'
+                  ? 'border-[#EF233C] text-[#EF233C]'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              <ShieldAlert className="w-4 h-4" />
+              <span>Safety &amp; Chat Moderation</span>
             </button>
 
             <button
@@ -2093,6 +2110,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         {/* TAB 9: MARKET INTELLIGENCE CENTRE */}
         {activeTab === 'intelligence' && (
           <AdminMarketIntelligenceView />
+        )}
+
+        {/* TAB 9B: GAME WORLD SAFETY & CHAT MODERATION */}
+        {activeTab === 'moderation' && (
+          <AdminModerationView />
         )}
 
         {/* TAB 10: DATABASE & SETTINGS */}

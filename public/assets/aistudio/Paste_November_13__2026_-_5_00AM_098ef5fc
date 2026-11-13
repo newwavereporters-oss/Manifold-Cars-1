@@ -1,0 +1,1289 @@
+# MANIFOLD CARS 3D — COMPLETE PLAYER ACCESS CONTROL, ONBOARDING, LIVE PLAYER PRESENCE AND REAL-TIME IN-GAME CHAT IMPLEMENTATION
+
+## PROJECT OVERVIEW
+
+You are working on the existing MANIFOLD Cars 3D application.
+
+Your assignment is to implement a complete registered-player gaming environment with controlled access, player onboarding, personalised vehicle configuration, real-time player discovery and private in-game communication.
+
+This is a major feature implementation within the existing application.
+
+You must work directly on the existing codebase.
+
+Do not create a separate application.
+Do not replace the existing Three.js game engine.
+Do not create a disconnected mock interface.
+Do not simulate player accounts or fake live users.
+
+The existing application uses React, TypeScript, Three.js and Supabase. Inspect the actual project architecture and reuse its existing authentication, database, multiplayer and vehicle systems wherever possible.
+
+## THE BUSINESS PURPOSE OF THE GAME
+
+MANIFOLD is primarily an automotive discovery and visibility platform.
+
+The 3D driving environment exists to give car dealers and their listed vehicles greater visibility, exposure and engagement through an immersive driving experience.
+
+Players explore the Lagos-inspired driving environment, discover vehicles and experience the wider MANIFOLD automotive ecosystem.
+
+The new social system should make the experience more interactive by allowing authenticated players to recognise and communicate with other real players driving nearby.
+
+The game is not intended to become a dating platform or an unrestricted social network.
+
+All communication must remain focused on ordinary, friendly in-game interaction.
+
+---
+
+# PART 1 — CONTROLLED ACCESS TO THE GAME WORLD
+
+The active driving environment must no longer be publicly accessible.
+
+Every person who wants to enter the game must have a registered MANIFOLD player account.
+
+Implement a proper authentication and onboarding workflow.
+
+## 1.1 Registration page
+
+Create a premium player registration interface.
+
+Collect the following information:
+
+1. Full name.
+2. Nickname.
+3. Email address.
+4. Phone number.
+5. Password.
+6. Confirm password.
+
+All fields are compulsory.
+
+Validation requirements:
+
+- Full name must be provided.
+- Nickname must be unique.
+- Email address must be valid and unique.
+- Phone number must be valid.
+- Password must meet appropriate security requirements.
+- Confirm password must match.
+- Display useful validation messages.
+- Prevent duplicate accounts.
+- Display loading and success states.
+- Display clear error messages.
+
+Use Supabase Auth for account creation.
+
+Never store plain-text passwords.
+
+After successful registration, redirect the player to the login page.
+
+Do not automatically enter the player into the game after registration.
+
+## 1.2 Registration background
+
+The registration page must use the actual MANIFOLD 3D environment as its background.
+
+Use an aerial or elevated cinematic camera perspective.
+
+Show:
+
+- The existing Lagos environment.
+- Roads and buildings.
+- Realistic vehicles moving through the environment.
+- AI traffic.
+- Atmospheric lighting.
+- Natural camera movement.
+
+The background must use the existing game environment.
+
+Do not use unrelated stock photographs.
+
+Create a lightweight presentation mode so the registration page does not initialise unnecessary gameplay systems.
+
+The background must not require an authenticated player or active driving session.
+
+The registration form should appear in a premium floating panel.
+
+Ensure the page works properly on mobile and desktop.
+
+## 1.3 Login page
+
+Create a separate login interface.
+
+Required fields:
+
+- Email address.
+- Password.
+
+Include:
+
+- Show/hide password.
+- Forgot password.
+- Login button.
+- Create account link.
+- Loading state.
+- Error feedback.
+
+Use the same aerial MANIFOLD game environment background with moving vehicles.
+
+After successful authentication, inspect the player's saved onboarding state and redirect them to the correct stage.
+
+---
+
+# PART 2 — PLAYER PROFILE AND DATABASE
+
+Inspect the existing Supabase database before creating new tables.
+
+Reuse existing player profile structures wherever possible.
+
+Do not create duplicate player profiles or duplicate authentication systems.
+
+Each player must have a persistent profile associated with their authenticated Supabase user ID.
+
+Store:
+
+- Player ID.
+- Authenticated user ID.
+- Full name.
+- Nickname.
+- Email.
+- Phone number.
+- Registration date.
+- Account status.
+- Onboarding status.
+- Terms acceptance status.
+- Terms version.
+- Terms acceptance timestamp.
+- Selected vehicle.
+- Selected vehicle colour.
+- Selected interior.
+- Selected music preference.
+- Settings confirmation timestamp.
+- Settings lock expiry timestamp.
+- Last activity timestamp.
+
+Private account information must never be exposed to other players.
+
+The public in-game identity must use the player's nickname only.
+
+Apply database constraints to prevent duplicate accounts and nicknames.
+
+Use Supabase Row Level Security.
+
+Players must only access their own private profile information.
+
+Never expose service-role credentials in frontend code.
+
+---
+
+# PART 3 — MANDATORY GAME BRIEFING AND TERMS ACCEPTANCE
+
+After login, first-time players must be redirected to a dedicated game briefing page.
+
+Players cannot enter the driving environment until they complete this stage.
+
+## 3.1 About MANIFOLD
+
+Explain that MANIFOLD is an automotive discovery and gaming environment designed to connect car enthusiasts with vehicles listed by dealers on the MANIFOLD marketplace.
+
+Players explore a Lagos-inspired driving environment, discover automotive destinations, experience different vehicles and interact with the wider MANIFOLD automotive ecosystem.
+
+Explain that the primary business objective is to provide additional visibility and exposure for dealer-listed vehicles.
+
+## 3.2 How to play
+
+Explain:
+
+- How players enter the driving environment.
+- How to control their vehicles.
+- How to use navigation.
+- How to discover other players.
+- How to use the in-game chat.
+- How to access vehicle settings.
+- How the 24-hour vehicle configuration restriction works.
+- How to access the marketplace and discover dealer-listed vehicles.
+
+## 3.3 Terms and conditions
+
+Create a clearly organised terms and conditions section covering:
+
+1. Player eligibility.
+2. Registration accuracy.
+3. Account security.
+4. Acceptable player conduct.
+5. Prohibited exploitation and cheating.
+6. Vehicle configuration restrictions.
+7. In-game chat rules.
+8. Privacy and personal information.
+9. Prohibition of contact-detail exchange.
+10. Prohibition of dating solicitation and erotic conversations.
+11. Harassment and abusive behaviour.
+12. Blocking and reporting.
+13. Account suspension.
+14. Intellectual property.
+15. Platform availability.
+16. Changes to platform terms.
+17. Support and complaints.
+
+Do not invent legal company information or registration details.
+
+## 3.4 Quick game hints
+
+Provide useful hints covering:
+
+- Driving controls.
+- Road navigation.
+- GPS and destination selection.
+- Vehicle customisation.
+- Player identification.
+- Chat invitations.
+- Chat safety.
+- Marketplace discovery.
+
+## 3.5 Acceptance
+
+At the bottom of the briefing page, provide:
+
+- Terms acceptance checkbox.
+- "I Agree and Continue" button.
+
+The button must remain disabled until the player checks the acceptance box.
+
+On acceptance:
+
+- Save the authenticated player ID.
+- Save the terms version.
+- Save the acceptance timestamp.
+- Update onboarding status.
+
+Store acceptance in Supabase, not merely in browser storage.
+
+Redirect the player to vehicle configuration.
+
+If the terms are materially updated in the future, support requiring fresh acceptance.
+
+---
+
+# PART 4 — PERSONAL VEHICLE CONFIGURATION
+
+Create a premium vehicle selection and configuration interface.
+
+Use the actual existing Three.js vehicle models.
+
+## 4.1 Vehicle selection
+
+Allow the player to choose from:
+
+- Sports Coupe.
+- Luxury SUV.
+- Executive Sedan.
+- Rugged 4x4.
+
+Display a large interactive 3D preview.
+
+## 4.2 Exterior colour
+
+Provide colour swatches.
+
+Update the vehicle preview immediately when the player selects a colour.
+
+## 4.3 Interior configuration
+
+Provide options such as:
+
+- Black.
+- Cream.
+- Brown.
+- Grey.
+- Sport interior.
+
+Reflect the selection in the 3D preview where supported.
+
+## 4.4 Music preference
+
+Allow players to choose:
+
+- Afrobeats.
+- Hip-hop.
+- R&B.
+- Gospel.
+- Instrumental.
+- Electronic / House.
+- No music.
+
+Use existing audio and radio systems or appropriately licensed audio assets.
+
+## 4.5 Confirm configuration
+
+Display the selected vehicle, exterior colour, interior and music preference.
+
+Provide a prominent:
+
+"CONFIRM MY VEHICLE AND ENTER GAME"
+
+On confirmation:
+
+- Validate all selections.
+- Save the configuration to the player's profile.
+- Record the confirmation timestamp.
+- Calculate the 24-hour lock expiry.
+- Mark vehicle configuration as complete.
+- Apply the selected configuration to the actual in-game vehicle.
+- Enter the game.
+
+---
+
+# PART 5 — ENFORCE THE 24-HOUR CONFIGURATION LOCK
+
+This is a mandatory business rule.
+
+Once the player confirms their vehicle configuration, they cannot change the following for 24 hours:
+
+- Vehicle type.
+- Exterior colour.
+- Interior configuration.
+- Music preference.
+
+The restriction must be enforced through secure backend/database-authorised operations.
+
+Do not rely on disabled frontend buttons alone.
+
+Use database/server time as the authoritative source.
+
+The system must:
+
+1. Record the last successful configuration confirmation.
+2. Calculate the lock expiry timestamp.
+3. Reject restricted updates before expiry.
+4. Permit changes after expiry.
+5. Refresh the restriction correctly after login.
+6. Preserve the restriction after browser refresh.
+7. Prevent direct API or browser manipulation.
+
+When a player attempts to open settings during the restriction, display:
+
+"YOUR VEHICLE CONFIGURATION IS LOCKED."
+
+Show a countdown in hours, minutes and seconds.
+
+Display the exact time the player can configure their vehicle again.
+
+Do not reset the countdown when a change attempt is rejected.
+
+A successful new configuration confirmation starts a fresh 24-hour period.
+
+---
+
+# PART 6 — LIVE PLAYER PRESENCE AND DRIVER IDENTIFICATION
+
+Implement a real-time player presence system.
+
+This is a major feature.
+
+The objective is to allow players to recognise other authenticated MANIFOLD players driving nearby.
+
+For example:
+
+A car approaches.
+
+A discreet identifier appears above it:
+
+"SANNI"
+
+Another car passes:
+
+"BISI"
+
+These must represent actual authenticated players, not AI traffic.
+
+## 6.1 Public player identity
+
+Display only:
+
+- Player nickname.
+- Optional avatar or initials.
+- Small online indicator where appropriate.
+
+Never display:
+
+- Full name.
+- Email address.
+- Phone number.
+- Password.
+- Private profile details.
+- Authentication tokens.
+- Internal account information.
+
+The nickname is the public in-game identity.
+
+## 6.2 Connect player identity to the vehicle
+
+When an authenticated player enters the game:
+
+1. Verify the player's session.
+2. Load their profile.
+3. Load their saved vehicle configuration.
+4. Associate their player identity with their vehicle.
+5. Register their live presence.
+6. Publish the required multiplayer state.
+
+Other eligible players should see the nickname above the correct vehicle.
+
+The nickname must remain attached to the vehicle as it moves and turns.
+
+AI traffic must never display player identities.
+
+## 6.3 Real-time player position
+
+Inspect the existing multiplayer implementation before making changes.
+
+Reuse the current networking infrastructure.
+
+Do not introduce a second competing multiplayer engine.
+
+Maintain the minimum state required for live player identification:
+
+- Authenticated player identifier.
+- Public nickname.
+- Vehicle model identifier.
+- Position.
+- Heading.
+- World/region identifier.
+- Last heartbeat.
+- Presence status.
+
+Do not broadcast private profile information.
+
+Synchronise player movement efficiently.
+
+Use interpolation to avoid jerky movement.
+
+---
+
+# PART 7 — TEN-MINUTE PLAYER INACTIVITY RULE
+
+Only authenticated and genuinely active players may be discovered or contacted.
+
+A player must become unavailable for chat if:
+
+- They log out.
+- Their authentication session expires.
+- They disconnect.
+- They remain inactive for ten minutes.
+
+## 7.1 Heartbeat
+
+Implement a heartbeat system.
+
+Send a heartbeat every 30–60 seconds while the authenticated game session is active.
+
+Update the last activity timestamp.
+
+Use server-authoritative timestamps.
+
+## 7.2 Inactivity handling
+
+After ten minutes without a valid heartbeat or activity:
+
+- Mark the player unavailable.
+- Remove them from nearby player discovery.
+- Stop displaying their active player identity.
+- Prevent new chat invitations.
+- Reject new messages.
+- Expire outstanding invitations.
+- Remove them from active chat availability.
+
+A player who explicitly logs out must become unavailable immediately.
+
+Do not rely exclusively on frontend timers.
+
+Enforce availability through secure server-side checks.
+
+## 7.3 Reconnection
+
+When the player reconnects:
+
+- Verify the session.
+- Restore presence.
+- Reload the player's current vehicle configuration.
+- Resume discovery if eligible.
+
+Do not automatically reopen expired invitations.
+
+---
+
+# PART 8 — NEARBY PLAYER DISCOVERY
+
+Allow players to discover other registered drivers who are nearby.
+
+Use actual world coordinates.
+
+Implement proximity-based discovery.
+
+Start with a configurable radius of approximately 80–120 world units, then validate against the actual game-world scale.
+
+The system must:
+
+- Identify authenticated active players.
+- Compare their world positions.
+- Determine whether they are within discovery range.
+- Make eligible players discoverable.
+- Update discovery as players move.
+- Remove players who leave the discovery area.
+- Remove inactive or logged-out players.
+
+Do not expose a global directory of every registered player.
+
+Do not reveal exact player coordinates through the user interface.
+
+The player should only be able to interact with eligible nearby drivers.
+
+---
+
+# PART 9 — INITIATE CHAT REQUESTS
+
+Allow a player to initiate a chat with another nearby player.
+
+Example:
+
+The player sees:
+
+SANNI — ONLINE
+
+They select the vehicle identity and choose:
+
+"START CHAT"
+
+Send a chat invitation to Sanni.
+
+## 9.1 Incoming invitation
+
+The receiving player sees a discreet notification card:
+
+"NEW DRIVER WANTS TO CHAT"
+
+"Patrick wants to chat with you."
+
+[ACCEPT] [DECLINE]
+
+The notification must not pause the game or force the player into a separate screen.
+
+## 9.2 Invitation rules
+
+- Both players must be authenticated.
+- Both players must be active.
+- Both players must satisfy the proximity rule.
+- Players cannot invite themselves.
+- Prevent duplicate pending invitations.
+- Rate-limit invitations.
+- Invitation expires after 30 seconds.
+- Declined invitations cannot open conversations.
+- Expired invitations cannot be accepted.
+- Logged-out players cannot receive invitations.
+- Inactive players cannot receive invitations.
+
+Create the conversation only after successful acceptance.
+
+Validate all conditions again on the server when the invitation is accepted.
+
+---
+
+# PART 10 — REAL-TIME CHAT CARD
+
+After a successful invitation, open a compact floating chat card.
+
+The card must look like a premium native component of the MANIFOLD game.
+
+## 10.1 Chat card elements
+
+Include:
+
+- Other player's nickname.
+- Online status.
+- Conversation messages.
+- Message timestamps.
+- Text input.
+- Send button.
+- Minimise button.
+- Close button.
+- Unread message indicator.
+- Block option.
+- Report option.
+
+## 10.2 Chat behaviour
+
+Implement:
+
+- Real-time message delivery.
+- Correct sender identity.
+- Message timestamps.
+- New-message notifications.
+- Message delivery and failure states.
+- Conversation membership validation.
+- Appropriate message history.
+- Graceful disconnection handling.
+
+The chat must work without forcing players to leave the game.
+
+## 10.3 Desktop interface
+
+Use a compact floating card in a screen corner.
+
+Allow minimising and reopening.
+
+Do not obscure essential driving information.
+
+## 10.4 Mobile interface
+
+Use a responsive compact panel.
+
+Do not cover:
+
+- Accelerator.
+- Brake.
+- Steering arrows.
+- Horn.
+- Headlight controls.
+
+Ensure the message input works properly on mobile.
+
+Chat keyboard interaction must not interfere with vehicle movement.
+
+When a player is typing, temporarily prevent driving keyboard shortcuts from interpreting normal text input as driving commands.
+
+---
+
+# PART 11 — CHAT COMMUNITY GUIDELINES AND CONTENT MODERATION
+
+The MANIFOLD chat system is exclusively for ordinary, friendly in-game conversations.
+
+It is not a dating platform.
+
+It is not intended for sexual conversations or exchanging private contact details.
+
+## 11.1 Prohibited messages
+
+Disallow:
+
+- Erotic messages.
+- Sexually explicit conversations.
+- Sexual propositions.
+- Dating solicitation.
+- Requests for phone numbers.
+- Attempts to exchange phone numbers.
+- Attempts to exchange email addresses.
+- Requests to move conversations to WhatsApp.
+- Requests to move conversations to other external platforms.
+- Social media contact-sharing attempts.
+- Harassment.
+- Bullying.
+- Threats.
+- Hate speech.
+- Abusive language.
+- Spam.
+- Scams.
+- Suspicious links.
+- Requests for personal or financial information.
+
+Permitted topics should include:
+
+- Cars.
+- Driving.
+- Music.
+- Sports.
+- Entertainment.
+- General interests.
+- Everyday conversations.
+- The MANIFOLD environment.
+- Marketplace vehicle discoveries.
+
+## 11.2 Server-side moderation
+
+Moderate messages before delivery.
+
+Implement:
+
+- Phone number detection.
+- Email address detection.
+- Contact-detail exchange detection.
+- External platform contact-sharing detection.
+- Sexual-content moderation.
+- Dating solicitation detection.
+- Harassment detection.
+- Hate speech detection.
+- Spam detection.
+- Link restrictions.
+
+Do not rely only on frontend JavaScript.
+
+A player must not be able to bypass moderation through direct database requests.
+
+Use server-side validation and, where available, contextual content moderation.
+
+Avoid indiscriminate keyword blocking that prevents harmless ordinary conversation.
+
+Only approved messages may be delivered.
+
+## 11.3 Warning system
+
+When a prohibited message is detected, do not deliver it.
+
+Display:
+
+"THIS MESSAGE DOES NOT MEET MANIFOLD COMMUNITY CHAT GUIDELINES."
+
+Provide a brief explanation.
+
+Use progressive enforcement:
+
+- First violation: warning.
+- Repeated violations: temporary chat restriction.
+- Serious or persistent violations: administrator review and possible suspension.
+
+Allow administrators to configure enforcement thresholds.
+
+Do not permanently ban players based on one ambiguous keyword match.
+
+---
+
+# PART 12 — PLAYER BLOCKING AND REPORTING
+
+Players must be able to block or report another player.
+
+## Blocking
+
+A blocked player must not be able to:
+
+- Send new chat invitations.
+- Send messages.
+- Reopen conversations.
+- Contact the player through the in-game chat system.
+
+Enforce blocking on the backend.
+
+Do not merely hide the blocked player in the interface.
+
+## Reporting
+
+Allow players to report:
+
+- Harassment.
+- Inappropriate messages.
+- Sexual solicitation.
+- Contact-detail exchange attempts.
+- Spam.
+- Threats.
+- Other unacceptable behaviour.
+
+Save reports securely for administrator review.
+
+Include a reason and optional explanation.
+
+---
+
+# PART 13 — SECURITY AND RATE LIMITS
+
+Implement strong server-side validation.
+
+Every sensitive operation must validate:
+
+- Authenticated session.
+- Player identity.
+- Conversation membership.
+- Presence status.
+- Proximity.
+- Invitation status.
+- Block status.
+- Moderation status.
+- Rate limits.
+
+Never trust player IDs supplied by the browser without verifying the authenticated user.
+
+Suggested initial limits:
+
+- Maximum message length: 500 characters.
+- Maximum five new invitations per minute.
+- Maximum ten messages per ten seconds per player.
+- Maximum one pending invitation per player pair.
+
+Make the limits configurable.
+
+Prevent:
+
+- Impersonation.
+- Duplicate requests.
+- Message spoofing.
+- Unauthorised conversation access.
+- Private profile access.
+- Moderation bypass.
+- Chat spam.
+- Presence manipulation.
+
+Do not expose service-role credentials.
+
+---
+
+# PART 14 — SUPABASE DATABASE AND SQL MIGRATIONS
+
+SQL migrations are required for this feature.
+
+First inspect the current database schema and authentication setup.
+
+Reuse existing tables where appropriate.
+
+Do not create duplicate player profiles.
+
+Create versioned, repeatable and safe database migrations.
+
+The database must support the following functionality.
+
+## 14.1 Player profiles
+
+Store authenticated identity, onboarding status and vehicle configuration.
+
+Keep private account details protected.
+
+## 14.2 Player presence
+
+Maintain:
+- Player ID.
+- Online status.
+- Last heartbeat.
+- Current vehicle.
+- Public nickname.
+- Current world region.
+
+## 14.3 Chat invitations
+
+Store:
+- Invitation ID.
+- Sender.
+- Recipient.
+- Status.
+- Created timestamp.
+- Expiry timestamp.
+
+Supported statuses:
+
+- Pending.
+- Accepted.
+- Declined.
+- Expired.
+- Cancelled.
+
+## 14.4 Conversations
+
+Store:
+- Conversation ID.
+- Participants.
+- Status.
+- Created timestamp.
+- Last activity.
+
+## 14.5 Chat messages
+
+Store:
+- Message ID.
+- Conversation ID.
+- Sender.
+- Message content.
+- Moderation status.
+- Created timestamp.
+
+## 14.6 Blocked players
+
+Store:
+- Blocker.
+- Blocked player.
+- Created timestamp.
+
+## 14.7 Player reports
+
+Store:
+- Reporting player.
+- Reported player.
+- Conversation reference where applicable.
+- Reason.
+- Description.
+- Review status.
+- Created timestamp.
+
+Use proper foreign keys and indexes.
+
+Enable Row Level Security on all relevant tables.
+
+Implement secure database functions or server-side endpoints for:
+
+- Presence registration.
+- Heartbeat.
+- Presence expiry.
+- Chat invitation creation.
+- Invitation acceptance.
+- Invitation rejection.
+- Message submission.
+- Message moderation.
+- Blocking.
+- Reporting.
+
+All sensitive operations must validate the authenticated user.
+
+Players must only access conversations in which they are participants.
+
+Players must never be able to read other players' private phone numbers or email addresses.
+
+The database must prevent clients from impersonating senders or bypassing moderation.
+
+Do not expose Supabase service-role keys in frontend code.
+
+---
+
+# PART 15 — REAL-TIME SYSTEM INTEGRATION
+
+Inspect the existing multiplayer implementation before adding real-time functionality.
+
+Reuse the current WebSocket, Supabase Realtime or multiplayer infrastructure where appropriate.
+
+Do not create competing multiplayer systems.
+
+Support real-time events for:
+
+- Player presence.
+- Nearby player availability.
+- Player movement.
+- Chat invitations.
+- Invitation acceptance.
+- Invitation rejection.
+- New messages.
+- Conversation updates.
+- Player disconnection.
+
+Use efficient subscriptions.
+
+Clean up subscriptions when players leave the game.
+
+Broadcast only necessary public player information.
+
+Do not broadcast private account details.
+
+Validate all sensitive operations on the backend.
+
+---
+
+# PART 16 — ADMIN MODERATION FOUNDATION
+
+Use the existing MANIFOLD administrator architecture.
+
+Provide the foundation for an administrative moderation interface.
+
+Administrators should be able to:
+
+- View reported players.
+- Review submitted reports.
+- Review reported conversations.
+- Review moderation incidents.
+- Temporarily restrict chat access.
+- Suspend accounts where justified.
+- Review repeated violations.
+- Manage community rules.
+
+Administrative access must be role-protected.
+
+Ordinary players must never be able to access moderation controls.
+
+Do not expose administrator credentials or privileged database functions to the frontend.
+
+---
+
+# PART 17 — DISTRACTION-FREE DRIVING INTERFACE
+
+The driving interface should remain focused on the actual driving experience.
+
+The new chat functionality must not create unnecessary permanent interface elements.
+
+Chat notifications should appear only when necessary.
+
+Use small floating cards, subtle notifications and minimised chat windows.
+
+Preserve the existing driving controls.
+
+For mobile, the normal driving screen should retain only:
+
+- Accelerator.
+- Brake.
+- Steering arrows.
+- Engine power.
+- Horn.
+- Headlights.
+
+For desktop, use existing keyboard driving controls without displaying mobile buttons.
+
+The two top-level menus should remain the entry point for secondary game features.
+
+The player menu should contain profile and account functions.
+
+The Game Menu should contain map, vehicle settings, tuning, camera, time-of-day and other game features.
+
+Do not permanently display every secondary control.
+
+Do not delete existing game functionality when hiding or moving controls.
+
+Chat cards and incoming invitations must be positioned so they do not obstruct essential driving controls.
+
+This stage should establish the chat-friendly interface architecture. Complete the broader relocation of every remaining secondary game control into the menus without removing features.
+
+---
+
+# PART 18 — IMPLEMENTATION AND INTEGRATION WORKFLOW
+
+Before making changes, inspect the actual project.
+
+Review:
+
+- Supabase authentication.
+- Existing player profile tables.
+- Existing database migrations.
+- Existing RLS policies.
+- WorldCanvas.tsx.
+- WorldHUD.tsx.
+- MobileTouchControls.tsx.
+- Existing multiplayer system.
+- Existing game routes.
+- Vehicle customisation.
+- Existing audio and radio systems.
+- Existing administrator authentication.
+
+Identify what already exists and reuse it.
+
+Do not duplicate existing systems.
+
+Implement in the following stages:
+
+### STAGE 1 — GATED ACCESS
+
+- Registration.
+- Login.
+- Player profiles.
+- Route protection.
+- Game briefing.
+- Terms acceptance.
+- Vehicle configuration.
+- 24-hour settings lock.
+
+### STAGE 2 — LIVE PLAYER PRESENCE
+
+- Presence registration.
+- Heartbeat.
+- Ten-minute inactivity expiry.
+- Logout handling.
+- Nearby player discovery.
+- Nickname display above human-driven vehicles.
+
+### STAGE 3 — CHAT REQUESTS
+
+- Invitation creation.
+- Incoming notifications.
+- Accept and decline.
+- Invitation expiry.
+- Proximity validation.
+
+### STAGE 4 — REAL-TIME CHAT
+
+- Chat card.
+- Real-time messages.
+- Message history.
+- Minimise and close.
+- Mobile and desktop support.
+
+### STAGE 5 — SAFETY
+
+- Message moderation.
+- Contact-detail restrictions.
+- Dating and erotic-content restrictions.
+- Blocking.
+- Reporting.
+- Rate limiting.
+- Administrative moderation.
+
+### STAGE 6 — INTERFACE INTEGRATION
+
+- Compact chat notifications.
+- Distraction-free driving experience.
+- Game Menu integration.
+- Player Menu integration.
+- Mobile and desktop layout testing.
+
+### STAGE 7 — TESTING
+
+- Database validation.
+- Security validation.
+- Two-player testing.
+- Inactivity testing.
+- Chat moderation testing.
+- Production build.
+
+---
+
+# PART 19 — ACCEPTANCE TESTING
+
+The implementation must be tested with at least two real, independent player accounts.
+
+Do not simulate success with mock users.
+
+## A. Player access
+
+Verify:
+
+- Registration works.
+- Duplicate accounts are prevented.
+- Login works.
+- Logout works.
+- Unauthenticated users cannot enter the game.
+- Briefing is mandatory.
+- Terms acceptance is mandatory.
+- Vehicle configuration is mandatory.
+- Returning users continue from their saved onboarding stage.
+
+## B. Configuration lock
+
+Verify:
+
+- Vehicle selection works.
+- Colour selection works.
+- Interior selection works.
+- Music selection works.
+- Configuration is saved.
+- The 24-hour restriction starts.
+- The restriction survives logout.
+- The restriction survives refresh.
+- Backend rejects unauthorised changes.
+- Settings become editable after expiry.
+
+## C. Player presence
+
+Verify:
+
+- Two real players can enter the world.
+- Each can see the other's nickname.
+- The correct nickname appears above the correct vehicle.
+- AI traffic has no player identity.
+- Nearby player discovery works.
+- Players outside discovery range are unavailable.
+- Logging out immediately removes chat availability.
+- Ten minutes of inactivity removes chat availability.
+
+## D. Chat invitations
+
+Verify:
+
+- Player A can invite Player B.
+- Player B receives the notification.
+- Player B can accept.
+- Player B can decline.
+- Invitations expire correctly.
+- Inactive players cannot receive invitations.
+- Logged-out players cannot receive invitations.
+- Duplicate invitations are prevented.
+
+## E. Chat
+
+Verify:
+
+- Both players can exchange messages.
+- Messages appear in real time.
+- Correct nicknames are displayed.
+- Message timestamps are correct.
+- Chat cards work on desktop.
+- Chat cards work on mobile.
+- Chat does not interfere with driving.
+- Players cannot impersonate other users.
+
+## F. Safety
+
+Verify:
+
+- Phone number exchange attempts are blocked.
+- Email exchange attempts are blocked.
+- External contact-sharing attempts are blocked.
+- Dating solicitation is blocked.
+- Erotic messages are blocked.
+- Harassment and abusive messages are handled.
+- Players can block others.
+- Players can report others.
+- Blocked players cannot initiate further contact.
+
+## G. Database security
+
+Verify:
+
+- RLS is enabled.
+- Private profiles remain private.
+- Only conversation participants can read messages.
+- Only authenticated users can send messages.
+- Sender identity is verified.
+- Inactive players cannot send messages.
+- Moderation cannot be bypassed through direct database access.
+- Service-role credentials are not exposed.
+
+## H. Application stability
+
+Run:
+- TypeScript checks.
+- Production build.
+- Available automated tests.
+- Browser console checks.
+- Supabase integration checks.
+
+Fix errors introduced by the implementation.
+
+Do not claim success unless the actual implementation has been tested.
+
+---
+
+# PART 20 — FINAL DELIVERY REPORT
+
+When implementation is complete, provide:
+
+1. Summary of the new player access system.
+2. Registration and login implementation.
+3. Onboarding and terms acceptance implementation.
+4. Vehicle configuration and 24-hour lock implementation.
+5. Player presence implementation.
+6. Nearby driver discovery implementation.
+7. Chat invitation implementation.
+8. Real-time chat implementation.
+9. Moderation and safety implementation.
+10. Database tables created or modified.
+11. SQL migration files.
+12. Database functions and backend endpoints.
+13. RLS policies implemented.
+14. Files created and modified.
+15. TypeScript and production build results.
+16. Results of two-player testing.
+17. Any incomplete features.
+18. Exact SQL migration instructions.
+
+If a stage cannot be completed safely, clearly report the limitation rather than implementing a fake version.
+
+# FINAL EXECUTION DIRECTIVE
+
+Implement everything directly inside the existing MANIFOLD Cars 3D project.
+
+This is a real production feature implementation, not a design exercise.
+
+Do not stop after creating UI mockups.
+
+Do not simulate registered players.
+
+Do not expose personal contact details.
+
+Do not create a chat system that is disconnected from the actual multiplayer environment.
+
+Do not claim the inactivity restriction works unless enforced by the backend.
+
+Do not claim moderation works unless messages are validated before delivery.
+
+Do not claim the 24-hour settings restriction is secure unless enforced through database-authorised operations.
+
+Preserve the existing Lagos 3D environment, driving physics, vehicle models, traffic, navigation, missions and marketplace integrations.
+
+The final experience must allow registered players to enter the MANIFOLD world, receive their personalised vehicle, discover other active human drivers nearby, initiate chat requests and exchange safe, ordinary messages without leaving the driving environment.
+
+**BEGIN BY INSPECTING THE EXISTING CODEBASE AND DATABASE, THEN IMPLEMENT THE COMPLETE FEATURE IN THE STAGES DEFINED ABOVE.**

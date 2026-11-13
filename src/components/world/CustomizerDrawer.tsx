@@ -10,6 +10,7 @@ import {
   Gauge,
   ExternalLink,
   Coins,
+  Lock,
 } from 'lucide-react';
 import {
   CarCustomization,
@@ -32,6 +33,11 @@ interface CustomizerDrawerProps {
   playerCredits: number;
   onPurchaseUpgrade: (cost: number, newCustom: CarCustomization) => void;
   onViewMarketplaceCar: (carId: string) => void;
+  lockStatus?: {
+    isLocked: boolean;
+    hhmmss: string;
+    unlockFormatted: string;
+  };
 }
 
 const RIM_OPTIONS = [
@@ -69,8 +75,10 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
   playerCredits,
   onPurchaseUpgrade,
   onViewMarketplaceCar,
+  lockStatus,
 }) => {
-  const [activeTab, setActiveTab] = useState<'GARAGE' | 'AESTHETICS' | 'PERFORMANCE'>('GARAGE');
+  const [activeTab, setActiveTab] = useState<'GARAGE' | 'AESTHETICS' | 'PERFORMANCE'>('PERFORMANCE');
+  const isLocked = Boolean(lockStatus?.isLocked);
 
   if (!isOpen) return null;
 
@@ -168,6 +176,22 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
           </button>
         </div>
 
+        {/* 24-Hour Configuration Lock Banner */}
+        {isLocked && lockStatus && (
+          <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-400/40 text-xs space-y-1">
+            <div className="flex items-center justify-between gap-2 text-amber-300 font-black uppercase">
+              <span className="flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5" />
+                <span>YOUR VEHICLE CONFIGURATION IS LOCKED.</span>
+              </span>
+              <span className="font-mono tabular-nums">{lockStatus.hhmmss}</span>
+            </div>
+            <p className="text-[11px] text-gray-300">
+              Vehicle model, paint, interior & music unlock at {lockStatus.unlockFormatted}. Performance tuning upgrades remain available.
+            </p>
+          </div>
+        )}
+
         {/* TAB 1: GARAGE & VEHICLE SELECTOR */}
         {activeTab === 'GARAGE' && (
           <div className="space-y-4">
@@ -186,8 +210,12 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
                 return (
                   <div
                     key={typeKey}
-                    onClick={() => onChange({ ...customization, vehicleType: typeKey })}
-                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                    onClick={() => {
+                      if (!isLocked) onChange({ ...customization, vehicleType: typeKey });
+                    }}
+                    className={`p-3.5 rounded-2xl border transition-all ${
+                      isLocked && !isSelected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                    } ${
                       isSelected
                         ? 'border-[#EF233C] bg-white/10 shadow-xl'
                         : 'border-white/10 hover:border-white/20 bg-white/5'
@@ -260,7 +288,9 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
                   return (
                     <button
                       key={palette.name}
+                      disabled={isLocked}
                       onClick={() =>
+                        !isLocked &&
                         onChange({
                           ...customization,
                           paintColor: palette.hex,
@@ -268,11 +298,13 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
                         })
                       }
                       className={`flex flex-col items-center p-2 rounded-xl border transition-all ${
+                        isLocked ? 'opacity-55 cursor-not-allowed' : ''
+                      } ${
                         isSelected
                           ? 'border-[#EF233C] bg-white/10 shadow-lg scale-105'
                           : 'border-white/10 hover:border-white/20 bg-white/5'
                       }`}
-                      title={`${palette.name} (${palette.finish})`}
+                      title={isLocked ? 'Locked for 24h' : `${palette.name} (${palette.finish})`}
                     >
                       <div
                         className="w-7 h-7 rounded-full shadow border border-white/20 flex items-center justify-center"
@@ -298,8 +330,11 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
                 {(['gloss', 'metallic', 'matte'] as const).map((finish) => (
                   <button
                     key={finish}
-                    onClick={() => onChange({ ...customization, finish })}
+                    disabled={isLocked}
+                    onClick={() => !isLocked && onChange({ ...customization, finish })}
                     className={`py-1.5 text-xs font-bold uppercase rounded-lg border transition-all ${
+                      isLocked ? 'opacity-55 cursor-not-allowed' : ''
+                    } ${
                       customization.finish === finish
                         ? 'bg-[#EF233C] border-[#EF233C] text-white shadow'
                         : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'

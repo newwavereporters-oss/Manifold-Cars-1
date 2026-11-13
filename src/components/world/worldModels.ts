@@ -183,6 +183,84 @@ export type SpoilerOption = 'NONE' | 'DUCKTAIL' | 'GT_WING';
 export type SuspensionTune = 'STOCK' | 'SPORT' | 'TRACK';
 export type BrakeTune = 'OEM' | 'CARBON_CERAMIC';
 export type TireTune = 'ALL_SEASON' | 'SEMI_SLICK';
+export type InteriorTheme = 'BLACK' | 'CREAM' | 'BROWN' | 'GREY' | 'SPORT';
+export type MusicPreference =
+  | 'AFROBEATS'
+  | 'HIP_HOP'
+  | 'RNB'
+  | 'GOSPEL'
+  | 'INSTRUMENTAL'
+  | 'ELECTRONIC_HOUSE'
+  | 'NO_MUSIC';
+
+export interface InteriorThemeOption {
+  id: InteriorTheme;
+  label: string;
+  seatHex: string;
+  trimHex: string;
+  accentHex: string;
+  desc: string;
+}
+
+export const INTERIOR_THEME_OPTIONS: InteriorThemeOption[] = [
+  {
+    id: 'BLACK',
+    label: 'Black Leather',
+    seatHex: '#11151C',
+    trimHex: '#181C24',
+    accentHex: '#64748B',
+    desc: 'Obsidian perforated hide with satin charcoal trim',
+  },
+  {
+    id: 'CREAM',
+    label: 'Cream Ivory',
+    seatHex: '#EDE6D6',
+    trimHex: '#3D352B',
+    accentHex: '#D4B98C',
+    desc: 'Light beige Nappa upholstery with warm espresso dash',
+  },
+  {
+    id: 'BROWN',
+    label: 'Saddle Brown',
+    seatHex: '#6B3E26',
+    trimHex: '#261810',
+    accentHex: '#C27D48',
+    desc: 'Heritage cognac leather with dark walnut console',
+  },
+  {
+    id: 'GREY',
+    label: 'Slate Grey',
+    seatHex: '#64748B',
+    trimHex: '#1E293B',
+    accentHex: '#CBD5E1',
+    desc: 'Architectural titanium grey leather & brushed aluminum',
+  },
+  {
+    id: 'SPORT',
+    label: 'Sport Alcantara',
+    seatHex: '#151821',
+    trimHex: '#0D1017',
+    accentHex: '#EF233C',
+    desc: 'Carbon weave bolsters with Crimson contrast stitching',
+  },
+];
+
+export interface MusicPreferenceOption {
+  id: MusicPreference;
+  label: string;
+  stationIndex: number;
+  vibe: string;
+}
+
+export const MUSIC_PREFERENCE_OPTIONS: MusicPreferenceOption[] = [
+  { id: 'AFROBEATS', label: 'Afrobeats', stationIndex: 1, vibe: 'Lagos Mainland groove & warm percussion' },
+  { id: 'HIP_HOP', label: 'Hip-hop', stationIndex: 2, vibe: 'Deep 808 bassline & crisp street pulse' },
+  { id: 'RNB', label: 'R&B', stationIndex: 3, vibe: 'Smooth late-night electric Rhodes chords' },
+  { id: 'GOSPEL', label: 'Gospel', stationIndex: 4, vibe: 'Uplifting organ & warm harmonic keys' },
+  { id: 'INSTRUMENTAL', label: 'Instrumental', stationIndex: 5, vibe: 'Ambient lo-fi acoustic cruising focus' },
+  { id: 'ELECTRONIC_HOUSE', label: 'Electronic / House', stationIndex: 6, vibe: 'High-tempo coastal bridge synth drive' },
+  { id: 'NO_MUSIC', label: 'No music', stationIndex: 0, vibe: 'Pure V8/exhaust & Lagos street acoustics' },
+];
 
 export interface CarCustomization {
   vehicleType?: VehicleModelType;
@@ -198,6 +276,8 @@ export interface CarCustomization {
   suspension?: SuspensionTune;
   brakes?: BrakeTune;
   tires?: TireTune;
+  interiorTheme?: InteriorTheme;
+  musicPreference?: MusicPreference;
 }
 
 export const CAR_COLOR_PALETTES = [

@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import type {
   CarCustomization,
+  InteriorTheme,
   Vehicle3DResult,
   VehicleModelType,
 } from '../components/world/worldModels';
@@ -525,30 +526,40 @@ function addLicensePlates(
  * Builds modular cockpit interior (dashboard, binnacle, screen, console,
  * multi-segment Cylinder/Box steering wheel, and bolstered seats).
  */
+const INTERIOR_PALETTES: Record<InteriorTheme, { seat: number; trim: number; stitching: number; screen: number }> = {
+  BLACK: { seat: 0x11151c, trim: 0x181c24, stitching: 0x64748b, screen: 0x0ea5e9 },
+  CREAM: { seat: 0xede6d6, trim: 0x3d352b, stitching: 0xd4b98c, screen: 0xf59e0b },
+  BROWN: { seat: 0x6b3e26, trim: 0x261810, stitching: 0xc27d48, screen: 0xf59e0b },
+  GREY: { seat: 0x64748b, trim: 0x1e293b, stitching: 0xcbd5e1, screen: 0x38bdf8 },
+  SPORT: { seat: 0x151821, trim: 0x0d1017, stitching: 0xef233c, screen: 0xef233c },
+};
+
 function buildCockpitInterior(
   seatOffsetZ: number,
   seatY: number,
-  steerOffset: THREE.Vector3
+  steerOffset: THREE.Vector3,
+  interiorTheme: InteriorTheme = 'BLACK'
 ): THREE.Group {
   const interior = new THREE.Group();
+  const palette = INTERIOR_PALETTES[interiorTheme] || INTERIOR_PALETTES.BLACK;
 
   const interiorTrimMat = new THREE.MeshStandardMaterial({
-    color: 0x181c24,
+    color: palette.trim,
     roughness: 0.72,
     metalness: 0.18,
   });
   const seatMat = new THREE.MeshStandardMaterial({
-    color: 0x11151c,
+    color: palette.seat,
     roughness: 0.62,
     metalness: 0.1,
   });
   const stitchingMat = new THREE.MeshStandardMaterial({
-    color: 0xdc2626,
+    color: palette.stitching,
     roughness: 0.5,
   });
   const screenMat = new THREE.MeshStandardMaterial({
     color: 0x0f172a,
-    emissive: 0x0ea5e9,
+    emissive: palette.screen,
     emissiveIntensity: 0.65,
     roughness: 0.2,
   });
@@ -827,7 +838,7 @@ export class VehicleModelFactory {
 
     // 7. Side Mirrors, Interior, Spoiler, Plates & Lighting
     buildSideMirrors(carGroup, mats.paintMat, mats.trimBlackMat, 0.88, 0.85, 0.48);
-    const interiorGroup = buildCockpitInterior(-0.1, 0.44, new THREE.Vector3(-0.35, 0.72, 0.25));
+    const interiorGroup = buildCockpitInterior(-0.1, 0.44, new THREE.Vector3(-0.35, 0.72, 0.25), custom.interiorTheme);
     carGroup.add(interiorGroup);
 
     const spoilerGroup = buildSpoiler(custom, mats.paintMat, mats.carbonMat, 0.87, -1.96, 1.72);
@@ -992,7 +1003,7 @@ export class VehicleModelFactory {
 
     // 7. Side Mirrors, Cockpit Interior, Plates & Lighting
     buildSideMirrors(carGroup, mats.paintMat, mats.trimBlackMat, 0.98, 1.18, 0.74);
-    const interiorGroup = buildCockpitInterior(0.08, 0.86, new THREE.Vector3(-0.42, 1.18, 0.42));
+    const interiorGroup = buildCockpitInterior(0.08, 0.86, new THREE.Vector3(-0.42, 1.18, 0.42), custom.interiorTheme);
     carGroup.add(interiorGroup);
     addLicensePlates(carGroup, [0, 0.48, 2.42], [0, 0.8, -2.4]);
 
@@ -1145,7 +1156,7 @@ export class VehicleModelFactory {
 
     // 7. Side Mirrors, Interior, Spoiler, Plates & Lighting
     buildSideMirrors(carGroup, mats.paintMat, mats.trimBlackMat, 0.91, 0.96, 0.58);
-    const interiorGroup = buildCockpitInterior(-0.08, 0.56, new THREE.Vector3(-0.38, 0.88, 0.34));
+    const interiorGroup = buildCockpitInterior(-0.08, 0.56, new THREE.Vector3(-0.38, 0.88, 0.34), custom.interiorTheme);
     carGroup.add(interiorGroup);
 
     const spoilerGroup = buildSpoiler(custom, mats.paintMat, mats.carbonMat, 0.94, -2.18, 1.62);
@@ -1325,7 +1336,7 @@ export class VehicleModelFactory {
 
     // 7. Side Mirrors, Interior, Plates & Lighting
     buildSideMirrors(carGroup, mats.trimBlackMat, mats.trimBlackMat, 0.98, 1.32, 0.68);
-    const interiorGroup = buildCockpitInterior(0.0, 1.02, new THREE.Vector3(-0.44, 1.35, 0.36));
+    const interiorGroup = buildCockpitInterior(0.0, 1.02, new THREE.Vector3(-0.44, 1.35, 0.36), custom.interiorTheme);
     carGroup.add(interiorGroup);
     addLicensePlates(carGroup, [0, 0.56, 2.38], [-0.66, 0.88, -2.28]);
 

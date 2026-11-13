@@ -543,7 +543,7 @@ class EngineAudioSystem {
 
   /**
    * In-Car Infotainment Synthesizer Radio Station
-   * 0: Off, 1: Synthwave Midnight, 2: Cyber Lo-Fi, 3: Apex Track FM
+   * 0: No music, 1: Afrobeats, 2: Hip-hop, 3: R&B, 4: Gospel, 5: Instrumental, 6: Electronic / House
    */
   public setRadioStation(station: number) {
     this.init();
@@ -555,33 +555,34 @@ class EngineAudioSystem {
 
     if (station === 0 || !this.ctx || this.isMuted) return;
 
-    // Procedural Synth Sequencer for in-car cockpit immersion
-    const synthNotes: Record<number, number[]> = {
-      1: [220, 261.63, 329.63, 392, 440, 523.25, 440, 329.63], // Synthwave A-minor
-      2: [174.61, 220, 261.63, 349.23, 261.63, 220, 196, 246.94], // Lo-Fi F-maj7 chill
-      3: [146.83, 196, 220, 293.66, 392, 440, 392, 293.66], // Apex D-minor pump
+    const synthNotes: Record<number, { notes: number[]; tempoMs: number; wave: OscillatorType; cutoff: number }> = {
+      1: { notes: [293.66, 329.63, 392.0, 440.0, 392.0, 329.63, 293.66, 261.63], tempoMs: 220, wave: 'triangle', cutoff: 900 }, // Afrobeats syncopated major groove
+      2: { notes: [110.0, 110.0, 146.83, 130.81, 110.0, 98.0, 130.81, 146.83], tempoMs: 280, wave: 'sawtooth', cutoff: 420 }, // Hip-hop 808 groove
+      3: { notes: [261.63, 329.63, 392.0, 493.88, 440.0, 349.23, 329.63, 293.66], tempoMs: 340, wave: 'sine', cutoff: 650 }, // R&B warm Rhodes
+      4: { notes: [261.63, 329.63, 392.0, 523.25, 440.0, 349.23, 392.0, 523.25], tempoMs: 360, wave: 'triangle', cutoff: 820 }, // Gospel uplifting organ
+      5: { notes: [174.61, 220.0, 261.63, 349.23, 261.63, 220.0, 196.0, 246.94], tempoMs: 410, wave: 'sine', cutoff: 480 }, // Instrumental chill
+      6: { notes: [146.83, 220.0, 293.66, 349.23, 440.0, 349.23, 293.66, 220.0], tempoMs: 175, wave: 'sawtooth', cutoff: 1100 }, // Electronic / House
     };
 
-    const notes = synthNotes[station] || synthNotes[1];
-    const tempoMs = station === 2 ? 380 : station === 3 ? 190 : 260;
+    const profile = synthNotes[station] || synthNotes[1];
 
     this.radioInterval = window.setInterval(() => {
       if (!this.ctx || this.isMuted || this.radioStation === 0) return;
       try {
-        const noteFreq = notes[this.radioStep % notes.length];
+        const noteFreq = profile.notes[this.radioStep % profile.notes.length];
         this.radioStep++;
 
         const noteOsc = this.ctx.createOscillator();
         const noteGain = this.ctx.createGain();
-        noteOsc.type = station === 2 ? 'sine' : 'sawtooth';
+        noteOsc.type = profile.wave;
         noteOsc.frequency.setValueAtTime(noteFreq, this.ctx.currentTime);
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(station === 2 ? 450 : 800, this.ctx.currentTime);
+        filter.frequency.setValueAtTime(profile.cutoff, this.ctx.currentTime);
 
-        noteGain.gain.setValueAtTime(0.04, this.ctx.currentTime);
-        noteGain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + (tempoMs / 1000) * 0.9);
+        noteGain.gain.setValueAtTime(0.045, this.ctx.currentTime);
+        noteGain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + (profile.tempoMs / 1000) * 0.9);
 
         noteOsc.connect(filter);
         filter.connect(noteGain);
@@ -590,9 +591,22 @@ class EngineAudioSystem {
         }
 
         noteOsc.start();
-        noteOsc.stop(this.ctx.currentTime + tempoMs / 1000);
+        noteOsc.stop(this.ctx.currentTime + profile.tempoMs / 1000);
       } catch {}
-    }, tempoMs);
+    }, profile.tempoMs);
+  }
+
+  public setMusicPreference(pref: string) {
+    const map: Record<string, number> = {
+      NO_MUSIC: 0,
+      AFROBEATS: 1,
+      HIP_HOP: 2,
+      RNB: 3,
+      GOSPEL: 4,
+      INSTRUMENTAL: 5,
+      ELECTRONIC_HOUSE: 6,
+    };
+    this.setRadioStation(map[pref] ?? 1);
   }
 
   public getRadioStation(): number {

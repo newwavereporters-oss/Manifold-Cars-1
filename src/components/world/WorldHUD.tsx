@@ -24,6 +24,15 @@ import {
   RotateCcw,
   Route,
   X,
+  Menu,
+  User,
+  Lock,
+  Unlock,
+  Users,
+  Ban,
+  LogOut,
+  Building2,
+  ShieldCheck,
 } from 'lucide-react';
 import { CameraViewMode, TimeOfDay } from './WorldCanvas';
 import { VehicleModelType, VEHICLE_SPEC_PROFILES } from './worldModels';
@@ -93,6 +102,18 @@ interface WorldHUDProps {
   onResetVehicle?: () => void;
   activeDestination?: { x: number; z: number; name: string } | null;
   onClearDestination?: () => void;
+  playerNickname?: string;
+  nearbyPlayersCount?: number;
+  lockStatus?: {
+    isLocked: boolean;
+    hhmmss: string;
+    unlockFormatted: string;
+  };
+  onOpenNearbyDrivers?: () => void;
+  onOpenVehicleConfig?: () => void;
+  onOpenBlockedDrivers?: () => void;
+  onOpenShowroomSample?: () => void;
+  onLogout?: () => void;
 }
 
 export const WorldHUD: React.FC<WorldHUDProps> = ({
@@ -146,10 +167,19 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   onResetVehicle,
   activeDestination,
   onClearDestination,
+  playerNickname = 'DRIVER',
+  nearbyPlayersCount = 0,
+  lockStatus,
+  onOpenNearbyDrivers,
+  onOpenVehicleConfig,
+  onOpenBlockedDrivers,
+  onOpenShowroomSample,
+  onLogout,
 }) => {
   const [isMuted, setIsMuted] = useState(() => engineAudio.getMuted());
   const [showControlsHelp, setShowControlsHelp] = useState(false);
-  const [showGarageDropdown, setShowGarageDropdown] = useState(false);
+  const [showGameMenu, setShowGameMenu] = useState(false);
+  const [showPlayerMenu, setShowPlayerMenu] = useState(false);
   const [touchControlsEnabled, setTouchControlsEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return (
@@ -245,200 +275,342 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
 
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-6 select-none z-20">
-      {/* 1. TOP STATUS BAR */}
+      {/* 1. STREAMLINED DISTRACTION-FREE TOP BAR (Game Menu + Player Menu) */}
       <header className="flex items-center justify-between w-full pointer-events-auto gap-2">
-        {/* Left: Brand Badge & Vehicle Garage Selector */}
+        {/* Left: Compact Brand + Game Menu */}
         <div className="relative flex items-center gap-2">
-          <div className="flex items-center gap-2.5 bg-[#071A2B]/90 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-white/10 shadow-2xl">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#EF233C] animate-pulse" />
-            <div className="flex flex-col">
-              <span className="text-[9px] uppercase font-bold tracking-widest text-gray-400">
-                PROVING GROUND
+          <div className="flex items-center gap-2 bg-[#071A2B]/90 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-white/10 shadow-xl">
+            <CarIcon className="w-4 h-4 text-[#EF233C]" />
+            <div className="hidden sm:flex flex-col leading-tight">
+              <span className="text-[8px] uppercase font-bold tracking-widest text-gray-400">
+                {currentProfile.name}
               </span>
               <span className="text-xs font-black tracking-wider text-white">MANIFOLD WORLD</span>
             </div>
           </div>
 
-          {/* Quick Vehicle Switcher Dropdown */}
           <div className="relative">
             <button
-              onClick={() => setShowGarageDropdown(!showGarageDropdown)}
-              className="flex items-center gap-2 bg-[#071A2B]/90 hover:bg-[#071A2B] backdrop-blur-md px-3.5 py-2 rounded-2xl border border-white/10 shadow-2xl text-xs font-bold text-white transition-all group"
+              type="button"
+              onClick={() => {
+                setShowGameMenu((p) => !p);
+                setShowPlayerMenu(false);
+              }}
+              className="flex items-center gap-1.5 bg-[#071A2B]/92 hover:bg-[#0b233a] backdrop-blur-md px-3 py-2 rounded-2xl border border-white/15 shadow-xl text-xs font-black uppercase tracking-wider text-white transition-colors cursor-pointer whitespace-nowrap"
             >
-              <CarIcon className="w-3.5 h-3.5 text-[#EF233C]" />
-              <span className="hidden sm:inline">{currentProfile.name}</span>
-              <span className="sm:hidden">{currentProfile.make}</span>
-              <span className="text-[10px] text-gray-400 font-mono">▾</span>
+              <Menu className="w-3.5 h-3.5 text-[#EF233C]" />
+              <span>Game Menu</span>
+              {nearbyPlayersCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-black">
+                  {nearbyPlayersCount}
+                </span>
+              )}
             </button>
 
-            {showGarageDropdown && (
-              <div className="absolute top-full left-0 mt-2 w-64 bg-[#071A2B]/98 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150">
-                <span className="px-2.5 py-1 text-[9px] uppercase font-bold text-gray-400 tracking-wider">
-                  Select Active Vehicle
-                </span>
-                {(
-                  [
-                    'SPORTS_COUPE',
-                    'LUXURY_SUV',
-                    'EXECUTIVE_SEDAN',
-                    'RUGGED_4X4',
-                  ] as VehicleModelType[]
-                ).map((vKey) => {
-                  const prof = VEHICLE_SPEC_PROFILES[vKey];
-                  const isSel = selectedVehicleType === vKey;
-                  return (
+            {showGameMenu && (
+              <div className="absolute top-full left-0 mt-2 w-68 bg-[#071A2B]/98 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-2 z-50 space-y-1 text-xs">
+                {onOpenNearbyDrivers && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGameMenu(false);
+                      onOpenNearbyDrivers();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Nearby Drivers</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-400">{nearbyPlayersCount} online</span>
+                  </button>
+                )}
+
+                {onOpenCityMap && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGameMenu(false);
+                      onOpenCityMap();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                  >
+                    <MapIcon className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Lagos City GPS Map [M]</span>
+                  </button>
+                )}
+
+                {onOpenMissions && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGameMenu(false);
+                      onOpenMissions();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                  >
+                    <Flag className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Missions & Street Races</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGameMenu(false);
+                    onOpenCustomizer();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                >
+                  <Palette className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Tuning & Upgrades [C]</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGameMenu(false);
+                    cycleCamera();
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                >
+                  <span className="flex items-center gap-2">
+                    <Camera className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Camera View</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-gray-400">{cameraMode}</span>
+                </button>
+
+                <div className="px-3 py-1.5 flex items-center justify-between gap-2">
+                  <span className="text-[10px] uppercase font-bold text-gray-400">Time of Day</span>
+                  <div className="flex items-center gap-1">
                     <button
-                      key={vKey}
-                      onClick={() => {
-                        onSelectVehicleType(vKey);
-                        setShowGarageDropdown(false);
-                      }}
-                      className={`flex items-center justify-between p-2 rounded-xl text-left text-xs transition-colors ${
-                        isSel
-                          ? 'bg-[#EF233C] text-white font-bold'
-                          : 'text-gray-300 hover:bg-white/10 hover:text-white'
-                      }`}
+                      type="button"
+                      onClick={() => onTimeOfDayChange('DAYLIGHT')}
+                      className={`p-1 rounded-lg ${timeOfDay === 'DAYLIGHT' ? 'bg-amber-400 text-black' : 'text-gray-400 hover:text-white'}`}
+                      title="Daylight"
                     >
-                      <div>
-                        <span className="block font-bold leading-tight">{prof.name}</span>
-                        <span className="text-[9px] opacity-75 block">{prof.engineType}</span>
-                      </div>
-                      <span className="text-[9px] font-mono font-bold">{prof.horsepower} HP</span>
+                      <Sun className="w-3.5 h-3.5" />
                     </button>
-                  );
-                })}
+                    <button
+                      type="button"
+                      onClick={() => onTimeOfDayChange('SUNSET')}
+                      className={`p-1 rounded-lg ${timeOfDay === 'SUNSET' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'}`}
+                      title="Sunset"
+                    >
+                      <Sunset className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onTimeOfDayChange('MIDNIGHT')}
+                      className={`p-1 rounded-lg ${timeOfDay === 'MIDNIGHT' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                      title="Midnight"
+                    >
+                      <Moon className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTouchControlsEnabled((p) => !p);
+                    setShowGameMenu(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                >
+                  <span className="flex items-center gap-2">
+                    <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Touch Controls</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-gray-400">
+                    {touchControlsEnabled ? 'ON' : 'OFF'}
+                  </span>
+                </button>
+
+                {onResetVehicle && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGameMenu(false);
+                      onResetVehicle();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-gray-300" />
+                    <span>Reset Vehicle [R]</span>
+                  </button>
+                )}
+
+                <div className="border-t border-white/10 pt-1 mt-1 space-y-1">
+                  {onOpenShowroomSample && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGameMenu(false);
+                        onOpenShowroomSample();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-200 hover:bg-white/10 font-semibold"
+                    >
+                      <Compass className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Showroom Pavilion</span>
+                    </button>
+                  )}
+                  {onOpenDealerLounge && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGameMenu(false);
+                        onOpenDealerLounge();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-200 hover:bg-white/10 font-semibold"
+                    >
+                      <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                      <span>VIP Dealer Lounge</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGameMenu(false);
+                      onEnterMarketplace();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-[#EF233C] hover:bg-white/10 font-black"
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    <span>MANIFOLD Marketplace</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGameMenu(false);
+                      setShowControlsHelp(true);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-300 hover:bg-white/10 font-semibold"
+                  >
+                    <HelpCircle className="w-3.5 h-3.5" />
+                    <span>Controls Guide</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Right: Credits, Time of Day, Mute & Settings */}
-        <div className="flex items-center gap-2">
-          {/* Virtual Credits Balance Badge */}
-          <div className="bg-[#071A2B]/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-1.5 text-xs font-mono font-black text-amber-400">
+        {/* Right: Credits Pill + Player Menu + Audio Mute */}
+        <div className="relative flex items-center gap-2">
+          <div className="hidden xs:flex sm:flex bg-[#071A2B]/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/10 shadow-xl items-center gap-1.5 text-xs font-mono font-black text-amber-400">
             <Coins className="w-3.5 h-3.5" />
             <span className="tabular-nums">{playerCredits.toLocaleString()}</span>
             <span className="text-[9px] text-gray-400 font-sans font-bold">MC</span>
           </div>
 
-          {/* Time of Day Cycle Button */}
-          <div className="hidden sm:flex items-center gap-1 bg-[#071A2B]/90 backdrop-blur-md p-1 rounded-2xl border border-white/10 shadow-2xl">
+          <div className="relative">
             <button
-              onClick={() => onTimeOfDayChange('DAYLIGHT')}
-              className={`p-1.5 rounded-xl transition-colors ${
-                timeOfDay === 'DAYLIGHT' ? 'bg-amber-400 text-black' : 'text-gray-400 hover:text-white'
-              }`}
-              title="Sunny Daylight (Default)"
+              type="button"
+              onClick={() => {
+                setShowPlayerMenu((p) => !p);
+                setShowGameMenu(false);
+              }}
+              className="flex items-center gap-2 bg-[#071A2B]/92 hover:bg-[#0b233a] backdrop-blur-md px-3 py-2 rounded-2xl border border-white/15 shadow-xl text-xs font-bold text-white cursor-pointer whitespace-nowrap"
             >
-              <Sun className="w-4 h-4" />
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+              <User className="w-3.5 h-3.5 text-sky-400 hidden sm:inline" />
+              <span className="max-w-[96px] truncate font-black">{playerNickname}</span>
             </button>
-            <button
-              onClick={() => onTimeOfDayChange('SUNSET')}
-              className={`p-1.5 rounded-xl transition-colors ${
-                timeOfDay === 'SUNSET' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-              title="Sunset Warm Glow"
-            >
-              <Sunset className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => onTimeOfDayChange('MIDNIGHT')}
-              className={`p-1.5 rounded-xl transition-colors ${
-                timeOfDay === 'MIDNIGHT' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-              title="Midnight Track Lighting"
-            >
-              <Moon className="w-4 h-4" />
-            </button>
+
+            {showPlayerMenu && (
+              <div className="absolute top-full right-0 mt-2 w-72 bg-[#071A2B]/98 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-2.5 text-xs">
+                <div className="pb-2 border-b border-white/10">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-white">{playerNickname}</span>
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase">Online</span>
+                  </div>
+                  <span className="text-[10px] text-amber-400 font-mono font-bold block mt-0.5">
+                    {playerCredits.toLocaleString()} MC Balance
+                  </span>
+                </div>
+
+                {/* Vehicle Lock Status / Reconfigure CTA */}
+                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px] font-black uppercase">
+                    <span className="flex items-center gap-1 text-gray-300">
+                      {lockStatus?.isLocked ? (
+                        <Lock className="w-3 h-3 text-amber-400" />
+                      ) : (
+                        <Unlock className="w-3 h-3 text-emerald-400" />
+                      )}
+                      <span>Vehicle Setup</span>
+                    </span>
+                    <span className={`font-mono ${lockStatus?.isLocked ? 'text-amber-300' : 'text-emerald-400'}`}>
+                      {lockStatus?.isLocked ? lockStatus.hhmmss : 'Unlocked'}
+                    </span>
+                  </div>
+
+                  {onOpenVehicleConfig && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPlayerMenu(false);
+                        onOpenVehicleConfig();
+                      }}
+                      className="w-full py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold"
+                    >
+                      {lockStatus?.isLocked ? 'View Lock Countdown' : 'Reconfigure Vehicle'}
+                    </button>
+                  )}
+                </div>
+
+                {onOpenBlockedDrivers && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlayerMenu(false);
+                      onOpenBlockedDrivers();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-gray-200 hover:bg-white/10 font-bold"
+                  >
+                    <Ban className="w-3.5 h-3.5 text-red-400" />
+                    <span>Blocked Drivers</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPlayerMenu(false);
+                    setShowControlsHelp(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-gray-200 hover:bg-white/10 font-bold"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Community & Driving Guide</span>
+                </button>
+
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlayerMenu(false);
+                      onLogout();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-red-300 hover:bg-red-500/15 font-black"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out of Game</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* City GPS Map Button */}
-          {onOpenCityMap && (
-            <button
-              onClick={onOpenCityMap}
-              className={`flex items-center gap-1.5 backdrop-blur-md px-3 py-2 rounded-2xl border shadow-2xl text-xs font-bold transition-colors ${
-                activeDestination
-                  ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300'
-                  : 'bg-[#071A2B]/90 hover:bg-white/10 border-white/10 text-white'
-              }`}
-              title="Lagos City GPS Map [M]"
-            >
-              <MapIcon className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden md:inline">City Map</span>
-            </button>
-          )}
-
-          {/* Mission Operations Button */}
-          {onOpenMissions && (
-            <button
-              onClick={onOpenMissions}
-              className="flex items-center gap-1.5 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/10 shadow-2xl text-xs font-bold text-white transition-colors"
-              title="Missions & Street Races"
-            >
-              <Flag className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden md:inline">Missions</span>
-            </button>
-          )}
-
-          {/* Vehicle Reset Shortcut */}
-          {onResetVehicle && (
-            <button
-              onClick={onResetVehicle}
-              className="p-2 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl text-gray-300 hover:text-white transition-colors"
-              title="Reset Vehicle Position [R]"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          )}
-
-          {/* Tuning Studio Shortcut */}
           <button
-            onClick={onOpenCustomizer}
-            className="flex items-center gap-1.5 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/10 shadow-2xl text-xs font-bold text-white transition-colors"
-            title="Open Tuning Studio [C]"
-          >
-            <Palette className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden md:inline">Tuning Studio</span>
-          </button>
-
-          {/* Marketplace Portal Shortcut */}
-          <button
-            onClick={onEnterMarketplace}
-            className="flex items-center gap-1.5 bg-[#EF233C] hover:bg-[#d90429] px-3.5 py-2 rounded-2xl shadow-2xl text-xs font-black uppercase text-white transition-colors"
-          >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Marketplace</span>
-          </button>
-
-          {/* Procedural Audio Mute Button */}
-          <button
+            type="button"
             onClick={toggleSound}
-            className="p-2 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl text-gray-300 hover:text-white transition-colors"
+            className="p-2 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-xl text-gray-300 hover:text-white transition-colors cursor-pointer"
             title={isMuted ? 'Unmute Audio Engine' : 'Mute Audio Engine'}
           >
             {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
-          </button>
-
-          {/* On-Screen Touch Controls Toggle */}
-          <button
-            onClick={() => setTouchControlsEnabled(!touchControlsEnabled)}
-            className={`p-2 backdrop-blur-md rounded-2xl border transition-all ${
-              touchControlsEnabled
-                ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400 shadow-lg shadow-emerald-500/20'
-                : 'bg-[#071A2B]/90 hover:bg-white/10 border-white/10 text-gray-400 hover:text-white'
-            }`}
-            title={touchControlsEnabled ? 'Hide Touch Driving Controls' : 'Show Touch Driving Controls'}
-          >
-            <Smartphone className="w-4 h-4" />
-          </button>
-
-          {/* Controls Help */}
-          <button
-            onClick={() => setShowControlsHelp(!showControlsHelp)}
-            className="p-2 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl text-gray-300 hover:text-white transition-colors"
-            title="Controls Guide"
-          >
-            <HelpCircle className="w-4 h-4" />
           </button>
         </div>
       </header>
@@ -617,6 +789,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           onRadioVolumeChange={onRadioVolumeChange}
           cockpitHotspot={cockpitHotspot}
           onSelectHotspot={onSelectHotspot}
+          isMusicLocked={Boolean(lockStatus?.isLocked)}
         />
       )}
 
@@ -749,12 +922,9 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
               </g>
             </svg>
 
-            {/* District & Coordinate Overlay */}
-            <div className="absolute top-1 left-1.5 px-1.5 py-0.5 rounded bg-black/55 text-[8px] font-extrabold uppercase text-sky-300 truncate max-w-[110px]">
+            {/* District Overlay (No raw coordinates exposed) */}
+            <div className="absolute top-1 left-1.5 px-1.5 py-0.5 rounded bg-black/55 text-[8px] font-extrabold uppercase text-sky-300 truncate max-w-[125px]">
               {nearestAreaLabel}
-            </div>
-            <div className="absolute bottom-1 right-1.5 text-[8px] font-mono text-gray-300 bg-black/45 px-1 rounded">
-              {Math.round(carPosition.x)}, {Math.round(carPosition.z)}
             </div>
           </div>
           <span className="text-[9px] text-gray-400 uppercase tracking-widest font-bold mt-1">
