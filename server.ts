@@ -1218,6 +1218,7 @@ app.get('/api/world/db-status', async (req: Request, res: Response) => {
     'player_blocks',
     'player_reports',
     'moderation_incidents',
+    'player_admin_audit_logs',
     'chat_moderation_config',
   ];
 
@@ -1272,31 +1273,44 @@ app.get('/api/world/migration-sql', (_req: Request, res: Response) => {
 app.post('/api/world/moderate-chat', async (req: Request, res: Response) => {
   const { content } = req.body || {};
   if (!content || typeof content !== 'string') {
-    return res.status(400).json({ allowed: false, reason: 'Empty message.' });
+    return res.status(400).json({ allowed: false, severity: 'block', action: 'block', reason: 'Empty message.' });
   }
   const trimmed = content.trim();
   if (trimmed.length === 0 || trimmed.length > 500) {
-    return res.json({ allowed: false, category: 'INVALID_LENGTH', reason: 'Message must be 1 to 500 characters.' });
+    return res.json({
+      allowed: false,
+      severity: 'block',
+      action: 'block',
+      category: 'INVALID_LENGTH',
+      reason: 'Message must be 1 to 500 characters.',
+    });
   }
 
   // Deterministic pre-screen (mirrors PostgreSQL moderate_chat_text)
-  const digits = trimmed.replace(/[^0-9]/g, '');
   const lower = trimmed.toLowerCase();
   const collapsed = lower.replace(/[^a-z0-9@.+]/g, '');
   const phonePattern = /(\+?234[\s\-.]?[0-9]{2,4}[\s\-.]?[0-9]{3,4}[\s\-.]?[0-9]{3,4}|0[789][01][\s\-.]?[0-9]{3,4}[\s\-.]?[0-9]{4})/;
+  const phoneSpanPattern = /(?:^|[^0-9,])(\+?[0-9](?:[\s\-.()]*[0-9]){7,14})(?:[^0-9]|$)/;
   const spokenPhonePattern = /(zero|oh)\s*(eight|seven|nine)\s*(zero|one|two|three|four|five|six|seven|eight|nine)/i;
   const emailPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
   const obfuscatedEmailPattern = /[a-z0-9._%+-]+\s*(at|\(at\)|\[at\])\s*(gmail|yahoo|outlook|hotmail|icloud|proton)\s*(dot|\.)\s*(com|net|org|ng)/i;
   const linkPattern = /(https?:\/\/|www\.|wa\.me\/|t\.me\/|bit\.ly\/|instagram\.com|tiktok\.com|snapchat\.com|discord\.gg)/i;
-  const offPlatformPattern = /\b(whatsapp|whatsap|watsapp|whats app|telegram|snapchat|instagram|insta|tiktok|discord|signal app|viber|wechat|call me|text me|ring me|my number|my digits|drop your number|send your number|dm me on|hit me up on|add me on)\b/i;
+  const offPlatformAppsPattern = /\b(whatsapp|whatsap|watsapp|whats app|telegram|snapchat|signal app|viber|wechat)\b/i;
+  const socialPlatformInvite =
+    /\b(instagram|insta|tiktok|discord)\b/i.test(lower) &&
+    /\b(add|dm|follow|reach|text|chat|message|handle|me|my)\b/i.test(lower);
+  const contactSolicitPattern = /\b(call me|text me|ring me|drop your number|send your number|here is my number|take my number|dm me on|hit me up on|add me on)\b/i;
   const handleInvitePattern = /(@[a-z0-9_.]{3,})/i.test(lower) && /\b(add|dm|follow|reach|text|chat|message|handle|snap|ig|tg)\b/i.test(lower);
-  const datingPattern = /\b(hookup|hook up|wanna link|link up tonight|date me|be my girlfriend|be my boyfriend|sugar daddy|sugar mommy|single ladies|looking for love|netflix and chill|come over to my place|send your pic|send pics|selfie)\b/i;
-  const sexualPattern = /\b(nudes|nude|naked|horny|sexting|erotic|blowjob|handjob|boobs|tits|pussy|dick|cock|fuck me|suck my|cum|orgasm|porn|onlyfans)\b/i;
-  const harassmentScamPattern = /\b(kill yourself|i will kill|stab you|shoot you|scam you|send me money|wire transfer|bank details|bvn|pin code|otp code|motherfucker|bitch|retard|faggot)\b/i;
+  const datingPattern = /\b(hookup|hook up|wanna link tonight|link up tonight|date me|be my girlfriend|be my boyfriend|sugar daddy|sugar mommy|looking for a girlfriend|looking for a boyfriend|netflix and chill|come over to my place)\b/i;
+  const sexualPattern = /\b(send nudes|send me nudes|nudes|horny|sexting|erotic|blowjob|handjob|fuck me|suck my|orgasm|porn|onlyfans)\b/i;
+  const harassmentScamPattern = /\b(kill yourself|i will kill you|stab you|shoot you|wire transfer|send me your bank|bank details|bvn|otp code|motherfucker|retard|faggot)\b/i;
+  const ambiguousReviewPattern = /\b(send pics|my digits|drop your @|meet in person alone|bank account)\b/i;
 
-  if (phonePattern.test(trimmed) || digits.length >= 8 || spokenPhonePattern.test(lower)) {
+  if (phonePattern.test(trimmed) || phoneSpanPattern.test(trimmed) || spokenPhonePattern.test(lower)) {
     return res.json({
       allowed: false,
+      severity: 'block',
+      action: 'block',
       category: 'PERSONAL_CONTACT_PHONE',
       reason: 'Sharing phone numbers or numeric contact details is not permitted in MANIFOLD community chat.',
     });
@@ -1304,6 +1318,8 @@ app.post('/api/world/moderate-chat', async (req: Request, res: Response) => {
   if (emailPattern.test(trimmed) || obfuscatedEmailPattern.test(lower)) {
     return res.json({
       allowed: false,
+      severity: 'block',
+      action: 'block',
       category: 'PERSONAL_CONTACT_EMAIL',
       reason: 'Sharing email addresses is not permitted in MANIFOLD community chat.',
     });
@@ -1311,20 +1327,26 @@ app.post('/api/world/moderate-chat', async (req: Request, res: Response) => {
   if (linkPattern.test(trimmed) || /(wame|tme|http|https)[a-z0-9]{3,}/.test(collapsed)) {
     return res.json({
       allowed: false,
+      severity: 'block',
+      action: 'block',
       category: 'EXTERNAL_LINK',
       reason: 'Sharing external links or URLs is not permitted.',
     });
   }
-  if (offPlatformPattern.test(lower) || handleInvitePattern) {
+  if (offPlatformAppsPattern.test(lower) || socialPlatformInvite || contactSolicitPattern.test(lower) || handleInvitePattern) {
     return res.json({
       allowed: false,
+      severity: 'block',
+      action: 'block',
       category: 'OFF_PLATFORM_SOLICITATION',
-      reason: 'Sharing social handles or moving conversations to private messaging apps is not allowed.',
+      reason: 'Sharing social handles or moving conversations off MANIFOLD is not allowed.',
     });
   }
   if (datingPattern.test(lower)) {
     return res.json({
       allowed: false,
+      severity: 'block',
+      action: 'block',
       category: 'DATING_SOLICITATION',
       reason: 'Dating or personal meetup solicitation is not allowed in MANIFOLD driving chat.',
     });
@@ -1332,36 +1354,65 @@ app.post('/api/world/moderate-chat', async (req: Request, res: Response) => {
   if (sexualPattern.test(lower)) {
     return res.json({
       allowed: false,
+      severity: 'block',
+      action: 'block',
       category: 'SEXUAL_EXPLICIT',
-      reason: 'Sexually explicit or inappropriate content is strictly prohibited.',
+      reason: 'Sexually explicit content is strictly prohibited.',
     });
   }
   if (harassmentScamPattern.test(lower)) {
     return res.json({
       allowed: false,
+      severity: 'block',
+      action: 'block',
       category: 'HARASSMENT_OR_SCAM',
-      reason: 'Harassment, threats, abusive language, or financial solicitation is prohibited.',
+      reason: 'Threats, hate speech, harassment, or financial solicitation is prohibited.',
+    });
+  }
+  if (ambiguousReviewPattern.test(lower)) {
+    return res.json({
+      allowed: true,
+      severity: 'flagged_for_review',
+      action: 'flag_review',
+      category: 'AMBIGUOUS_REVIEW',
+      reason: 'Flagged conservatively for safety review without penalizing the player.',
     });
   }
 
-  // Optional Gemini contextual screen if GEMINI_API_KEY is available (best-effort; DB RPC enforces baseline always)
+  // Optional Gemini contextual screen if GEMINI_API_KEY is available (conservative: allows everyday chat!)
   if (genAI) {
     try {
       const result = await Promise.race([
         genAI.models.generateContent({
           model: 'gemini-2.5-flash',
-          contents: `Evaluate this in-game car-driving chat message strictly for: (1) obscured phone/email/social handle contact sharing, (2) dating/sexual solicitation, (3) harassment/threats/scams. Allow normal enthusiastic car, Lagos driving, music, and racing chat! Respond ONLY with JSON {"allowed": boolean, "category": string, "reason": string|null}.\nMessage: ${JSON.stringify(trimmed)}`,
+          contents: `Evaluate this in-game car-driving chat message.
+ALLOW normal everyday conversation about cars, driving, Lagos routes, music, sports, entertainment, everyday hobbies, and MANIFOLD marketplace discoveries (including benign slang like "killing it on Third Mainland Bridge", "shoot a clip of that AMG", "my number 1 dream car", "love this song").
+BLOCK ONLY clear, unambiguous violations: (1) phone/email/off-platform handle sharing or external links, (2) dating or sexually explicit solicitation, (3) genuine threats, hate speech, severe abuse, or financial scams.
+If borderline/ambiguous, set action="flag_review" and allowed=true instead of blocking.
+Respond ONLY with JSON {"allowed": boolean, "action": "allow"|"flag_review"|"block", "category": string, "reason": string|null}.
+Message: ${JSON.stringify(trimmed)}`,
           config: { responseMimeType: 'application/json' },
         }),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 2200)),
       ]);
       if (result && 'text' in result && result.text) {
         const parsed = JSON.parse(result.text.replace(/```json|```/gi, '').trim());
-        if (parsed && parsed.allowed === false) {
+        if (parsed && parsed.allowed === false && parsed.action === 'block') {
           return res.json({
             allowed: false,
+            severity: 'block',
+            action: 'block',
             category: parsed.category || 'CONTEXTUAL_POLICY_VIOLATION',
             reason: parsed.reason || 'This message violates MANIFOLD community chat safety guidelines.',
+          });
+        }
+        if (parsed && parsed.action === 'flag_review') {
+          return res.json({
+            allowed: true,
+            severity: 'flagged_for_review',
+            action: 'flag_review',
+            category: parsed.category || 'AMBIGUOUS_REVIEW',
+            reason: parsed.reason || 'Flagged conservatively for safety review.',
           });
         }
       }
@@ -1370,7 +1421,7 @@ app.post('/api/world/moderate-chat', async (req: Request, res: Response) => {
     }
   }
 
-  return res.json({ allowed: true, category: 'CLEAN', reason: null });
+  return res.json({ allowed: true, severity: 'clean', action: 'allow', category: 'CLEAN', reason: null });
 });
 
 // Start Server & Vite Middlewares

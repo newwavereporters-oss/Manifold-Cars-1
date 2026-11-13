@@ -235,7 +235,12 @@ export class WorldMultiplayerSession {
       },
       (payload) => {
         const row = payload.new as any;
-        if (!row || row.moderation_status !== 'approved') return;
+        if (
+          !row ||
+          (row.moderation_status !== 'approved' && row.moderation_status !== 'flagged_review')
+        ) {
+          return;
+        }
         if (row.conversation_id === this.activeConversationId) {
           this.onMessageReceived({
             id: row.id,
@@ -333,7 +338,7 @@ export class WorldMultiplayerSession {
 
   private async sendHeartbeat() {
     try {
-      await supabase.rpc('heartbeat_player_presence', {
+      const { data } = await supabase.rpc('heartbeat_player_presence', {
         p_x: this.lastKnownPos.x,
         p_y: this.lastKnownPos.y,
         p_z: this.lastKnownPos.z,
@@ -341,16 +346,15 @@ export class WorldMultiplayerSession {
         p_speed: this.lastKnownPos.speed,
         p_region: inferLagosRegion(this.lastKnownPos.x, this.lastKnownPos.z),
       });
+      if (data && typeof data.discoveryRadius === 'number') {
+        this.discoveryRadius = data.discoveryRadius;
+      }
     } catch {}
   }
 
   public async refreshNearbyPlayers(): Promise<void> {
     try {
-      const { data, error } = await supabase.rpc('get_nearby_active_players', {
-        p_x: this.lastKnownPos.x,
-        p_z: this.lastKnownPos.z,
-        p_radius: this.discoveryRadius,
-      });
+      const { data, error } = await supabase.rpc('get_nearby_active_players');
       if (error || !Array.isArray(data)) return;
 
       const freshIds = new Set<string>();
@@ -463,7 +467,7 @@ export class WorldMultiplayerSession {
       .from('chat_messages')
       .select('id, conversation_id, sender_player_id, content, created_at')
       .eq('conversation_id', conversationId)
-      .eq('moderation_status', 'approved')
+      .in('moderation_status', ['approved', 'flagged_review'])
       .order('created_at', { ascending: true })
       .limit(100);
 
@@ -490,7 +494,6 @@ export class WorldMultiplayerSession {
   ): Promise<{ success: boolean; recipientNickname?: string; expiresAt?: string; error?: string }> {
     const { data, error } = await supabase.rpc('send_chat_invitation', {
       p_recipient_player_id: recipientPlayerId,
-      p_radius: this.discoveryRadius,
     });
     if (error) return { success: false, error: error.message };
     return {
@@ -528,7 +531,7 @@ export class WorldMultiplayerSession {
     const trimmed = content.trim();
     if (!trimmed) return { delivered: false, error: 'Message cannot be empty.' };
 
-    // Optional AI contextual pre-screen when Gemini API is configured; server SQL RPC remains authoritative
+    // Contextual pre-screen when API route is available; server SQL RPC remains authoritative
     try {
       const modRes = await fetch('/api/world/moderate-chat', {
         method: 'POST',
@@ -537,8 +540,7 @@ export class WorldMultiplayerSession {
       });
       if (modRes.ok) {
         const modData = await modRes.json();
-        if (modData && modData.allowed === false) {
-          // Commit through RPC if contextual-only or block immediately with standard warning
+        if (modData && modData.allowed === false && modData.action === 'block') {
           return {
             delivered: false,
             moderationWarning: {

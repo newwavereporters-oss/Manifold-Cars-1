@@ -7,7 +7,8 @@ import type {
 
 export const TERMS_VERSION = '2026-11-v1';
 
-export type PlayerAccountStatus = 'active' | 'chat_restricted' | 'suspended';
+export type PlayerAccountStatus = 'active' | 'suspended';
+export type PlayerChatStatus = 'enabled' | 'temporarily_restricted' | 'permanently_restricted';
 export type PlayerOnboardingStatus = 'registered' | 'briefing_accepted' | 'active';
 
 export interface PlayerProfile {
@@ -19,6 +20,7 @@ export interface PlayerProfile {
   phone_number: string;
   registration_date: string;
   account_status: PlayerAccountStatus;
+  chat_status: PlayerChatStatus;
   onboarding_status: PlayerOnboardingStatus;
   terms_accepted: boolean;
   terms_version: string | null;
@@ -32,6 +34,9 @@ export interface PlayerProfile {
   credits_balance: number;
   chat_violation_count: number;
   chat_restricted_until: string | null;
+  chat_restriction_reason: string | null;
+  suspended_at: string | null;
+  suspended_reason: string | null;
   last_activity_at: string;
 }
 
@@ -46,8 +51,39 @@ export interface WorldDbStatus {
   configured: boolean;
   tablesExist: boolean;
   migrationRequired: boolean;
+  networkUnreachable?: boolean;
   migrationFilePath?: string;
   error?: string;
+}
+
+export function isPlayerChatRestricted(
+  profile: Pick<PlayerProfile, 'chat_status' | 'chat_restricted_until'> | null | undefined,
+  serverClockOffsetMs = 0
+): { restricted: boolean; permanent: boolean; untilFormatted: string } {
+  if (!profile) return { restricted: false, permanent: false, untilFormatted: '' };
+  if (profile.chat_status === 'permanently_restricted') {
+    return { restricted: true, permanent: true, untilFormatted: '' };
+  }
+  if (profile.chat_status === 'temporarily_restricted') {
+    if (!profile.chat_restricted_until) {
+      return { restricted: true, permanent: false, untilFormatted: '' };
+    }
+    const untilMs = Date.parse(profile.chat_restricted_until);
+    const nowMs = Date.now() + serverClockOffsetMs;
+    if (!Number.isNaN(untilMs) && untilMs > nowMs) {
+      return {
+        restricted: true,
+        permanent: false,
+        untilFormatted: new Date(untilMs).toLocaleString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      };
+    }
+  }
+  return { restricted: false, permanent: false, untilFormatted: '' };
 }
 
 function mapWorldError(err: any): string {
