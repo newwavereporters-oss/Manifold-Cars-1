@@ -19,6 +19,9 @@ import {
   Power,
   Zap,
   Smartphone,
+  Map as MapIcon,
+  Flag,
+  RotateCcw,
 } from 'lucide-react';
 import { CameraViewMode, TimeOfDay } from './WorldCanvas';
 import { VehicleModelType, VEHICLE_SPEC_PROFILES } from './worldModels';
@@ -78,6 +81,10 @@ interface WorldHUDProps {
   onRadioVolumeChange: (vol: number) => void;
   cockpitHotspot: CockpitHotspot;
   onSelectHotspot: (spot: CockpitHotspot) => void;
+  onOpenCityMap?: () => void;
+  onOpenMissions?: () => void;
+  onResetVehicle?: () => void;
+  activeDestination?: { x: number; z: number; name: string } | null;
 }
 
 export const WorldHUD: React.FC<WorldHUDProps> = ({
@@ -126,6 +133,10 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   onRadioVolumeChange,
   cockpitHotspot,
   onSelectHotspot,
+  onOpenCityMap,
+  onOpenMissions,
+  onResetVehicle,
+  activeDestination,
 }) => {
   const [isMuted, setIsMuted] = useState(() => engineAudio.getMuted());
   const [showControlsHelp, setShowControlsHelp] = useState(false);
@@ -177,9 +188,9 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   const mapZPercent = Math.max(5, Math.min(95, 50 + (carPosition.z / worldRadius) * 45));
 
   const showroomX = 50 + (0 / worldRadius) * 45;
-  const showroomY = 50 + (-45 / worldRadius) * 45;
+  const showroomY = 50 + (-35 / worldRadius) * 45;
   const portalX = 50 + (0 / worldRadius) * 45;
-  const portalY = 50 + (32 / worldRadius) * 45;
+  const portalY = 50 + (100 / worldRadius) * 45;
   const speedTrapX = 50 + (-55 / worldRadius) * 45;
   const speedTrapY = 50 + (0 / worldRadius) * 45;
 
@@ -291,6 +302,45 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
               <Moon className="w-4 h-4" />
             </button>
           </div>
+
+          {/* City GPS Map Button */}
+          {onOpenCityMap && (
+            <button
+              onClick={onOpenCityMap}
+              className={`flex items-center gap-1.5 backdrop-blur-md px-3 py-2 rounded-2xl border shadow-2xl text-xs font-bold transition-colors ${
+                activeDestination
+                  ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300'
+                  : 'bg-[#071A2B]/90 hover:bg-white/10 border-white/10 text-white'
+              }`}
+              title="Lagos City GPS Map [M]"
+            >
+              <MapIcon className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden md:inline">City Map</span>
+            </button>
+          )}
+
+          {/* Mission Operations Button */}
+          {onOpenMissions && (
+            <button
+              onClick={onOpenMissions}
+              className="flex items-center gap-1.5 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/10 shadow-2xl text-xs font-bold text-white transition-colors"
+              title="Missions & Street Races"
+            >
+              <Flag className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden md:inline">Missions</span>
+            </button>
+          )}
+
+          {/* Vehicle Reset Shortcut */}
+          {onResetVehicle && (
+            <button
+              onClick={onResetVehicle}
+              className="p-2 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl text-gray-300 hover:text-white transition-colors"
+              title="Reset Vehicle Position [R]"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Tuning Studio Shortcut */}
           <button

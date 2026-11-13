@@ -1,10 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { WorldCanvas, CameraViewMode, TimeOfDay } from '../components/world/WorldCanvas';
 import { WorldHUD } from '../components/world/WorldHUD';
 import { CustomizerDrawer } from '../components/world/CustomizerDrawer';
 import { MarketplaceGatewayModal } from '../components/world/MarketplaceGatewayModal';
 import { VehicleInspectorModal } from '../components/world/VehicleInspectorModal';
 import { DealerLoungeModal } from '../components/world/DealerLoungeModal';
+import { CityMapModal } from '../components/world/CityMapModal';
+import { MissionHUDOverlay } from '../components/world/MissionHUDOverlay';
+import {
+  MissionManager,
+  ActiveMissionSession,
+  MissionId,
+  MISSIONS_CATALOG,
+} from '../components/world/missionEngine';
 import {
   CarCustomization,
   VehicleModelType,
@@ -19,8 +27,7 @@ import {
   Palette,
   Flag,
   Building2,
-  Car as CarIcon,
-  Coins,
+  Map as MapIcon,
 } from 'lucide-react';
 
 interface ManifoldWorldPageProps {
@@ -161,7 +168,88 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
   const [isMarketplaceModalOpen, setIsMarketplaceModalOpen] = useState(false);
   const [isDealerLoungeOpen, setIsDealerLoungeOpen] = useState(false);
+  const [isCityMapOpen, setIsCityMapOpen] = useState(false);
+  const [isMissionDrawerOpen, setIsMissionDrawerOpen] = useState(false);
   const [inspectingCar, setInspectingCar] = useState<Car | null>(null);
+  const [resetVehicleTrigger, setResetVehicleTrigger] = useState<number>(0);
+
+  // Lagos GPS Waypoint, Traffic/Rival Radar & Active Mission Engine
+  const [activeDestination, setActiveDestination] = useState<{
+    x: number;
+    z: number;
+    name: string;
+  } | null>(null);
+  const [trafficPositions, setTrafficPositions] = useState<{ x: number; z: number }[]>([]);
+  const [rivalPositions, setRivalPositions] = useState<{ name: string; x: number; z: number }[]>([]);
+  const [missionSession, setMissionSession] = useState<ActiveMissionSession | null>(null);
+  const missionManagerRef = useRef<MissionManager>(new MissionManager());
+  const lastMissionUiHashRef = useRef<string>('');
+
+  useEffect(() => {
+    missionManagerRef.current.setRewardCallback(handleAwardCredits);
+  });
+
+  const syncMissionUi = useCallback((session: ActiveMissionSession | null, force = false) => {
+    if (!session) {
+      if (lastMissionUiHashRef.current !== 'NONE') {
+        lastMissionUiHashRef.current = 'NONE';
+        setMissionSession(null);
+      }
+      return;
+    }
+    const hash = `${session.missionId}|${session.state}|${Math.ceil(
+      session.timeRemainingSec
+    )}|${session.cargoIntegrityPercent}|${Math.ceil(session.countdownVal)}|${
+      session.currentRaceCheckpointIdx
+    }|${session.playerRaceRank}`;
+    if (force || hash !== lastMissionUiHashRef.current) {
+      lastMissionUiHashRef.current = hash;
+      setMissionSession({ ...session });
+    }
+  }, []);
+
+  const handleOpenMissionBriefing = useCallback(
+    (id: MissionId) => {
+      const s = missionManagerRef.current.openBriefing(id);
+      syncMissionUi(s, true);
+    },
+    [syncMissionUi]
+  );
+
+  const handleStartMission = useCallback(() => {
+    const s = missionManagerRef.current.startMission();
+    if (s) {
+      const def = MISSIONS_CATALOG[s.missionId];
+      setActiveDestination({ x: def.destX, z: def.destZ, name: def.destinationName });
+    }
+    syncMissionUi(s, true);
+  }, [syncMissionUi]);
+
+  const handleAbandonMission = useCallback(() => {
+    missionManagerRef.current.abandonMission();
+    setActiveDestination(null);
+    syncMissionUi(null, true);
+  }, [syncMissionUi]);
+
+  const handleMissionUpdate = useCallback(
+    (
+      delta: number,
+      playerPos: { x: number; z: number; speed: number },
+      onCollisionImpact?: boolean
+    ) => {
+      const updated = missionManagerRef.current.update(delta, playerPos, onCollisionImpact);
+      syncMissionUi(updated);
+    },
+    [syncMissionUi]
+  );
+
+  const handleRaceCheckpointPassed = useCallback(
+    (cpIdx: number, rank: number) => {
+      const updated = missionManagerRef.current.onPlayerReachRaceCheckpoint(cpIdx + 1, rank);
+      syncMissionUi(updated, true);
+    },
+    [syncMissionUi]
+  );
 
   const handleSpeedTrap = (recordedSpeed: number) => {
     setSpeedTrapRecord(recordedSpeed);
@@ -221,6 +309,8 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         handleToggleTurnSignal('LEFT');
       } else if (k === 'h') {
         setHornActive(e.type === 'keydown');
+      } else if (k === 'm' && e.type === 'keydown') {
+        setIsCityMapOpen((prev) => !prev);
       }
     };
 
@@ -261,6 +351,13 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         hornActive={hornActive}
         cockpitHotspot={cockpitHotspot}
         onAwardCredits={handleAwardCredits}
+        activeDestination={activeDestination}
+        activeMissionSession={missionSession}
+        onMissionUpdate={handleMissionUpdate}
+        onRaceCheckpointPassed={handleRaceCheckpointPassed}
+        onTrafficPositionsUpdate={setTrafficPositions}
+        onRivalPositionsUpdate={setRivalPositions}
+        resetVehicleTrigger={resetVehicleTrigger}
       />
 
       {/* Heads-Up Display & Gaming UI */}
@@ -304,14 +401,42 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         onRadioVolumeChange={handleRadioVolume}
         cockpitHotspot={cockpitHotspot}
         onSelectHotspot={(spot) => setCockpitHotspot(spot)}
+        onOpenCityMap={() => setIsCityMapOpen(true)}
+        onOpenMissions={() => setIsMissionDrawerOpen(true)}
+        onResetVehicle={() => setResetVehicleTrigger((prev) => prev + 1)}
+        activeDestination={activeDestination}
+      />
+
+      {/* Mission Operations HUD Overlay */}
+      <MissionHUDOverlay
+        session={missionSession}
+        onStartMission={handleStartMission}
+        onAbandonMission={handleAbandonMission}
+        onOpenMissionBriefing={handleOpenMissionBriefing}
+        isMissionDrawerOpen={isMissionDrawerOpen}
+        onCloseMissionDrawer={() => setIsMissionDrawerOpen(false)}
       />
 
       {/* Quick World Navigation Dock (Floating Top-Left) */}
       <div className="absolute top-20 left-4 z-40 hidden md:flex flex-col gap-2 pointer-events-auto">
         <div className="bg-[#071A2B]/85 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 shadow-2xl flex flex-col gap-1 text-[11px] font-bold">
           <span className="px-2.5 py-1 text-[9px] uppercase tracking-wider text-gray-400 font-semibold">
-            World POIs
+            Lagos Mainland & POIs
           </span>
+          <button
+            onClick={() => setIsCityMapOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 text-left text-white hover:bg-white/10 rounded-xl transition-colors group"
+          >
+            <MapIcon className="w-3.5 h-3.5 text-emerald-400" />
+            <span>City GPS Map [M]</span>
+          </button>
+          <button
+            onClick={() => setIsMissionDrawerOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 text-left text-white hover:bg-white/10 rounded-xl transition-colors group"
+          >
+            <Flag className="w-3.5 h-3.5 text-amber-400" />
+            <span>Missions & Races</span>
+          </button>
           <button
             onClick={() => setIsMarketplaceModalOpen(true)}
             className="flex items-center gap-2 px-3 py-2 text-left text-white hover:bg-white/10 rounded-xl transition-colors group"
@@ -384,6 +509,20 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         isOpen={isDealerLoungeOpen}
         onClose={() => setIsDealerLoungeOpen(false)}
         onNavigate={navigate}
+      />
+
+      <CityMapModal
+        isOpen={isCityMapOpen}
+        onClose={() => setIsCityMapOpen(false)}
+        playerPos={carPosition}
+        activeDestination={activeDestination}
+        onSelectDestination={(dest) => {
+          setActiveDestination(dest);
+          setIsCityMapOpen(false);
+        }}
+        onClearDestination={() => setActiveDestination(null)}
+        trafficPositions={trafficPositions}
+        rivalPositions={rivalPositions}
       />
     </div>
   );

@@ -1252,146 +1252,126 @@ export function createWorldEnvironment(): {
   const environmentGroup = new THREE.Group();
   const podiums: { group: THREE.Group; carMesh: THREE.Group; carId: string }[] = [];
 
-  // 1. HIGH-VISIBILITY DAYLIGHT GROUND PLAZA & SURROUNDING LANDSCAPE
-  const terrainGeo = new THREE.PlaneGeometry(600, 600, 32, 32);
-  const terrainMat = new THREE.MeshStandardMaterial({
-    color: 0x94a3b8, // Balanced slate neutral ground
-    roughness: 0.75,
-    metalness: 0.1,
-  });
-  const terrain = new THREE.Mesh(terrainGeo, terrainMat);
-  terrain.rotation.x = -Math.PI / 2;
-  terrain.position.y = -0.05;
-  terrain.receiveShadow = true;
-  environmentGroup.add(terrain);
-
-  // Central Plaza Island
-  const plazaGeo = new THREE.PlaneGeometry(280, 280, 24, 24);
-  const plazaMat = new THREE.MeshStandardMaterial({
-    color: 0x334155, // Clean dark slate asphalt for sharp road contrast
-    roughness: 0.6,
-    metalness: 0.2,
-  });
-  const plaza = new THREE.Mesh(plazaGeo, plazaMat);
-  plaza.rotation.x = -Math.PI / 2;
-  plaza.receiveShadow = true;
-  environmentGroup.add(plaza);
-
-  // 2. MODERN TEST TRACK RING AROUND PROVING GROUND
-  const trackOuterGeo = new THREE.RingGeometry(85, 145, 64);
-  const trackMat = new THREE.MeshStandardMaterial({
-    color: 0x1e293b,
-    roughness: 0.5,
-    metalness: 0.3,
-  });
-  const track = new THREE.Mesh(trackOuterGeo, trackMat);
-  track.rotation.x = -Math.PI / 2;
-  track.position.y = 0.01;
-  track.receiveShadow = true;
-  environmentGroup.add(track);
-
-  // Track Curbs (Red and White Racing Kerbs)
-  const curbGeo = new THREE.RingGeometry(83.5, 85, 64);
-  const curbMat = new THREE.MeshStandardMaterial({
-    color: 0xef233c,
-    roughness: 0.4,
-  });
-  const curb = new THREE.Mesh(curbGeo, curbMat);
-  curb.rotation.x = -Math.PI / 2;
-  curb.position.y = 0.02;
-  environmentGroup.add(curb);
-
-  const outerCurbGeo = new THREE.RingGeometry(145, 146.5, 64);
-  const outerCurb = new THREE.Mesh(outerCurbGeo, curbMat);
-  outerCurb.rotation.x = -Math.PI / 2;
-  outerCurb.position.y = 0.02;
-  environmentGroup.add(outerCurb);
-
-  // Center Line Markings
-  const centerLineGeo = new THREE.RingGeometry(114.6, 115.4, 64);
-  const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const centerLine = new THREE.Mesh(centerLineGeo, lineMat);
-  centerLine.rotation.x = -Math.PI / 2;
-  centerLine.position.y = 0.03;
-  environmentGroup.add(centerLine);
-
-  // 3. SHOWROOM ARCHITECTURAL PAVILION (North at [0, 0, -45])
+  // 1. SHOWROOM BOULEVARD PAVILION (Open Drive-Through Canopy straddling [0, 0, -48])
   const pavilionGroup = new THREE.Group();
-  pavilionGroup.position.set(0, 0, -45);
+  pavilionGroup.position.set(0, 0, -48);
 
   const floorMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    metalness: 0.1,
-    roughness: 0.12,
+    color: 0xe2e8f0,
+    metalness: 0.15,
+    roughness: 0.25,
   });
-  const pavilionFloor = new THREE.Mesh(new THREE.BoxGeometry(50, 0.4, 30), floorMat);
-  pavilionFloor.position.y = 0.2;
-  pavilionFloor.receiveShadow = true;
-  pavilionGroup.add(pavilionFloor);
 
-  // Glass Walls
+  // Left and right flanking showroom esplanade decks (leaving x: -8.5..+8.5 clear for road!)
+  const deckGeo = new THREE.BoxGeometry(16, 0.3, 28);
+  const leftDeck = new THREE.Mesh(deckGeo, floorMat);
+  leftDeck.position.set(-18, 0.15, 0);
+  leftDeck.receiveShadow = true;
+
+  const rightDeck = new THREE.Mesh(deckGeo, floorMat);
+  rightDeck.position.set(18, 0.15, 0);
+  rightDeck.receiveShadow = true;
+  pavilionGroup.add(leftDeck, rightDeck);
+
+  // Outer Glass Gallery Side Walls (Open North & South ends for drive-through)
   const pavilionGlassMat = new THREE.MeshPhysicalMaterial({
     color: 0xe0f2fe,
-    transmission: 0.92,
-    opacity: 0.35,
+    transmission: 0.72,
+    opacity: 0.42,
     transparent: true,
-    roughness: 0.05,
-    metalness: 0.1,
+    roughness: 0.08,
+    metalness: 0.12,
   });
 
-  const backWall = new THREE.Mesh(new THREE.BoxGeometry(50, 8, 0.4), pavilionGlassMat);
-  backWall.position.set(0, 4.2, -15);
-  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 8, 30), pavilionGlassMat);
-  leftWall.position.set(-25, 4.2, 0);
-  const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 8, 30), pavilionGlassMat);
-  rightWall.position.set(25, 4.2, 0);
-  pavilionGroup.add(backWall, leftWall, rightWall);
+  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.35, 8.2, 28), pavilionGlassMat);
+  leftWall.position.set(-25.8, 4.2, 0);
+  const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.35, 8.2, 28), pavilionGlassMat);
+  rightWall.position.set(25.8, 4.2, 0);
+  pavilionGroup.add(leftWall, rightWall);
 
-  // Modern Cantilevered Roof
+  // Structural Steel Support Columns flanking road shoulders (outside 14m road + curbs)
+  const colMat = new THREE.MeshStandardMaterial({
+    color: 0x1e293b,
+    metalness: 0.8,
+    roughness: 0.25,
+  });
+  const colPositions: [number, number][] = [
+    [-10.2, -13],
+    [10.2, -13],
+    [-10.2, 13],
+    [10.2, 13],
+    [-25.6, -13],
+    [25.6, -13],
+    [-25.6, 13],
+    [25.6, 13],
+  ];
+  colPositions.forEach(([cx, cz]) => {
+    const col = new THREE.Mesh(new THREE.BoxGeometry(0.65, 8.5, 0.65), colMat);
+    col.position.set(cx, 4.25, cz);
+    col.castShadow = true;
+    pavilionGroup.add(col);
+  });
+
+  // Modern Cantilevered Steel Roof Spanning the Boulevard
   const roofMat = new THREE.MeshStandardMaterial({
     color: 0x0f172a,
-    metalness: 0.8,
-    roughness: 0.2,
+    metalness: 0.75,
+    roughness: 0.25,
   });
-  const pavilionRoof = new THREE.Mesh(new THREE.BoxGeometry(54, 0.8, 34), roofMat);
-  pavilionRoof.position.set(0, 8.4, 0);
+  const pavilionRoof = new THREE.Mesh(new THREE.BoxGeometry(54, 0.85, 30), roofMat);
+  pavilionRoof.position.set(0, 8.8, 0);
   pavilionRoof.castShadow = true;
   pavilionGroup.add(pavilionRoof);
 
-  // Neon Showroom Sign
-  const signMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(22, 1.4, 0.2),
-    new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      emissive: 0xffffff,
-      emissiveIntensity: 3.0,
-    })
-  );
-  signMesh.position.set(0, 7.2, 14.8);
-  pavilionGroup.add(signMesh);
+  // Illuminated Showroom Facade Frieze (Front & Back)
+  const signCanvas = document.createElement('canvas');
+  signCanvas.width = 512;
+  signCanvas.height = 96;
+  const sctx = signCanvas.getContext('2d');
+  if (sctx) {
+    sctx.fillStyle = '#071A2B';
+    sctx.fillRect(0, 0, 512, 96);
+    sctx.strokeStyle = '#EF233C';
+    sctx.lineWidth = 6;
+    sctx.strokeRect(3, 3, 506, 90);
+    sctx.fillStyle = '#FFFFFF';
+    sctx.font = 'bold 34px "Plus Jakarta Sans", Arial, sans-serif';
+    sctx.textAlign = 'center';
+    sctx.textBaseline = 'middle';
+    sctx.fillText('MANIFOLD SHOWROOM PAVILION', 256, 48);
+  }
+  const pavilionSignTex = new THREE.CanvasTexture(signCanvas);
+  pavilionSignTex.colorSpace = THREE.SRGBColorSpace;
+  const pavilionSignMat = new THREE.MeshBasicMaterial({ map: pavilionSignTex });
+  const signMeshF = new THREE.Mesh(new THREE.PlaneGeometry(18, 2.2), pavilionSignMat);
+  signMeshF.position.set(0, 8.2, 15.1);
+  const signMeshB = signMeshF.clone();
+  signMeshB.position.z = -15.1;
+  signMeshB.rotation.y = Math.PI;
+  pavilionGroup.add(signMeshF, signMeshB);
 
   environmentGroup.add(pavilionGroup);
 
-  // 4. SHOWROOM DISPLAY VEHICLES (Rotating Turntable Podiums)
+  // 2. SHOWROOM DISPLAY VEHICLES (Flanking Esplanade Turntable Podiums)
   const displayConfigs = [
     {
       carId: 'car-highlander-2021',
-      x: -14,
-      z: -45,
+      x: -18,
+      z: -42,
       type: 'LUXURY_SUV' as VehicleModelType,
       color: '#F8FAFC',
     },
     {
       carId: 'car-c63-amg-2021',
-      x: 0,
-      z: -45,
+      x: 18,
+      z: -42,
       type: 'SPORTS_COUPE' as VehicleModelType,
       color: '#DC2626',
     },
     {
       carId: 'car-e350-2020',
-      x: 14,
-      z: -45,
+      x: -18,
+      z: -56,
       type: 'EXECUTIVE_SEDAN' as VehicleModelType,
       color: '#0B0D11',
     },
@@ -1399,9 +1379,9 @@ export function createWorldEnvironment(): {
 
   displayConfigs.forEach((cfg) => {
     const podGroup = new THREE.Group();
-    podGroup.position.set(cfg.x, 0.4, cfg.z);
+    podGroup.position.set(cfg.x, 0.3, cfg.z);
 
-    const turntableGeo = new THREE.CylinderGeometry(4.2, 4.4, 0.25, 32);
+    const turntableGeo = new THREE.CylinderGeometry(4.0, 4.2, 0.25, 32);
     const turntableMat = new THREE.MeshStandardMaterial({
       color: 0x1e293b,
       metalness: 0.7,
@@ -1411,15 +1391,13 @@ export function createWorldEnvironment(): {
     turntable.receiveShadow = true;
     podGroup.add(turntable);
 
-    // Illuminated edge ring
-    const ringGeo = new THREE.RingGeometry(4.1, 4.35, 32);
+    const ringGeo = new THREE.RingGeometry(3.9, 4.15, 32);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.13;
     podGroup.add(ring);
 
-    // Display Vehicle
     const displayCar = createVehicleByType({
       vehicleType: cfg.type,
       paintColor: cfg.color,
@@ -1440,82 +1418,107 @@ export function createWorldEnvironment(): {
     environmentGroup.add(podGroup);
   });
 
-  // 5. VIP DEALER LOUNGE & CONCIERGE BUILDING (East at [50, 0, 0])
-  const loungeGroup = new THREE.Group();
-  loungeGroup.position.set(50, 0, 0);
-  loungeGroup.rotation.y = -Math.PI / 2;
+  // 3. TUNING & CUSTOMIZATION SERVICE BAY (at [35, 0, 10], clear of roads & buildings)
+  {
+    const tuningBay = new THREE.Group();
+    tuningBay.position.set(35, 0, 10);
 
-  const loungeBase = new THREE.Mesh(
-    new THREE.BoxGeometry(26, 6.5, 18),
-    new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.3, metalness: 0.5 })
-  );
-  loungeBase.position.y = 3.25;
-  loungeBase.castShadow = true;
-  loungeGroup.add(loungeBase);
+    const bayPad = new THREE.Mesh(
+      new THREE.BoxGeometry(10.5, 0.14, 9.0),
+      new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6, metalness: 0.2 })
+    );
+    bayPad.position.y = 0.07;
+    bayPad.receiveShadow = true;
 
-  // Illuminated Sign
-  const loungeSign = new THREE.Mesh(
-    new THREE.BoxGeometry(14, 1.2, 0.2),
-    new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 2.5 })
-  );
-  loungeSign.position.set(0, 5.8, 9.1);
-  loungeGroup.add(loungeSign);
-  environmentGroup.add(loungeGroup);
+    const bayCanopy = new THREE.Mesh(
+      new THREE.BoxGeometry(10.5, 0.35, 8.8),
+      new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.75 })
+    );
+    bayCanopy.position.set(0, 4.8, 0);
+    bayCanopy.castShadow = true;
 
-  // 6. GRAND MARKETPLACE GATEWAY (South at [0, 0, 100])
+    const emeraldStrip = new THREE.Mesh(
+      new THREE.BoxGeometry(10.6, 0.18, 0.25),
+      new THREE.MeshStandardMaterial({ color: 0x10b981, emissive: 0x10b981, emissiveIntensity: 2.2 })
+    );
+    emeraldStrip.position.set(0, 4.65, -4.4);
+
+    [
+      [-4.8, -3.8],
+      [4.8, -3.8],
+      [-4.8, 3.8],
+      [4.8, 3.8],
+    ].forEach(([px, pz]) => {
+      const p = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.16, 0.18, 4.7, 8),
+        new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.7, roughness: 0.3 })
+      );
+      p.position.set(px, 2.35, pz);
+      tuningBay.add(p);
+    });
+
+    tuningBay.add(bayPad, bayCanopy, emeraldStrip);
+    environmentGroup.add(tuningBay);
+  }
+
+  // 4. VIP DEALER LOUNGE & CONCIERGE PAVILION (Relocated off intersection to [57, 0, 22])
+  {
+    const loungeGroup = new THREE.Group();
+    loungeGroup.position.set(57, 0, 22);
+    loungeGroup.rotation.y = Math.PI; // Faces North towards Commercial Ave [z=0]
+
+    const loungeBase = new THREE.Mesh(
+      new THREE.BoxGeometry(16, 6.8, 12),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.32, metalness: 0.55 })
+    );
+    loungeBase.position.y = 3.4;
+    loungeBase.castShadow = true;
+    loungeBase.receiveShadow = true;
+    loungeGroup.add(loungeBase);
+
+    const loungeCanopy = new THREE.Mesh(
+      new THREE.BoxGeometry(11, 0.35, 3.5),
+      new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.35, metalness: 0.65 })
+    );
+    loungeCanopy.position.set(0, 3.8, 7.2);
+    loungeGroup.add(loungeCanopy);
+
+    const loungeSignCanvas = document.createElement('canvas');
+    loungeSignCanvas.width = 512;
+    loungeSignCanvas.height = 128;
+    const lctx = loungeSignCanvas.getContext('2d');
+    if (lctx) {
+      lctx.fillStyle = '#0F172A';
+      lctx.fillRect(0, 0, 512, 128);
+      lctx.strokeStyle = '#F59E0B';
+      lctx.lineWidth = 8;
+      lctx.strokeRect(4, 4, 504, 120);
+      lctx.fillStyle = '#F59E0B';
+      lctx.font = 'bold 34px "Plus Jakarta Sans", Arial, sans-serif';
+      lctx.textAlign = 'center';
+      lctx.textBaseline = 'middle';
+      lctx.fillText('VIP DEALER LOUNGE', 256, 48);
+      lctx.fillStyle = '#FFFFFF';
+      lctx.font = 'bold 20px Arial, sans-serif';
+      lctx.fillText('CONCIERGE & FINANCING', 256, 92);
+    }
+    const loungeTex = new THREE.CanvasTexture(loungeSignCanvas);
+    loungeTex.colorSpace = THREE.SRGBColorSpace;
+    const loungeSign = new THREE.Mesh(
+      new THREE.PlaneGeometry(12, 2.4),
+      new THREE.MeshBasicMaterial({ map: loungeTex })
+    );
+    loungeSign.position.set(0, 5.5, 6.08);
+    loungeGroup.add(loungeSign);
+    environmentGroup.add(loungeGroup);
+  }
+
+  // 5. MARKETPLACE PORTAL REFERENCE GROUP (3D Arch rendered by lagosCityBuilder at [0, 0, 100])
   const marketplacePortal = new THREE.Group();
   marketplacePortal.position.set(0, 0, 100);
-
-  const portalMat = new THREE.MeshStandardMaterial({
-    color: 0x071a2b,
-    metalness: 0.85,
-    roughness: 0.15,
-  });
-
-  const pillarL = new THREE.Mesh(new THREE.BoxGeometry(2.2, 9.5, 2.2), portalMat);
-  pillarL.position.set(-6.5, 4.75, 0);
-  pillarL.castShadow = true;
-
-  const pillarR = pillarL.clone();
-  pillarR.position.x = 6.5;
-
-  const archTop = new THREE.Mesh(new THREE.BoxGeometry(15.2, 1.8, 2.4), portalMat);
-  archTop.position.set(0, 9.2, 0);
-  archTop.castShadow = true;
-
-  // Holographic Drive-Through Energy Portal
-  const holoPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(10.8, 7.6),
-    new THREE.MeshPhysicalMaterial({
-      color: 0xef233c,
-      emissive: 0xef233c,
-      emissiveIntensity: 0.9,
-      transmission: 0.6,
-      transparent: true,
-      opacity: 0.45,
-      roughness: 0.1,
-    })
-  );
-  holoPlane.position.set(0, 3.8, 0);
-
-  // Neon Portal Frame
-  const neonFrame = new THREE.Mesh(
-    new THREE.BoxGeometry(13.5, 0.18, 0.3),
-    new THREE.MeshStandardMaterial({ color: 0xef233c, emissive: 0xef233c, emissiveIntensity: 3.8 })
-  );
-  neonFrame.position.set(0, 7.5, 0.1);
-
-  // Portal Signboard
-  const portalSign = new THREE.Mesh(
-    new THREE.BoxGeometry(11, 1.1, 0.3),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.5 })
-  );
-  portalSign.position.set(0, 9.4, 0);
-
-  marketplacePortal.add(pillarL, pillarR, archTop, holoPlane, neonFrame, portalSign);
   environmentGroup.add(marketplacePortal);
 
-  // 7. SPEED TRAP GATE (On the test track at [-55, 0, 0])
+  // 6. SPEED TRAP GATE (Spanning West Surulere Corridor at [-55, 0, 0])
   const speedTrapGate = new THREE.Group();
   speedTrapGate.position.set(-55, 0, 0);
   speedTrapGate.rotation.y = Math.PI / 2;
@@ -1525,35 +1528,26 @@ export function createWorldEnvironment(): {
     metalness: 0.7,
     roughness: 0.3,
   });
-  const trapColL = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 6.5, 12), trapGantryMat);
-  trapColL.position.set(-5.5, 3.25, 0);
+  const trapColL = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 6.8, 12), trapGantryMat);
+  trapColL.position.set(-7.4, 3.4, 0);
   const trapColR = trapColL.clone();
-  trapColR.position.x = 5.5;
+  trapColR.position.x = 7.4;
 
-  const trapTop = new THREE.Mesh(new THREE.BoxGeometry(11.5, 0.7, 0.7), trapGantryMat);
-  trapTop.position.set(0, 6.5, 0);
+  const trapTop = new THREE.Mesh(new THREE.BoxGeometry(15.6, 0.7, 0.7), trapGantryMat);
+  trapTop.position.set(0, 6.8, 0);
 
   const speedDisplay = new THREE.Mesh(
-    new THREE.BoxGeometry(4.6, 1.3, 0.2),
+    new THREE.BoxGeometry(5.2, 1.3, 0.25),
     new THREE.MeshStandardMaterial({
       color: 0x10b981,
       emissive: 0x10b981,
-      emissiveIntensity: 2.8,
+      emissiveIntensity: 2.6,
     })
   );
-  speedDisplay.position.set(0, 5.6, 0);
+  speedDisplay.position.set(0, 5.85, 0);
 
   speedTrapGate.add(trapColL, trapColR, trapTop, speedDisplay);
   environmentGroup.add(speedTrapGate);
-
-  // 8. DAYLIGHT ATMOSPHERIC SKY DOME
-  const skyGeo = new THREE.SphereGeometry(320, 32, 24);
-  const skyMat = new THREE.MeshBasicMaterial({
-    color: 0x38bdf8,
-    side: THREE.BackSide,
-  });
-  const skyDome = new THREE.Mesh(skyGeo, skyMat);
-  environmentGroup.add(skyDome);
 
   return {
     environmentGroup,

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
   createVehicleByType,
   createWorldEnvironment,
@@ -98,6 +99,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const dirLightRef = useRef<THREE.DirectionalLight | null>(null);
   const hemiLightRef = useRef<THREE.HemisphereLight | null>(null);
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
+  const skyMatRef = useRef<THREE.MeshBasicMaterial | null>(null);
+  const showroomSpotRef = useRef<THREE.SpotLight | null>(null);
 
   // Engines and City Subsystems Refs
   const trafficEngineRef = useRef<TrafficEngine | null>(null);
@@ -107,6 +110,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const playerRaceCheckpointIdx = useRef<number>(1);
   const lastGPSCalcTime = useRef<number>(0);
   const lastTelemetrySendTime = useRef<number>(0);
+  const prevMissionStateKey = useRef<string>('');
 
   // Dynamic Component Refs
   const wheelsRef = useRef<{
@@ -252,62 +256,152 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     const hemiLight = hemiLightRef.current;
     const ambLight = ambientLightRef.current;
     const scene = sceneRef.current;
+    const skyMat = skyMatRef.current;
+    const spot = showroomSpotRef.current;
 
     switch (timeOfDay) {
       case 'SUNSET':
-        scene.background = new THREE.Color(0xfb923c);
+        scene.background = new THREE.Color(0xf9a875);
         scene.fog = new THREE.FogExp2(0xfdba74, 0.0022);
+        scene.environmentIntensity = 0.72;
+        if (skyMat) skyMat.color.setHex(0xfb923c);
         dirLight.color.setHex(0xf97316);
-        dirLight.intensity = 2.0;
-        dirLight.position.set(80, 25, 60);
+        dirLight.intensity = 2.1;
+        dirLight.position.set(85, 28, 65);
         hemiLight.color.setHex(0xfdba74);
         hemiLight.groundColor.setHex(0x431407);
-        hemiLight.intensity = 1.1;
+        hemiLight.intensity = 1.05;
         ambLight.color.setHex(0xffedd5);
-        ambLight.intensity = 0.55;
+        ambLight.intensity = 0.48;
+        if (spot) spot.intensity = 7.5;
         break;
 
       case 'MIDNIGHT':
-        scene.background = new THREE.Color(0x020617);
-        scene.fog = new THREE.FogExp2(0x0f172a, 0.0035);
-        dirLight.color.setHex(0x60a5fa);
-        dirLight.intensity = 0.6;
-        dirLight.position.set(40, 70, 30);
+        scene.background = new THREE.Color(0x050b1a);
+        scene.fog = new THREE.FogExp2(0x091326, 0.0032);
+        scene.environmentIntensity = 0.36;
+        if (skyMat) skyMat.color.setHex(0x050b1a);
+        dirLight.color.setHex(0x93c5fd);
+        dirLight.intensity = 0.65;
+        dirLight.position.set(45, 75, 35);
         hemiLight.color.setHex(0x1e293b);
         hemiLight.groundColor.setHex(0x020617);
         hemiLight.intensity = 0.45;
         ambLight.color.setHex(0x1e1b4b);
         ambLight.intensity = 0.25;
+        if (spot) spot.intensity = 12.0;
         break;
 
       case 'GOLDEN_HOUR':
-        scene.background = new THREE.Color(0xfef08a);
-        scene.fog = new THREE.FogExp2(0xfef9c3, 0.002);
+        scene.background = new THREE.Color(0xfde68a);
+        scene.fog = new THREE.FogExp2(0xfef3c7, 0.002);
+        scene.environmentIntensity = 0.78;
+        if (skyMat) skyMat.color.setHex(0xfacc15);
         dirLight.color.setHex(0xfacc15);
-        dirLight.intensity = 2.6;
-        dirLight.position.set(70, 45, 50);
+        dirLight.intensity = 2.5;
+        dirLight.position.set(75, 42, 55);
         hemiLight.color.setHex(0xfef08a);
         hemiLight.groundColor.setHex(0x713f12);
-        hemiLight.intensity = 1.25;
+        hemiLight.intensity = 1.15;
         ambLight.color.setHex(0xfef9c3);
-        ambLight.intensity = 0.6;
+        ambLight.intensity = 0.52;
+        if (spot) spot.intensity = 6.0;
         break;
 
       case 'DAYLIGHT':
       default:
         scene.background = new THREE.Color(0xbfe3f7);
-        scene.fog = new THREE.FogExp2(0xd6eaf8, 0.0018);
+        scene.fog = new THREE.FogExp2(0xd2e8f7, 0.0017);
+        scene.environmentIntensity = 0.85;
+        if (skyMat) skyMat.color.setHex(0x7dd3fc);
         dirLight.color.setHex(0xfffaed);
         dirLight.intensity = 2.4;
-        dirLight.position.set(65, 85, 45);
+        dirLight.position.set(75, 95, 50);
         hemiLight.color.setHex(0xdbeafe);
-        hemiLight.groundColor.setHex(0x94a3b8);
-        hemiLight.intensity = 1.35;
+        hemiLight.groundColor.setHex(0x64748b);
+        hemiLight.intensity = 1.25;
         ambLight.color.setHex(0xf1f5f9);
-        ambLight.intensity = 0.65;
+        ambLight.intensity = 0.55;
+        if (spot) spot.intensity = 4.0;
         break;
     }
+
+    cityDataRef.current?.updateTimeOfDay?.(timeOfDay);
   }, [timeOfDay]);
+
+  // Synchronize Mission Lifecycle (Start positions, Rivals Grid, Checkpoints visibility)
+  useEffect(() => {
+    const key = activeMissionSession
+      ? `${activeMissionSession.missionId}:${activeMissionSession.state}`
+      : 'NONE';
+    if (key === prevMissionStateKey.current) return;
+    prevMissionStateKey.current = key;
+
+    const cityData = cityDataRef.current;
+    const rivals = rivalsEngineRef.current;
+    const cs = carState.current;
+
+    if (!activeMissionSession) {
+      rivals?.resetToGrid();
+      if (rivals) rivals.group.visible = false;
+      cityData?.checkpointMeshes.forEach((cp) => {
+        cp.mesh.visible = false;
+      });
+      return;
+    }
+
+    if (activeMissionSession.missionId === 'MISSION_B_RACE') {
+      if (activeMissionSession.state === 'COUNTDOWN') {
+        cs.x = -50;
+        cs.z = -130;
+        cs.rotation = Math.PI / 2;
+        cs.speed = 0;
+        cs.steeringAngle = 0;
+        if (playerCarGroupRef.current) {
+          playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
+          playerCarGroupRef.current.rotation.y = cs.rotation;
+        }
+        playerRaceCheckpointIdx.current = 1;
+        if (rivals) {
+          rivals.group.visible = true;
+          rivals.resetToGrid();
+        }
+        cityData?.checkpointMeshes.forEach((cp, idx) => {
+          cp.mesh.visible = idx >= 1;
+          cp.mesh.scale.setScalar(idx === 1 ? 1.15 : 0.9);
+        });
+      } else if (activeMissionSession.state === 'ACTIVE') {
+        if (rivals) {
+          rivals.group.visible = true;
+          rivals.startRace();
+        }
+      } else if (
+        activeMissionSession.state === 'COMPLETED' ||
+        activeMissionSession.state === 'FAILED'
+      ) {
+        rivals?.resetToGrid();
+        cityData?.checkpointMeshes.forEach((cp) => {
+          cp.mesh.visible = false;
+        });
+      }
+    } else if (activeMissionSession.missionId === 'MISSION_A_DELIVERY') {
+      if (rivals) rivals.group.visible = false;
+      cityData?.checkpointMeshes.forEach((cp) => {
+        cp.mesh.visible = false;
+      });
+      if (activeMissionSession.state === 'ACTIVE') {
+        cs.x = 0;
+        cs.z = -124;
+        cs.rotation = 0; // Facing South down Herbert Macaulay Way
+        cs.speed = 0;
+        cs.steeringAngle = 0;
+        if (playerCarGroupRef.current) {
+          playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
+          playerCarGroupRef.current.rotation.y = cs.rotation;
+        }
+      }
+    }
+  }, [activeMissionSession?.missionId, activeMissionSession?.state]);
 
   // Headlights & Exterior Spotlights state sync
   useEffect(() => {
@@ -472,7 +566,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     sceneRef.current = scene;
 
     scene.background = new THREE.Color(0xbfe3f7);
-    scene.fog = new THREE.FogExp2(0xd6eaf8, 0.0018);
+    scene.fog = new THREE.FogExp2(0xd2e8f7, 0.0017);
 
     const camera = new THREE.PerspectiveCamera(
       56,
@@ -481,55 +575,105 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       1000
     );
 
-    // 2. Renderer Setup with Balanced PBR Tone Mapping
+    // 2. Software WebGL Guard + Renderer Setup with ACES Filmic & sRGB Color Management
+    let isSoftwareGl = false;
+    try {
+      const probeCanvas = document.createElement('canvas');
+      const gl = probeCanvas.getContext('webgl2') || probeCanvas.getContext('webgl');
+      const dbg = gl?.getExtension('WEBGL_debug_renderer_info');
+      const rName = dbg && gl ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : '';
+      isSoftwareGl = /SwiftShader|llvmpipe|WARP/i.test(rName);
+    } catch {}
+
     const renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: !isSoftwareGl,
       powerPreference: 'high-performance',
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = isSoftwareGl ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.25;
+    renderer.toneMappingExposure = 1.15;
     rendererRef.current = renderer;
 
     container.appendChild(renderer.domElement);
 
+    // PMREM RoomEnvironment for physically plausible metallic & glass PBR reflections
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+    const roomEnv = new RoomEnvironment();
+    const envRT = pmremGenerator.fromScene(roomEnv, 0.04);
+    scene.environment = envRT.texture;
+    scene.environmentIntensity = 0.85;
+    roomEnv.dispose();
+
+    // Atmospheric Sky Dome
+    const skyGeo = new THREE.SphereGeometry(380, 28, 18);
+    const skyMat = new THREE.MeshBasicMaterial({
+      color: 0x7dd3fc,
+      side: THREE.BackSide,
+      fog: false,
+    });
+    const skyDome = new THREE.Mesh(skyGeo, skyMat);
+    scene.add(skyDome);
+    skyMatRef.current = skyMat;
+
     // 3. Balanced Lighting Setup (Hemisphere + Sun + Ambient Fill)
-    const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x94a3b8, 1.35);
+    const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x64748b, 1.25);
     scene.add(hemiLight);
     hemiLightRef.current = hemiLight;
 
-    const ambLight = new THREE.AmbientLight(0xf1f5f9, 0.65);
+    const ambLight = new THREE.AmbientLight(0xf1f5f9, 0.55);
     scene.add(ambLight);
     ambientLightRef.current = ambLight;
 
     const dirLight = new THREE.DirectionalLight(0xfffaed, 2.4);
-    dirLight.position.set(65, 85, 45);
+    dirLight.position.set(75, 95, 50);
     dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 2048;
-    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.mapSize.width = isSoftwareGl ? 1024 : 2048;
+    dirLight.shadow.mapSize.height = isSoftwareGl ? 1024 : 2048;
     dirLight.shadow.camera.near = 1.0;
-    dirLight.shadow.camera.far = 300;
-    dirLight.shadow.camera.left = -90;
-    dirLight.shadow.camera.right = 90;
-    dirLight.shadow.camera.top = 90;
-    dirLight.shadow.camera.bottom = -90;
+    dirLight.shadow.camera.far = 340;
+    dirLight.shadow.camera.left = -135;
+    dirLight.shadow.camera.right = 135;
+    dirLight.shadow.camera.top = 135;
+    dirLight.shadow.camera.bottom = -135;
     dirLight.shadow.bias = -0.0004;
+    dirLight.shadow.normalBias = 0.025;
     scene.add(dirLight);
     dirLightRef.current = dirLight;
 
     // Accent Showroom Spotlight
-    const showroomSpot = new THREE.SpotLight(0xffffff, 4, 60, Math.PI / 4, 0.3);
-    showroomSpot.position.set(0, 16, -45);
-    showroomSpot.target.position.set(0, 0, -45);
+    const showroomSpot = new THREE.SpotLight(0xffffff, 4, 70, Math.PI / 3.5, 0.35);
+    showroomSpot.position.set(0, 18, -48);
+    showroomSpot.target.position.set(0, 0, -48);
     scene.add(showroomSpot);
     scene.add(showroomSpot.target);
+    showroomSpotRef.current = showroomSpot;
 
-    // 4. Build Procedural Environment & Assets
+    // 4. Build Lagos Mainland City District + Showroom & Interactive Environment
+    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+    const cityData = buildLagosCityDistrict(maxAnisotropy);
+    cityDataRef.current = cityData;
+    scene.add(cityData.cityGroup);
+
     const { environmentGroup, podiums } = createWorldEnvironment();
     scene.add(environmentGroup);
+
+    // Initialize Traffic AI, Rivals AI, and Collision Engine
+    const trafficEngine = new TrafficEngine();
+    trafficEngineRef.current = trafficEngine;
+    scene.add(trafficEngine.group);
+
+    const rivalsEngine = new RivalsEngine();
+    rivalsEngineRef.current = rivalsEngine;
+    rivalsEngine.group.visible = false; // Visible when race mission active
+    scene.add(rivalsEngine.group);
+
+    const collisionEngine = new CollisionEngine();
+    collisionEngineRef.current = collisionEngine;
 
     // 5. Build Drivable Player Car (from active customization type)
     const playerCar = createVehicleByType(customization);
@@ -549,7 +693,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     carState.current.z = 10;
     carState.current.rotation = Math.PI;
 
-    // Floating Interactive 3D Holographic Marker Above Marketplace Gate
+    // Floating Interactive 3D Holographic Marker Above Marketplace Gate [0, 100]
     const markerCanvas = document.createElement('canvas');
     markerCanvas.width = 512;
     markerCanvas.height = 128;
@@ -570,11 +714,18 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       mctx.fillText('[ DRIVE IN OR PRESS E ]', 256, 92);
     }
     const markerTex = new THREE.CanvasTexture(markerCanvas);
+    markerTex.colorSpace = THREE.SRGBColorSpace;
     const markerSpriteMat = new THREE.SpriteMaterial({ map: markerTex, transparent: true });
     const marketplaceMarkerSprite = new THREE.Sprite(markerSpriteMat);
-    marketplaceMarkerSprite.position.set(0, 8.2, 32);
-    marketplaceMarkerSprite.scale.set(11, 2.8, 1);
+    marketplaceMarkerSprite.position.set(0, 13.0, 100);
+    marketplaceMarkerSprite.scale.set(13, 3.2, 1);
     scene.add(marketplaceMarkerSprite);
+
+    // Pre-allocated scratch vectors for zero-GC animation loop
+    const tmpPodWorldPos = new THREE.Vector3();
+    const tmpDriverOffset = new THREE.Vector3();
+    const tmpUpAxis = new THREE.Vector3(0, 1, 0);
+    const tmpLookTarget = new THREE.Vector3();
 
     // 6. Animation & Physics Game Loop
     let animationFrameId: number;
@@ -592,17 +743,20 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       });
 
       // Holographic marker float pulse
-      marketplaceMarkerSprite.position.y = 8.2 + Math.sin(currentTime * 0.003) * 0.35;
+      marketplaceMarkerSprite.position.y = 13.0 + Math.sin(currentTime * 0.003) * 0.35;
 
-      // Input Resolution (Keyboard + Touch)
+      // Input Resolution (Keyboard + Touch), locked during Race Countdown
+      const isRaceCountdown = activeMissionSessionRef.current?.state === 'COUNTDOWN';
       const currentVirtual = virtualInputRef.current;
-      const input = {
-        forward: Boolean(keys.current['w'] || keys.current['arrowup'] || currentVirtual?.forward),
-        backward: Boolean(keys.current['s'] || keys.current['arrowdown'] || currentVirtual?.backward),
-        left: Boolean(keys.current['a'] || keys.current['arrowleft'] || currentVirtual?.left),
-        right: Boolean(keys.current['d'] || keys.current['arrowright'] || currentVirtual?.right),
-        handbrake: Boolean(keys.current[' '] || keys.current['space'] || currentVirtual?.handbrake),
-      };
+      const input = isRaceCountdown
+        ? { forward: false, backward: false, left: false, right: false, handbrake: false }
+        : {
+            forward: Boolean(keys.current['w'] || keys.current['arrowup'] || currentVirtual?.forward),
+            backward: Boolean(keys.current['s'] || keys.current['arrowdown'] || currentVirtual?.backward),
+            left: Boolean(keys.current['a'] || keys.current['arrowleft'] || currentVirtual?.left),
+            right: Boolean(keys.current['d'] || keys.current['arrowright'] || currentVirtual?.right),
+            handbrake: Boolean(keys.current[' '] || keys.current['space'] || currentVirtual?.handbrake),
+          };
 
       const cs = carState.current;
       const baseSpec = vehicleSpecRef.current;
@@ -718,26 +872,105 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         onAwardCreditsRef.current?.(25, 'Distance Cruise Bonus');
       }
 
-      // Track boundaries: -185 to 185
+      // Track boundaries: -176 to 176
       const nextX = cs.x + vx;
       const nextZ = cs.z + vz;
 
-      if (Math.abs(nextX) < 185) {
+      if (Math.abs(nextX) < 176) {
         cs.x = nextX;
       } else {
         cs.speed = -cs.speed * 0.25;
       }
 
-      if (Math.abs(nextZ) < 185) {
+      if (Math.abs(nextZ) < 176) {
         cs.z = nextZ;
       } else {
         cs.speed = -cs.speed * 0.25;
       }
 
+      // Autonomous Traffic AI & Rival Racers Update
+      trafficEngine.update(delta, cs.x, cs.z, cs.speed);
+      rivalsEngine.update(delta, currentTime);
+
+      // Building, Traffic & Rival Collision Resolution
+      const collisionEvent = collisionEngine.checkAndResolvePlayerCollisions(
+        cs,
+        1.05,
+        2.3,
+        cityData.collidableBuildings,
+        trafficEngine.getTrafficBoundingBoxes(),
+        rivalsEngine.isRaceActive ? rivalsEngine.getRivalsBoundingBoxes() : []
+      );
+
       // Sync 3D model with physics state
       if (playerCarGroupRef.current) {
         playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
         playerCarGroupRef.current.rotation.y = cs.rotation;
+      }
+
+      // Mission Update & Street Race Checkpoint Detection
+      const activeSession = activeMissionSessionRef.current;
+      if (activeSession) {
+        if (activeSession.missionId === 'MISSION_B_RACE' && activeSession.state === 'ACTIVE') {
+          const cpIdx = playerRaceCheckpointIdx.current;
+          const targetCP = RIVAL_RACE_CHECKPOINTS[cpIdx];
+          if (targetCP) {
+            const distToCP = Math.hypot(cs.x - targetCP.x, cs.z - targetCP.z);
+            if (distToCP < targetCP.radius + 3.5) {
+              const standings = rivalsEngine.getRaceStandings({
+                checkpointIdx: cpIdx + 1,
+                distToNext: 0,
+                isFinished: cpIdx >= RIVAL_RACE_CHECKPOINTS.length - 1,
+              });
+              onRaceCheckpointPassedRef.current?.(cpIdx, standings.rank);
+
+              const completedMesh = cityData.checkpointMeshes[cpIdx];
+              if (completedMesh) completedMesh.mesh.visible = false;
+
+              if (cpIdx < RIVAL_RACE_CHECKPOINTS.length - 1) {
+                playerRaceCheckpointIdx.current = cpIdx + 1;
+                const nextMesh = cityData.checkpointMeshes[cpIdx + 1];
+                if (nextMesh) nextMesh.mesh.scale.setScalar(1.15);
+              }
+            }
+          }
+        }
+
+        const hasHeavyImpact = Boolean(collisionEvent && collisionEvent.impactVelocity > 6);
+        onMissionUpdateRef.current?.(
+          delta,
+          { x: cs.x, z: cs.z, speed: cs.speed },
+          hasHeavyImpact
+        );
+      }
+
+      // Throttled Dynamic GPS Road Guidance Ribbon (every 250ms)
+      if (currentTime - lastGPSCalcTime.current > 250) {
+        lastGPSCalcTime.current = currentTime;
+        const dest = activeDestinationRef.current;
+        if (dest) {
+          const path = findShortestRoadPath({ x: cs.x, z: cs.z }, dest);
+          cityData.updateGPSRoute(path);
+        } else {
+          cityData.updateGPSRoute([]);
+        }
+      }
+
+      // Throttled Traffic & Rival Map Radar Updates (every 160ms)
+      if (currentTime - lastTelemetrySendTime.current > 160) {
+        lastTelemetrySendTime.current = currentTime;
+        if (onTrafficPositionsUpdateRef.current) {
+          onTrafficPositionsUpdateRef.current(
+            trafficEngine.vehicles.map((v) => ({ x: v.x, z: v.z }))
+          );
+        }
+        if (onRivalPositionsUpdateRef.current) {
+          onRivalPositionsUpdateRef.current(
+            rivalsEngine.isRaceActive
+              ? rivalsEngine.rivals.map((r) => ({ name: r.name, x: r.x, z: r.z }))
+              : []
+          );
+        }
       }
 
       // Wheels physics: front wheel steering and spin rotation
@@ -824,18 +1057,17 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       // Zone Detection & Proximity Hotspots
       let detectedZone: string | null = null;
 
-      // 1. Marketplace Grand Gate Check (at [0, 0, 32])
-      const distToPortal = Math.hypot(cs.x - 0, cs.z - 32);
-      if (distToPortal < 8) {
+      // 1. Marketplace Grand Gate Check (at [0, 0, 100])
+      const distToPortal = Math.hypot(cs.x - 0, cs.z - 100);
+      if (distToPortal < 12) {
         detectedZone = 'marketplace';
       }
 
       // 2. Showroom Podiums Check
       podiums.forEach((pod) => {
-        const podWorldPos = new THREE.Vector3();
-        pod.group.getWorldPosition(podWorldPos);
-        const distToPod = Math.hypot(cs.x - podWorldPos.x, cs.z - podWorldPos.z);
-        if (distToPod < 7) {
+        pod.group.getWorldPosition(tmpPodWorldPos);
+        const distToPod = Math.hypot(cs.x - tmpPodWorldPos.x, cs.z - tmpPodWorldPos.z);
+        if (distToPod < 8.5) {
           detectedZone = pod.carId;
         }
       });
@@ -846,15 +1078,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         detectedZone = 'customizer';
       }
 
-      // 4. VIP Concierge Lounge Check (at [50, 0, 0])
-      const distToLounge = Math.hypot(cs.x - 50, cs.z - 0);
-      if (distToLounge < 9.5) {
+      // 4. VIP Concierge Lounge Check (at [56, 0, 16] forecourt of [57, 0, 22])
+      const distToLounge = Math.hypot(cs.x - 56, cs.z - 16);
+      if (distToLounge < 10.5) {
         detectedZone = 'dealer-lounge';
       }
 
       // 5. Speed Trap Trigger (at [-55, 0, 0])
       const distToSpeedTrap = Math.hypot(cs.x - (-55), cs.z - 0);
-      if (distToSpeedTrap < 5.5 && speedKmh > 20) {
+      if (distToSpeedTrap < 6.0 && speedKmh > 20) {
         const now = performance.now();
         if (now - lastSpeedTrapTrigger.current > 4000) {
           lastSpeedTrapTrigger.current = now;
@@ -872,43 +1104,48 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         onZoneChangeRef.current?.(detectedZone);
       }
 
-      // CAMERA MODES ORCHESTRATION
+      // CAMERA MODES ORCHESTRATION (Zero-GC using pre-allocated scratch vectors)
       const currentCameraMode = cameraModeRef.current;
       const currentCockpitHotspot = cockpitHotspotRef.current;
       const isCustomizerOpen = isCustomizerOpenRef.current;
 
       if (currentCameraMode === 'COCKPIT') {
-        // Cockpit Camera with Hotspot Focusing
         const baseOffset = baseSpec.cockpitOffset;
-        let hotspotOffset = new THREE.Vector3(baseOffset.x, baseOffset.y, baseOffset.z);
+        let ox = baseOffset.x;
+        let oy = baseOffset.y;
+        let oz = baseOffset.z;
         let lookTargetDist = 28;
         let lookTargetY = baseSpec.lookTargetHeight;
 
         if (currentCockpitHotspot === 'DASHBOARD') {
-          hotspotOffset = new THREE.Vector3(baseOffset.x, baseOffset.y - 0.12, baseOffset.z + 0.18);
+          oy = baseOffset.y - 0.12;
+          oz = baseOffset.z + 0.18;
           lookTargetDist = 1.2;
           lookTargetY = baseOffset.y - 0.05;
         } else if (currentCockpitHotspot === 'CONSOLE') {
-          hotspotOffset = new THREE.Vector3(0, baseOffset.y - 0.1, baseOffset.z + 0.1);
+          ox = 0;
+          oy = baseOffset.y - 0.1;
+          oz = baseOffset.z + 0.1;
           lookTargetDist = 1.5;
           lookTargetY = baseOffset.y - 0.15;
         } else if (currentCockpitHotspot === 'WINDSHIELD') {
-          hotspotOffset = new THREE.Vector3(0, baseOffset.y + 0.1, baseOffset.z + 0.6);
+          ox = 0;
+          oy = baseOffset.y + 0.1;
+          oz = baseOffset.z + 0.6;
           lookTargetDist = 35;
           lookTargetY = baseSpec.lookTargetHeight;
         }
 
-        const driverOffset = hotspotOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), cs.rotation);
-        camera.position.set(cs.x + driverOffset.x, driverOffset.y, cs.z + driverOffset.z);
+        tmpDriverOffset.set(ox, oy, oz).applyAxisAngle(tmpUpAxis, cs.rotation);
+        camera.position.set(cs.x + tmpDriverOffset.x, tmpDriverOffset.y, cs.z + tmpDriverOffset.z);
 
-        const lookTarget = new THREE.Vector3(
+        tmpLookTarget.set(
           cs.x + Math.sin(cs.rotation) * lookTargetDist,
           lookTargetY,
           cs.z + Math.cos(cs.rotation) * lookTargetDist
         );
-        camera.lookAt(lookTarget);
+        camera.lookAt(tmpLookTarget);
       } else if (currentCameraMode === 'ORBIT' || isCustomizerOpen) {
-        // Showcase Orbit Camera around Vehicle
         const orbitAngle = currentTime * 0.0006;
         const orbitDistance = 8.0;
         camera.position.set(
@@ -918,7 +1155,6 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         );
         camera.lookAt(cs.x, 0.7, cs.z);
       } else if (currentCameraMode === 'DRONE') {
-        // High-angle tactical tracking drone
         const droneDist = 20;
         const targetCamX = cs.x - Math.sin(cs.rotation) * droneDist;
         const targetCamZ = cs.z - Math.cos(cs.rotation) * droneDist;
@@ -928,7 +1164,6 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         camera.position.z += (targetCamZ - camera.position.z) * delta * 2.2;
         camera.lookAt(cs.x, 0.5, cs.z);
       } else {
-        // CHASE CAMERA (Forward-facing responsive 3rd-person)
         const targetCamX = cs.x - Math.sin(cs.rotation) * baseSpec.chaseDistance;
         const targetCamZ = cs.z - Math.cos(cs.rotation) * baseSpec.chaseDistance;
 
@@ -936,12 +1171,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         camera.position.y += (baseSpec.chaseHeight - camera.position.y) * delta * 4.5;
         camera.position.z += (targetCamZ - camera.position.z) * delta * 6.5;
 
-        const lookAtTarget = new THREE.Vector3(
+        tmpLookTarget.set(
           cs.x + Math.sin(cs.rotation) * baseSpec.chaseLookAhead,
           0.7,
           cs.z + Math.cos(cs.rotation) * baseSpec.chaseLookAhead
         );
-        camera.lookAt(lookAtTarget);
+        camera.lookAt(tmpLookTarget);
       }
 
       renderer.render(scene, camera);
@@ -954,6 +1189,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       if (!container || !renderer) return;
       const width = container.clientWidth;
       const height = container.clientHeight;
+      if (width <= 0 || height <= 0) return;
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
@@ -964,6 +1200,13 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
+      cityData.dispose?.();
+      skyGeo.dispose();
+      skyMat.dispose();
+      markerTex.dispose();
+      markerSpriteMat.dispose();
+      envRT.dispose();
+      pmremGenerator.dispose();
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
