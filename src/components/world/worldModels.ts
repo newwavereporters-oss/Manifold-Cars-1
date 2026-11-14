@@ -3,6 +3,8 @@ import { VehicleModelFactory } from '../../three/VehicleModelFactory';
 
 export { VehicleModelFactory };
 export type VehicleModelType = 'SPORTS_COUPE' | 'LUXURY_SUV' | 'EXECUTIVE_SEDAN' | 'RUGGED_4X4';
+export type HeadlightState = 'OFF' | 'LOW' | 'HIGH';
+export type TurnSignalState = 'OFF' | 'LEFT' | 'RIGHT';
 
 export interface VehicleSpecProfile {
   id: VehicleModelType;

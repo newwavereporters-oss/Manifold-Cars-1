@@ -1,103 +1,119 @@
-import React, { useRef, useEffect } from 'react';
-import {
-  Volume2,
-  Power,
-  Lightbulb,
-  AlertTriangle,
-  Camera,
-  Sliders,
-} from 'lucide-react';
-import { HeadlightState } from './CockpitDashboardOverlay';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { CameraViewMode } from './WorldCanvas';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
 
-export interface MobileTouchControlsProps {
-  onVirtualInput: (input: {
-    forward: boolean;
-    backward: boolean;
-    left: boolean;
-    right: boolean;
-    handbrake: boolean;
-  }) => void;
-  virtualInputState: {
-    forward: boolean;
-    backward: boolean;
-    left: boolean;
-    right: boolean;
-    handbrake: boolean;
-  };
-  isEngineRunning: boolean;
-  onToggleEngine: () => void;
-  headlightState: HeadlightState;
-  onCycleHeadlights: () => void;
-  hazardLights: boolean;
-  onToggleHazard: () => void;
-  onHornDown: () => void;
-  onHornUp: () => void;
-  cameraMode: CameraViewMode;
-  onCycleCamera: () => void;
-  driveMode: AudioDriveMode;
-  onCycleDriveMode: () => void;
-  speedKmh?: number;
-  gear?: string;
-  rpm?: number;
+type VirtualControlKey = 'forward' | 'backward' | 'left' | 'right' | 'handbrake';
+
+export interface VirtualDrivingInput {
+  forward: boolean;
+  backward: boolean;
+  left: boolean;
+  right: boolean;
+  handbrake: boolean;
 }
+
+export interface MobileTouchControlsProps {
+  onVirtualInput: (input: VirtualDrivingInput) => void;
+  virtualInputState: VirtualDrivingInput;
+  cameraMode: CameraViewMode;
+  driveMode: AudioDriveMode;
+  speedKmh?: number;
+  disabled?: boolean;
+}
+
+const EMPTY_INPUT: VirtualDrivingInput = {
+  forward: false,
+  backward: false,
+  left: false,
+  right: false,
+  handbrake: false,
+};
 
 export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
   onVirtualInput,
   virtualInputState,
-  isEngineRunning,
-  onToggleEngine,
-  headlightState,
-  onCycleHeadlights,
-  hazardLights,
-  onToggleHazard,
-  onHornDown,
-  onHornUp,
   cameraMode,
-  onCycleCamera,
   driveMode,
-  onCycleDriveMode,
   speedKmh = 0,
-  gear = 'P',
+  disabled = false,
 }) => {
-  // Direct mutable ref to track simultaneous multi-touch states (e.g. thumb 1 steering, thumb 2 throttle)
-  const activeKeysRef = useRef({
-    forward: false,
-    backward: false,
-    left: false,
-    right: false,
-    handbrake: false,
+  // Per-control active pointer IDs guarantee true simultaneous multi-touch without cross-talk or stuck inputs
+  const activePointersRef = useRef<Record<VirtualControlKey, Set<number>>>({
+    forward: new Set(),
+    backward: new Set(),
+    left: new Set(),
+    right: new Set(),
+    handbrake: new Set(),
   });
 
-  // Keep ref synchronized with incoming parent state if modified externally
-  useEffect(() => {
-    activeKeysRef.current = { ...virtualInputState };
-  }, [virtualInputState]);
+  const activeKeysRef = useRef<VirtualDrivingInput>({ ...EMPTY_INPUT });
 
-  // Window blur release safety
-  useEffect(() => {
-    const handleReleaseAll = () => {
-      const keys = activeKeysRef.current;
-      if (keys.forward || keys.backward || keys.left || keys.right || keys.handbrake) {
-        activeKeysRef.current = {
-          forward: false,
-          backward: false,
-          left: false,
-          right: false,
-          handbrake: false,
-        };
-        onVirtualInput({ ...activeKeysRef.current });
-      }
+  const emitSnapshot = useCallback(() => {
+    const next: VirtualDrivingInput = {
+      forward: activePointersRef.current.forward.size > 0,
+      backward: activePointersRef.current.backward.size > 0,
+      left: activePointersRef.current.left.size > 0,
+      right: activePointersRef.current.right.size > 0,
+      handbrake: activePointersRef.current.handbrake.size > 0,
     };
 
-    window.addEventListener('blur', handleReleaseAll);
-    return () => {
-      window.removeEventListener('blur', handleReleaseAll);
-    };
+    const prev = activeKeysRef.current;
+    if (
+      prev.forward === next.forward &&
+      prev.backward === next.backward &&
+      prev.left === next.left &&
+      prev.right === next.right &&
+      prev.handbrake === next.handbrake
+    ) {
+      return;
+    }
+    activeKeysRef.current = next;
+    onVirtualInput(next);
   }, [onVirtualInput]);
 
-  const triggerHaptic = (duration = 15) => {
+  const releaseAllControls = useCallback(() => {
+    (Object.keys(activePointersRef.current) as VirtualControlKey[]).forEach((k) => {
+      activePointersRef.current[k].clear();
+    });
+    const prev = activeKeysRef.current;
+    if (prev.forward || prev.backward || prev.left || prev.right || prev.handbrake) {
+      activeKeysRef.current = { ...EMPTY_INPUT };
+      onVirtualInput({ ...EMPTY_INPUT });
+    }
+  }, [onVirtualInput]);
+
+  // Safety release on blur, tab hide, camera switch, or disable
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) releaseAllControls();
+    };
+    window.addEventListener('blur', releaseAllControls);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('blur', releaseAllControls);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      releaseAllControls();
+    };
+  }, [releaseAllControls]);
+
+  useEffect(() => {
+    releaseAllControls();
+  }, [cameraMode, disabled, releaseAllControls]);
+
+  const showDriftButton =
+    driveMode === 'DRIFT' ||
+    driveMode === 'TRACK' ||
+    (driveMode === 'SPORT' && speedKmh >= 18);
+
+  // Release handbrake cleanly if Drift button hides due to mode/speed shift
+  useEffect(() => {
+    if (!showDriftButton && activePointersRef.current.handbrake.size > 0) {
+      activePointersRef.current.handbrake.clear();
+      emitSnapshot();
+    }
+  }, [showDriftButton, emitSnapshot]);
+
+  const triggerHaptic = (duration = 14) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       try {
         navigator.vibrate(duration);
@@ -105,60 +121,44 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
     }
   };
 
-  const setKeyActive = (
-    key: 'forward' | 'backward' | 'left' | 'right' | 'handbrake',
-    active: boolean
-  ) => {
-    if (activeKeysRef.current[key] === active) return;
-    activeKeysRef.current[key] = active;
-
-    if (active) {
-      triggerHaptic(18);
-      // Ensure Web Audio context is initialized on first user touch gesture
-      engineAudio.init();
-    }
-
-    onVirtualInput({
-      ...activeKeysRef.current,
-      [key]: active,
-    });
-  };
-
-  // Helper factory that creates bulletproof touch and pointer listeners
-  const bindControl = (key: 'forward' | 'backward' | 'left' | 'right' | 'handbrake') => ({
-    onPointerDown: (e: React.PointerEvent) => {
+  const bindPointerControl = (key: VirtualControlKey) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (disabled) return;
       e.preventDefault();
+      e.stopPropagation();
       try {
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        e.currentTarget.setPointerCapture(e.pointerId);
       } catch {}
-      setKeyActive(key, true);
+      const set = activePointersRef.current[key];
+      const wasEmpty = set.size === 0;
+      set.add(e.pointerId);
+      if (wasEmpty) {
+        triggerHaptic(14);
+        engineAudio.init();
+      }
+      emitSnapshot();
     },
-    onPointerUp: (e: React.PointerEvent) => {
+    onPointerUp: (e: React.PointerEvent<HTMLButtonElement>) => {
       e.preventDefault();
+      e.stopPropagation();
       try {
-        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
       } catch {}
-      setKeyActive(key, false);
+      activePointersRef.current[key].delete(e.pointerId);
+      emitSnapshot();
     },
-    onPointerCancel: (e: React.PointerEvent) => {
+    onPointerCancel: (e: React.PointerEvent<HTMLButtonElement>) => {
       e.preventDefault();
-      setKeyActive(key, false);
+      activePointersRef.current[key].delete(e.pointerId);
+      emitSnapshot();
     },
-    onTouchStart: (e: React.TouchEvent) => {
-      e.preventDefault();
-      setKeyActive(key, true);
+    onLostPointerCapture: (e: React.PointerEvent<HTMLButtonElement>) => {
+      activePointersRef.current[key].delete(e.pointerId);
+      emitSnapshot();
     },
-    onTouchEnd: (e: React.TouchEvent) => {
-      e.preventDefault();
-      setKeyActive(key, false);
-    },
-    onTouchCancel: (e: React.TouchEvent) => {
-      e.preventDefault();
-      setKeyActive(key, false);
-    },
-    onContextMenu: (e: React.MouseEvent) => {
-      e.preventDefault();
-    },
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
     style: {
       touchAction: 'none' as const,
       userSelect: 'none' as const,
@@ -166,218 +166,101 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
     },
   });
 
-  const isLeftActive = activeKeysRef.current.left || virtualInputState.left;
-  const isRightActive = activeKeysRef.current.right || virtualInputState.right;
-  const isForwardActive = activeKeysRef.current.forward || virtualInputState.forward;
-  const isBackwardActive = activeKeysRef.current.backward || virtualInputState.backward;
-  const isHandbrakeActive = activeKeysRef.current.handbrake || virtualInputState.handbrake;
+  if (disabled) return null;
+
+  const isLeftActive = virtualInputState.left;
+  const isRightActive = virtualInputState.right;
+  const isForwardActive = virtualInputState.forward;
+  const isBackwardActive = virtualInputState.backward;
+  const isHandbrakeActive = virtualInputState.handbrake;
 
   return (
-    <div className="absolute inset-x-0 bottom-0 pointer-events-none z-30 flex flex-col justify-end p-2 sm:p-3 pb-4 select-none touch-none">
-      {/* Mobile Top Quick Actions Strip */}
-      <div className="flex items-center justify-between w-full mb-2.5 px-1 pointer-events-auto">
-        {/* Left Systems Bar */}
-        <div className="flex items-center gap-1.5 bg-[#071A2B]/90 backdrop-blur-md p-1 rounded-2xl border border-white/15 shadow-xl">
-          {/* Engine Ignition */}
+    <div
+      className="fixed inset-x-0 bottom-0 z-30 pointer-events-none select-none touch-none pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]"
+      aria-label="Mobile Driving Controls"
+    >
+      <div className="flex items-end justify-between w-full max-w-5xl mx-auto gap-2">
+        {/* LEFT THUMB ZONE: STEERING */}
+        <div className="pointer-events-auto flex items-center gap-2.5 sm:gap-3">
           <button
-            onClick={() => {
-              triggerHaptic(25);
-              engineAudio.init();
-              onToggleEngine();
-            }}
-            className={`p-2 sm:p-2.5 rounded-xl transition-all ${
-              isEngineRunning
-                ? 'bg-red-600 text-white shadow-lg shadow-red-600/40 ring-1 ring-red-400'
-                : 'bg-white/10 text-gray-400 hover:text-white'
-            }`}
-            title="Ignition Engine Start/Stop"
-          >
-            <Power className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
-          </button>
-
-          {/* Headlights */}
-          <button
-            onClick={() => {
-              triggerHaptic(15);
-              onCycleHeadlights();
-            }}
-            className={`p-2 sm:p-2.5 rounded-xl transition-all ${
-              headlightState === 'HIGH'
-                ? 'bg-blue-500 text-white shadow-md'
-                : headlightState === 'LOW'
-                ? 'bg-emerald-500 text-white'
-                : 'bg-white/10 text-gray-400'
-            }`}
-            title="Headlights"
-          >
-            <Lightbulb className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
-          </button>
-
-          {/* Hazard Lights */}
-          <button
-            onClick={() => {
-              triggerHaptic(15);
-              onToggleHazard();
-            }}
-            className={`p-2 sm:p-2.5 rounded-xl transition-all ${
-              hazardLights ? 'bg-red-500 text-white animate-pulse' : 'bg-white/10 text-gray-400'
-            }`}
-            title="Hazards"
-          >
-            <AlertTriangle className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
-          </button>
-
-          {/* Dual Horn */}
-          <button
-            onPointerDown={(e) => {
-              e.preventDefault();
-              triggerHaptic(25);
-              engineAudio.init();
-              onHornDown();
-            }}
-            onPointerUp={(e) => {
-              e.preventDefault();
-              onHornUp();
-            }}
-            onPointerCancel={onHornUp}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              triggerHaptic(25);
-              engineAudio.init();
-              onHornDown();
-            }}
-            onTouchEnd={(e) => {
-              e.preventDefault();
-              onHornUp();
-            }}
-            onTouchCancel={onHornUp}
-            className="p-2 sm:p-2.5 rounded-xl bg-white/10 active:bg-yellow-400 active:text-black text-yellow-400 transition-all select-none"
-            title="Horn"
-          >
-            <Volume2 className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
-          </button>
-        </div>
-
-        {/* Center: Live Mobile Telemetry Cluster */}
-        <div className="flex items-center gap-2 bg-[#071A2B]/90 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-white/15 shadow-xl">
-          <span className="text-xs font-black text-[#EF233C] font-mono">{gear}</span>
-          <span className="w-px h-3 bg-white/20" />
-          <div className="flex items-baseline gap-0.5 font-mono">
-            <span className="text-sm font-black text-white tabular-nums">{speedKmh}</span>
-            <span className="text-[8px] text-gray-400 font-bold uppercase">KM/H</span>
-          </div>
-        </div>
-
-        {/* Right Settings Bar */}
-        <div className="flex items-center gap-1.5 bg-[#071A2B]/90 backdrop-blur-md p-1 rounded-2xl border border-white/15 shadow-xl">
-          {/* Drive Mode Quick Switcher */}
-          <button
-            onClick={() => {
-              triggerHaptic(15);
-              onCycleDriveMode();
-            }}
-            className="px-2.5 py-1.5 rounded-xl bg-white/10 text-[10px] font-black uppercase text-white flex items-center gap-1 active:bg-white/20 transition-all"
-            title="Drive Mode"
-          >
-            <Sliders className="w-3.5 h-3.5 text-[#EF233C]" />
-            <span>{driveMode}</span>
-          </button>
-
-          {/* Camera View Switcher */}
-          <button
-            onClick={() => {
-              triggerHaptic(15);
-              onCycleCamera();
-            }}
-            className="px-2.5 py-1.5 rounded-xl bg-white/10 text-[10px] font-black uppercase text-white flex items-center gap-1 active:bg-white/20 transition-all"
-            title="Camera View"
-          >
-            <Camera className="w-3.5 h-3.5 text-blue-400" />
-            <span>{cameraMode}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Driving Controls: Left Steering Thumb Cluster & Right Pedals Thumb Cluster */}
-      <div className="flex items-end justify-between w-full pointer-events-auto px-1 gap-2">
-        {/* Left Thumb: Steering Controls */}
-        <div className="flex items-center gap-2.5">
-          {/* Steer Left Button */}
-          <button
-            {...bindControl('left')}
-            className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl border-2 transition-all flex flex-col items-center justify-center font-black text-2xl shadow-2xl active:scale-95 ${
+            type="button"
+            {...bindPointerControl('left')}
+            className={`w-[66px] h-[66px] sm:w-20 sm:h-20 rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
               isLeftActive
-                ? 'bg-[#EF233C] border-[#EF233C] text-white scale-95 shadow-[#EF233C]/60 ring-4 ring-[#EF233C]/30'
-                : 'bg-[#071A2B]/95 backdrop-blur-md border-white/25 text-white active:bg-white/20'
+                ? 'bg-[#EF233C] border-red-300 text-white scale-95 ring-4 ring-[#EF233C]/30'
+                : 'bg-[#071A2B]/85 backdrop-blur-md border-white/25 text-white'
             }`}
-            title="Steer Left"
+            aria-label="Steer Left"
           >
-            <span>◀</span>
-            <span className="text-[9px] font-mono opacity-60 mt-0.5 tracking-wider">LEFT</span>
+            <span className="text-xl sm:text-2xl leading-none font-black">◀</span>
+            <span className="text-[9px] font-mono opacity-75 mt-1 tracking-wider font-bold">
+              LEFT
+            </span>
           </button>
 
-          {/* Steer Right Button */}
           <button
-            {...bindControl('right')}
-            className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl border-2 transition-all flex flex-col items-center justify-center font-black text-2xl shadow-2xl active:scale-95 ${
+            type="button"
+            {...bindPointerControl('right')}
+            className={`w-[66px] h-[66px] sm:w-20 sm:h-20 rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
               isRightActive
-                ? 'bg-[#EF233C] border-[#EF233C] text-white scale-95 shadow-[#EF233C]/60 ring-4 ring-[#EF233C]/30'
-                : 'bg-[#071A2B]/95 backdrop-blur-md border-white/25 text-white active:bg-white/20'
+                ? 'bg-[#EF233C] border-red-300 text-white scale-95 ring-4 ring-[#EF233C]/30'
+                : 'bg-[#071A2B]/85 backdrop-blur-md border-white/25 text-white'
             }`}
-            title="Steer Right"
+            aria-label="Steer Right"
           >
-            <span>▶</span>
-            <span className="text-[9px] font-mono opacity-60 mt-0.5 tracking-wider">RIGHT</span>
+            <span className="text-xl sm:text-2xl leading-none font-black">▶</span>
+            <span className="text-[9px] font-mono opacity-75 mt-1 tracking-wider font-bold">
+              RIGHT
+            </span>
           </button>
         </div>
 
-        {/* Handbrake / Drift Pill (Center) */}
-        <div className="pb-1">
-          <button
-            {...bindControl('handbrake')}
-            className={`px-3.5 py-3 sm:px-4 sm:py-3.5 rounded-2xl border-2 transition-all flex flex-col items-center justify-center font-black text-[11px] sm:text-xs uppercase tracking-wider shadow-2xl active:scale-95 ${
-              isHandbrakeActive
-                ? 'bg-amber-500 border-amber-500 text-black scale-95 shadow-amber-500/60 ring-4 ring-amber-400/30'
-                : 'bg-[#071A2B]/95 backdrop-blur-md border-white/25 text-amber-400 active:bg-white/20'
-            }`}
-            title="Handbrake Drift"
-          >
-            <span>DRIFT</span>
-            <span className="text-[8px] font-mono opacity-70">BRAKE</span>
-          </button>
-        </div>
+        {/* RIGHT THUMB ZONE: OPTIONAL DRIFT + BRAKE/REVERSE + GAS */}
+        <div className="pointer-events-auto flex items-end gap-2 sm:gap-3">
+          {showDriftButton && (
+            <button
+              type="button"
+              {...bindPointerControl('handbrake')}
+              className={`w-13 h-15 sm:w-16 sm:h-18 rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
+                isHandbrakeActive
+                  ? 'bg-amber-400 border-amber-200 text-slate-950 scale-95 ring-4 ring-amber-400/35'
+                  : 'bg-[#071A2B]/85 backdrop-blur-md border-amber-400/45 text-amber-300'
+              }`}
+              aria-label="Drift Handbrake"
+            >
+              <span className="text-[10px] sm:text-xs font-black tracking-wider">DRIFT</span>
+            </button>
+          )}
 
-        {/* Right Thumb: Sport Pedals (Brake/Reverse & Gas Throttle) */}
-        <div className="flex items-end gap-3">
-          {/* Brake / Reverse Pedal */}
           <button
-            {...bindControl('backward')}
-            className={`w-16 h-20 sm:w-18 sm:h-24 rounded-2xl border-2 transition-all flex flex-col items-center justify-center font-black uppercase shadow-2xl active:scale-95 ${
+            type="button"
+            {...bindPointerControl('backward')}
+            className={`w-[64px] h-[74px] sm:w-18 sm:h-24 rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
               isBackwardActive
-                ? 'bg-red-600 border-red-500 text-white scale-95 shadow-red-600/70 ring-4 ring-red-500/30'
-                : 'bg-[#071A2B]/95 backdrop-blur-md border-white/25 text-red-400 active:bg-white/20'
+                ? 'bg-red-600 border-red-300 text-white scale-95 ring-4 ring-red-500/35'
+                : 'bg-[#071A2B]/88 backdrop-blur-md border-white/25 text-red-400'
             }`}
-            title="Brake / Reverse Pedal"
+            aria-label="Brake and Reverse"
           >
-            <span className="text-xl sm:text-2xl leading-none">▼</span>
-            <span className="text-[10px] sm:text-[11px] font-mono mt-1.5 font-black tracking-wider">
+            <span className="text-lg sm:text-xl leading-none font-black">▼</span>
+            <span className="text-[10px] sm:text-[11px] font-mono mt-1 font-black tracking-wider">
               BRAKE
             </span>
-            <span className="text-[8px] font-mono opacity-60">REV</span>
+            <span className="text-[8px] font-mono opacity-65">REV</span>
           </button>
 
-          {/* Gas Throttle Pedal */}
           <button
-            {...bindControl('forward')}
-            className={`w-18 h-24 sm:w-20 sm:h-28 rounded-2xl border-2 transition-all flex flex-col items-center justify-center font-black uppercase shadow-2xl active:scale-95 ${
+            type="button"
+            {...bindPointerControl('forward')}
+            className={`w-[74px] h-[88px] sm:w-20 sm:h-28 rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
               isForwardActive
-                ? 'bg-emerald-500 border-emerald-400 text-black scale-95 shadow-emerald-500/70 ring-4 ring-emerald-400/40'
-                : 'bg-gradient-to-t from-[#071A2B]/95 via-slate-800/90 to-slate-700/80 backdrop-blur-md border-emerald-500/60 text-emerald-400 active:bg-emerald-900/40'
+                ? 'bg-emerald-500 border-emerald-200 text-slate-950 scale-95 ring-4 ring-emerald-400/40'
+                : 'bg-gradient-to-t from-[#071A2B]/92 via-slate-800/88 to-slate-700/80 backdrop-blur-md border-emerald-400/65 text-emerald-300'
             }`}
-            title="Throttle Accelerate Pedal"
+            aria-label="Gas Throttle"
           >
-            <span className="text-2xl sm:text-3xl leading-none">▲</span>
-            <span className="text-xs sm:text-sm font-mono mt-1.5 font-black tracking-widest text-white">
+            <span className="text-xl sm:text-2xl leading-none font-black">▲</span>
+            <span className="text-xs sm:text-sm font-mono mt-1 font-black tracking-widest text-white">
               GAS
             </span>
             <span className="text-[8px] font-mono text-emerald-300 font-bold">DRIVE</span>

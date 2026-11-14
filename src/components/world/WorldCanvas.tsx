@@ -8,10 +8,12 @@ import {
   VehicleModelType,
   Vehicle3DResult,
   VEHICLE_SPEC_PROFILES,
+  HeadlightState,
+  TurnSignalState,
 } from './worldModels';
 import { animateVehicleModel } from '../../three/VehicleModelFactory';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
-import { HeadlightState, TurnSignalState, CockpitHotspot } from './CockpitDashboardOverlay';
+import { resolveSafeCameraPosition, isTargetOccludedByBuildings } from '../../utils/cameraCollision';
 import { buildLagosCityDistrict, LagosCityResult } from './lagosCityBuilder';
 import { TrafficEngine } from './trafficEngine';
 import { RivalsEngine } from './rivalsEngine';
@@ -27,7 +29,7 @@ import {
 import { ActiveMissionSession } from './missionEngine';
 import type { RemotePlayerPeer } from '../../services/worldMultiplayerService';
 
-export type CameraViewMode = 'CHASE' | 'COCKPIT' | 'ORBIT' | 'DRONE';
+export type CameraViewMode = 'CHASE' | 'DRONE';
 export type TimeOfDay = 'DAYLIGHT' | 'SUNSET' | 'MIDNIGHT' | 'GOLDEN_HOUR';
 
 export interface ProjectedRemotePlayer {
@@ -71,7 +73,6 @@ export interface WorldCanvasProps {
   turnSignal?: TurnSignalState;
   hazardLights?: boolean;
   hornActive?: boolean;
-  cockpitHotspot?: CockpitHotspot;
   onAwardCredits?: (amount: number, reason: string) => void;
   activeDestination?: { x: number; z: number; name: string } | null;
   activeMissionSession?: ActiveMissionSession | null;
@@ -105,7 +106,6 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   turnSignal = 'OFF',
   hazardLights = false,
   hornActive = false,
-  cockpitHotspot = 'DRIVER',
   onAwardCredits,
   activeDestination,
   activeMissionSession,
@@ -175,11 +175,23 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const cameraModeRef = useRef(cameraMode);
   cameraModeRef.current = cameraMode;
 
-  const cockpitHotspotRef = useRef(cockpitHotspot);
-  cockpitHotspotRef.current = cockpitHotspot;
-
   const isCustomizerOpenRef = useRef(isCustomizerOpen);
   isCustomizerOpenRef.current = isCustomizerOpen;
+
+  // Chase & Drone Camera State Refs (zero re-render smooth framing + interactive drone inspection)
+  const chaseCamRef = useRef({
+    yaw: Math.PI,
+    fov: 56,
+    initialized: false,
+  });
+  const droneCamRef = useRef({
+    yawOffset: 0.35,
+    pitch: 0.46,
+    distance: 22,
+    isDragging: false,
+    lastPointerX: 0,
+    lastPointerY: 0,
+  });
 
   const turnSignalRef = useRef(turnSignal);
   turnSignalRef.current = turnSignal;
@@ -633,6 +645,18 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     };
   }, [onEnterMarketplace, onInspectCar, onOpenCustomizer, onOpenDealerLounge]);
 
+  // Reset Drone Orbit framing cleanly whenever entering DRONE mode
+  useEffect(() => {
+    if (cameraMode === 'DRONE') {
+      droneCamRef.current.yawOffset = 0.32;
+      droneCamRef.current.pitch = 0.46;
+      droneCamRef.current.distance = 22;
+      droneCamRef.current.isDragging = false;
+    } else {
+      chaseCamRef.current.yaw = carState.current.rotation;
+    }
+  }, [cameraMode]);
+
   // Reset Vehicle Trigger Prop Effect
   useEffect(() => {
     if (!resetVehicleTrigger) return;
@@ -649,6 +673,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       cs.z = 10;
       cs.rotation = Math.PI;
     }
+    chaseCamRef.current.yaw = cs.rotation;
     if (playerCarGroupRef.current) {
       playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
       playerCarGroupRef.current.rotation.y = cs.rotation;
@@ -699,6 +724,45 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     rendererRef.current = renderer;
 
     container.appendChild(renderer.domElement);
+
+    // Interactive Drone Camera Drag-Orbit & Wheel Zoom (strictly active in DRONE mode, zero physics conflict)
+    const domEl = renderer.domElement;
+    const handleDronePointerDown = (e: PointerEvent) => {
+      if (cameraModeRef.current !== 'DRONE' || presentationModeRef.current) return;
+      droneCamRef.current.isDragging = true;
+      droneCamRef.current.lastPointerX = e.clientX;
+      droneCamRef.current.lastPointerY = e.clientY;
+    };
+    const handleDronePointerMove = (e: PointerEvent) => {
+      if (!droneCamRef.current.isDragging || cameraModeRef.current !== 'DRONE') return;
+      const dx = e.clientX - droneCamRef.current.lastPointerX;
+      const dy = e.clientY - droneCamRef.current.lastPointerY;
+      droneCamRef.current.lastPointerX = e.clientX;
+      droneCamRef.current.lastPointerY = e.clientY;
+      droneCamRef.current.yawOffset -= dx * 0.0065;
+      droneCamRef.current.pitch = THREE.MathUtils.clamp(
+        droneCamRef.current.pitch + dy * 0.005,
+        0.14,
+        1.25
+      );
+    };
+    const handleDronePointerUp = () => {
+      droneCamRef.current.isDragging = false;
+    };
+    const handleDroneWheel = (e: WheelEvent) => {
+      if (cameraModeRef.current !== 'DRONE' || presentationModeRef.current) return;
+      e.preventDefault();
+      droneCamRef.current.distance = THREE.MathUtils.clamp(
+        droneCamRef.current.distance + e.deltaY * 0.02,
+        10,
+        52
+      );
+    };
+    domEl.addEventListener('pointerdown', handleDronePointerDown);
+    window.addEventListener('pointermove', handleDronePointerMove);
+    window.addEventListener('pointerup', handleDronePointerUp);
+    window.addEventListener('pointercancel', handleDronePointerUp);
+    domEl.addEventListener('wheel', handleDroneWheel, { passive: false });
 
     // PMREM RoomEnvironment for physically plausible metallic & glass PBR reflections
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
@@ -827,8 +891,6 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
     // Pre-allocated scratch vectors for zero-GC animation loop
     const tmpPodWorldPos = new THREE.Vector3();
-    const tmpDriverOffset = new THREE.Vector3();
-    const tmpUpAxis = new THREE.Vector3(0, 1, 0);
     const tmpLookTarget = new THREE.Vector3();
     const tmpProjVec = new THREE.Vector3();
 
@@ -1143,7 +1205,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           wheelSpinAngle: cs.wheelSpinAngle,
           accelLoad,
           delta,
-          isCockpitCamera: cameraModeRef.current === 'COCKPIT',
+          isCockpitCamera: false,
         });
       } else {
         const wheels = wheelsRef.current;
@@ -1200,15 +1262,21 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         });
       }
 
-      // Engine audio synthesis update with dynamic acceleration load and vehicle profile
+      // Engine, Braking, Road Surface & Tyre Audio Synthesis Update
+      const steerIntensity = Math.min(1, Math.abs(cs.steeringAngle) / Math.max(0.1, baseSpec.maxSteer));
       engineAudio.update(
         cs.speed,
         effectiveMaxSpeed,
         isEngineOn && (input.forward || input.backward),
-        input.backward && cs.speed > 0,
+        isBrakingNow,
         cs.isDrifting,
         currentDriveMode,
-        currentVehicleType
+        currentVehicleType,
+        {
+          steerRatio: steerIntensity,
+          onBridge: carY > 0.35,
+          brakeIntensity: isBrakingNow ? (input.handbrake ? 0.95 : 0.78) : 0,
+        }
       );
 
       // HUD Telemetry (Speed km/h, RPM, Gear)
@@ -1286,81 +1354,123 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         onZoneChangeRef.current?.(detectedZone);
       }
 
-      // CAMERA MODES ORCHESTRATION (Zero-GC using pre-allocated scratch vectors)
+      // CAMERA MODES ORCHESTRATION: ONLY CHASE (Default) & DRONE (Interactive Aerial)
       const currentCameraMode = cameraModeRef.current;
-      const currentCockpitHotspot = cockpitHotspotRef.current;
       const isCustomizerOpen = isCustomizerOpenRef.current;
 
-      if (currentCameraMode === 'COCKPIT') {
-        const baseOffset = baseSpec.cockpitOffset;
-        let ox = baseOffset.x;
-        let oy = baseOffset.y;
-        let oz = baseOffset.z;
-        let lookTargetDist = 28;
-        let lookTargetY = baseSpec.lookTargetHeight;
-
-        if (currentCockpitHotspot === 'DASHBOARD') {
-          oy = baseOffset.y - 0.12;
-          oz = baseOffset.z + 0.18;
-          lookTargetDist = 1.2;
-          lookTargetY = baseOffset.y - 0.05;
-        } else if (currentCockpitHotspot === 'CONSOLE') {
-          ox = 0;
-          oy = baseOffset.y - 0.1;
-          oz = baseOffset.z + 0.1;
-          lookTargetDist = 1.5;
-          lookTargetY = baseOffset.y - 0.15;
-        } else if (currentCockpitHotspot === 'WINDSHIELD') {
-          ox = 0;
-          oy = baseOffset.y + 0.1;
-          oz = baseOffset.z + 0.6;
-          lookTargetDist = 35;
-          lookTargetY = baseSpec.lookTargetHeight;
-        }
-
-        tmpDriverOffset.set(ox, oy, oz).applyAxisAngle(tmpUpAxis, cs.rotation);
-        camera.position.set(
-          cs.x + tmpDriverOffset.x,
-          carY + tmpDriverOffset.y,
-          cs.z + tmpDriverOffset.z
-        );
-
-        tmpLookTarget.set(
-          cs.x + Math.sin(cs.rotation) * lookTargetDist,
-          carY + lookTargetY,
-          cs.z + Math.cos(cs.rotation) * lookTargetDist
-        );
-        camera.lookAt(tmpLookTarget);
-      } else if (currentCameraMode === 'ORBIT' || isCustomizerOpen) {
-        const orbitAngle = currentTime * 0.0006;
-        const orbitDistance = 8.0;
+      if (isCustomizerOpen) {
+        // Internal showroom angle strictly when tuning drawer is open
+        const orbitAngle = currentTime * 0.00055;
+        const orbitDistance = 7.6;
         camera.position.set(
           cs.x + Math.sin(orbitAngle) * orbitDistance,
-          carY + 2.6,
+          carY + 2.4,
           cs.z + Math.cos(orbitAngle) * orbitDistance
         );
-        camera.lookAt(cs.x, carY + 0.7, cs.z);
+        camera.lookAt(cs.x, carY + 0.75, cs.z);
       } else if (currentCameraMode === 'DRONE') {
-        const droneDist = 20;
-        const targetCamX = cs.x - Math.sin(cs.rotation) * droneDist;
-        const targetCamZ = cs.z - Math.cos(cs.rotation) * droneDist;
+        const dc = droneCamRef.current;
+        const droneAngle = cs.rotation + Math.PI + dc.yawOffset;
+        const horizDist = Math.cos(dc.pitch) * dc.distance;
+        const vertHeight = Math.sin(dc.pitch) * dc.distance + 1.4;
 
-        camera.position.x += (targetCamX - camera.position.x) * delta * 2.2;
-        camera.position.y += (carY + 14 - camera.position.y) * delta * 2.2;
-        camera.position.z += (targetCamZ - camera.position.z) * delta * 2.2;
-        camera.lookAt(cs.x, carY + 0.5, cs.z);
+        const desiredPos = {
+          x: cs.x + Math.sin(droneAngle) * horizDist,
+          y: carY + vertHeight,
+          z: cs.z + Math.cos(droneAngle) * horizDist,
+        };
+        const safePos = resolveSafeCameraPosition(
+          { x: cs.x, y: carY + 1.4, z: cs.z },
+          desiredPos,
+          cityData.collidableBuildings,
+          resolveSurfaceY,
+          carY,
+          1.6
+        );
+
+        const droneSmooth = 1 - Math.exp(-5.8 * delta);
+        camera.position.x += (safePos.x - camera.position.x) * droneSmooth;
+        camera.position.y += (safePos.y - camera.position.y) * droneSmooth;
+        camera.position.z += (safePos.z - camera.position.z) * droneSmooth;
+
+        const droneGroundFloor = Math.max(
+          resolveSurfaceY(camera.position.x, camera.position.z, carY) + 1.5,
+          carY + 0.9
+        );
+        if (camera.position.y < droneGroundFloor) {
+          camera.position.y = droneGroundFloor;
+        }
+
+        if (Math.abs(camera.fov - 56) > 0.05) {
+          camera.fov += (56 - camera.fov) * droneSmooth;
+          camera.updateProjectionMatrix();
+        }
+        camera.lookAt(cs.x, carY + 0.75, cs.z);
       } else {
-        const targetCamX = cs.x - Math.sin(cs.rotation) * baseSpec.chaseDistance;
-        const targetCamZ = cs.z - Math.cos(cs.rotation) * baseSpec.chaseDistance;
+        // DEFAULT: SMOOTH ANTI-CLIP CHASE CAMERA
+        const cc = chaseCamRef.current;
+        if (!cc.initialized) {
+          cc.yaw = cs.rotation;
+          cc.initialized = true;
+        }
 
-        camera.position.x += (targetCamX - camera.position.x) * delta * 6.5;
-        camera.position.y += (carY + baseSpec.chaseHeight - camera.position.y) * delta * 4.5;
-        camera.position.z += (targetCamZ - camera.position.z) * delta * 6.5;
+        // Smooth angular turn tracking (frame-rate independent exponential damping)
+        let yawDiff = cs.rotation - cc.yaw;
+        while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+        while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+        const yawFollowRate = cs.speed < -0.5 ? 2.4 : 6.4;
+        cc.yaw += yawDiff * (1 - Math.exp(-yawFollowRate * delta));
+
+        // Smooth acceleration & braking distance / FOV response (no shake)
+        const absSpeedRatio = Math.min(1, Math.abs(cs.speed) / Math.max(1, effectiveMaxSpeed));
+        const speedLagOffset = input.forward && isEngineOn ? 0.95 * absSpeedRatio : isBrakingNow ? -0.45 : 0.4 * absSpeedRatio;
+        const targetDist = baseSpec.chaseDistance + speedLagOffset;
+        const targetHeight = carY + baseSpec.chaseHeight + absSpeedRatio * 0.35;
+
+        const desiredCam = {
+          x: cs.x - Math.sin(cc.yaw) * targetDist,
+          y: targetHeight,
+          z: cs.z - Math.cos(cc.yaw) * targetDist,
+        };
+        const pivotPoint = {
+          x: cs.x,
+          y: carY + 1.25,
+          z: cs.z,
+        };
+        const safeCam = resolveSafeCameraPosition(
+          pivotPoint,
+          desiredCam,
+          cityData.collidableBuildings,
+          resolveSurfaceY,
+          carY,
+          1.2
+        );
+
+        const posAlpha = 1 - Math.exp(-9.5 * delta);
+        const yAlpha = 1 - Math.exp(-6.5 * delta);
+        camera.position.x += (safeCam.x - camera.position.x) * posAlpha;
+        camera.position.y += (safeCam.y - camera.position.y) * yAlpha;
+        camera.position.z += (safeCam.z - camera.position.z) * posAlpha;
+
+        // Clamp final smoothed camera height above road/bridge deck so lerp never dips below surface
+        const camGroundFloor = Math.max(
+          resolveSurfaceY(camera.position.x, camera.position.z, carY) + 1.15,
+          carY + 0.85
+        );
+        if (camera.position.y < camGroundFloor) {
+          camera.position.y = camGroundFloor;
+        }
+
+        const targetFov = 56 + absSpeedRatio * 5.5 - (isBrakingNow ? 1.5 : 0);
+        if (Math.abs(camera.fov - targetFov) > 0.04) {
+          camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-5.0 * delta));
+          camera.updateProjectionMatrix();
+        }
 
         tmpLookTarget.set(
-          cs.x + Math.sin(cs.rotation) * baseSpec.chaseLookAhead,
-          carY + 0.7,
-          cs.z + Math.cos(cs.rotation) * baseSpec.chaseLookAhead
+          cs.x + Math.sin(cc.yaw) * baseSpec.chaseLookAhead,
+          carY + 0.95,
+          cs.z + Math.cos(cc.yaw) * baseSpec.chaseLookAhead
         );
         camera.lookAt(tmpLookTarget);
       }
@@ -1442,22 +1552,47 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
       renderer.render(scene, camera);
 
-      // Emit throttled screen-projected coordinates for clickable driver tags
+      // Emit throttled screen-projected coordinates for clickable driver tags (with distance & building-occlusion culling)
       if (onProjectedRemotePlayersRef.current && currentTime - lastRemoteProjTime.current > 45) {
         lastRemoteProjTime.current = currentTime;
         const w = container.clientWidth;
         const h = container.clientHeight;
         const projected: ProjectedRemotePlayer[] = [];
-        for (const [pid, entry] of remotePool.entries()) {
+        const entries = Array.from(remotePool.entries()).sort((a, b) => a[1].distance - b[1].distance);
+        let visibleCount = 0;
+
+        for (const [pid, entry] of entries) {
+          const camDist = Math.hypot(
+            entry.x - camera.position.x,
+            entry.y + 1.8 - camera.position.y,
+            entry.z - camera.position.z
+          );
+          if (camDist > 135 || visibleCount >= 10) {
+            continue;
+          }
+
           tmpProjVec.set(entry.x, entry.y + 2.45, entry.z);
           tmpProjVec.project(camera);
-          const visible =
+
+          const inViewFrustum =
             tmpProjVec.z > -1 &&
             tmpProjVec.z < 1 &&
             tmpProjVec.x >= -0.92 &&
             tmpProjVec.x <= 0.92 &&
             tmpProjVec.y >= -0.92 &&
             tmpProjVec.y <= 0.92;
+
+          const occluded =
+            inViewFrustum &&
+            isTargetOccludedByBuildings(
+              { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+              { x: entry.x, y: entry.y + 2.25, z: entry.z },
+              cityData.collidableBuildings
+            );
+
+          const visible = inViewFrustum && !occluded;
+          if (visible) visibleCount += 1;
+
           projected.push({
             playerId: pid,
             nickname: entry.nickname,
@@ -1491,6 +1626,11 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      domEl.removeEventListener('pointerdown', handleDronePointerDown);
+      window.removeEventListener('pointermove', handleDronePointerMove);
+      window.removeEventListener('pointerup', handleDronePointerUp);
+      window.removeEventListener('pointercancel', handleDronePointerUp);
+      domEl.removeEventListener('wheel', handleDroneWheel);
       cancelAnimationFrame(animationFrameId);
       for (const entry of remoteCarMeshesRef.current.values()) {
         scene.remove(entry.group);
@@ -1515,7 +1655,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   return (
     <div
       ref={mountRef}
-      className="absolute inset-0 w-full h-full overflow-hidden cursor-grab active:cursor-grabbing"
+      className="absolute inset-0 w-full h-full overflow-hidden touch-none cursor-grab active:cursor-grabbing"
       tabIndex={0}
       title="MANIFOLD WORLD 3D Proving Ground"
     />

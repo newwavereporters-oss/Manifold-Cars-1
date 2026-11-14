@@ -35,6 +35,14 @@ export interface ChatInvitationItem {
   expiresAt: string;
 }
 
+export interface OutgoingInvitationState {
+  invitationId: string;
+  recipientPlayerId: string;
+  recipientNickname: string;
+  status: 'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled';
+  expiresAt: string;
+}
+
 export interface ChatMessageItem {
   id: string;
   conversationId: string;
@@ -74,6 +82,7 @@ export class WorldMultiplayerSession {
   private channel: RealtimeChannel | null = null;
   private heartbeatTimer: number | null = null;
   private nearbyPollTimer: number | null = null;
+  private isStopped = false;
   private lastBroadcastMs = 0;
   private lastKnownPos = { x: 0, y: 0, z: 10, heading: Math.PI, speed: 0 };
   private remotePeers = new Map<string, RemotePlayerPeer>();
@@ -81,18 +90,22 @@ export class WorldMultiplayerSession {
 
   private onPeersChange: (peers: RemotePlayerPeer[]) => void;
   private onIncomingInvite: (inv: ChatInvitationItem | null) => void;
+  private onOutgoingInviteUpdate?: (inv: OutgoingInvitationState | null) => void;
   private onConversationOpen: (conv: ActiveConversationState) => void;
   private onMessageReceived: (msg: ChatMessageItem) => void;
   private onConversationClosed: (conversationId: string, reason: string) => void;
 
   private nicknameCache = new Map<string, string>();
   private activeConversationId: string | null = null;
+  private activeConversationPeerId: string | null = null;
+  private currentIncomingInviteId: string | null = null;
 
   constructor(
     profile: PlayerProfile,
     callbacks: {
       onPeersChange: (peers: RemotePlayerPeer[]) => void;
       onIncomingInvite: (inv: ChatInvitationItem | null) => void;
+      onOutgoingInviteUpdate?: (inv: OutgoingInvitationState | null) => void;
       onConversationOpen: (conv: ActiveConversationState) => void;
       onMessageReceived: (msg: ChatMessageItem) => void;
       onConversationClosed: (conversationId: string, reason: string) => void;
@@ -101,6 +114,7 @@ export class WorldMultiplayerSession {
     this.me = profile;
     this.onPeersChange = callbacks.onPeersChange;
     this.onIncomingInvite = callbacks.onIncomingInvite;
+    this.onOutgoingInviteUpdate = callbacks.onOutgoingInviteUpdate;
     this.onConversationOpen = callbacks.onConversationOpen;
     this.onMessageReceived = callbacks.onMessageReceived;
     this.onConversationClosed = callbacks.onConversationClosed;
@@ -111,18 +125,33 @@ export class WorldMultiplayerSession {
   }
 
   public async start(): Promise<void> {
-    // 1. Send immediate presence heartbeat
+    this.isStopped = false;
+
+    // Guarantee single active subscription channel
+    if (this.channel) {
+      supabase.removeChannel(this.channel);
+      this.channel = null;
+    }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    if (this.nearbyPollTimer) {
+      clearInterval(this.nearbyPollTimer);
+      this.nearbyPollTimer = null;
+    }
+
     await this.sendHeartbeat();
     await this.refreshNearbyPlayers();
     await this.fetchPendingInvitation();
+    if (this.isStopped) return;
 
-    // 2. Subscribe to Supabase Realtime channel (low-latency vehicle broadcast + DB changes)
     const ch = supabase.channel('manifold-world-live', {
       config: { broadcast: { self: false } },
     });
 
     ch.on('broadcast', { event: 'player_motion' }, ({ payload }) => {
-      if (!payload || payload.playerId === this.me.id) return;
+      if (this.isStopped || !payload || payload.playerId === this.me.id) return;
       const dist = Math.hypot(payload.x - this.lastKnownPos.x, payload.z - this.lastKnownPos.z);
       const existing = this.remotePeers.get(payload.playerId);
       this.nicknameCache.set(payload.playerId, payload.nickname);
@@ -158,6 +187,7 @@ export class WorldMultiplayerSession {
         table: 'player_presence',
       },
       (payload) => {
+        if (this.isStopped) return;
         const row = (payload.new || payload.old) as any;
         if (!row || row.player_id === this.me.id) return;
         if (payload.eventType === 'DELETE' || row.is_online === false) {
@@ -165,7 +195,10 @@ export class WorldMultiplayerSession {
           this.emitPeers();
         } else {
           this.nicknameCache.set(row.player_id, row.nickname);
-          const dist = Math.hypot((row.pos_x ?? 0) - this.lastKnownPos.x, (row.pos_z ?? 0) - this.lastKnownPos.z);
+          const dist = Math.hypot(
+            (row.pos_x ?? 0) - this.lastKnownPos.x,
+            (row.pos_z ?? 0) - this.lastKnownPos.z
+          );
           if (dist <= this.discoveryRadius) {
             this.remotePeers.set(row.player_id, {
               playerId: row.player_id,
@@ -196,15 +229,18 @@ export class WorldMultiplayerSession {
         table: 'chat_invitations',
       },
       async (payload) => {
+        if (this.isStopped) return;
         const row = payload.new as any;
         if (!row) return;
 
-        // Recipient receives new pending invite
+        // Recipient flow
         if (row.recipient_player_id === this.me.id) {
           if (row.status === 'pending' && Date.parse(row.expires_at) > Date.now()) {
             const senderNickname =
               this.nicknameCache.get(row.sender_player_id) ||
               (await this.lookupPeerNickname(row.sender_player_id));
+            if (this.isStopped) return;
+            this.currentIncomingInviteId = row.id;
             this.onIncomingInvite({
               id: row.id,
               senderPlayerId: row.sender_player_id,
@@ -214,14 +250,30 @@ export class WorldMultiplayerSession {
               createdAt: row.created_at,
               expiresAt: row.expires_at,
             });
-          } else {
+          } else if (this.currentIncomingInviteId === row.id || row.status !== 'pending') {
+            this.currentIncomingInviteId = null;
             this.onIncomingInvite(null);
           }
         }
 
-        // Sender sees invitation accepted -> open conversation immediately
-        if (row.sender_player_id === this.me.id && row.status === 'accepted') {
-          await this.loadConversationWithPeer(row.recipient_player_id);
+        // Sender two-way status updates (accepted, declined, expired, cancelled)
+        if (row.sender_player_id === this.me.id) {
+          const recipientNickname =
+            this.nicknameCache.get(row.recipient_player_id) ||
+            (await this.lookupPeerNickname(row.recipient_player_id));
+          if (this.isStopped) return;
+
+          this.onOutgoingInviteUpdate?.({
+            invitationId: row.id,
+            recipientPlayerId: row.recipient_player_id,
+            recipientNickname,
+            status: row.status,
+            expiresAt: row.expires_at,
+          });
+
+          if (row.status === 'accepted') {
+            await this.loadConversationWithPeer(row.recipient_player_id);
+          }
         }
       }
     );
@@ -234,6 +286,7 @@ export class WorldMultiplayerSession {
         table: 'chat_messages',
       },
       (payload) => {
+        if (this.isStopped) return;
         const row = payload.new as any;
         if (
           !row ||
@@ -261,6 +314,7 @@ export class WorldMultiplayerSession {
         table: 'chat_conversations',
       },
       (payload) => {
+        if (this.isStopped) return;
         const row = payload.new as any;
         if (!row) return;
         if (
@@ -268,7 +322,37 @@ export class WorldMultiplayerSession {
           (row.status === 'blocked' || row.status === 'closed')
         ) {
           this.activeConversationId = null;
+          this.activeConversationPeerId = null;
           this.onConversationClosed(row.id, 'This chat session was closed.');
+        }
+      }
+    );
+
+    ch.on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'player_blocks',
+      },
+      (payload) => {
+        if (this.isStopped) return;
+        const row = payload.new as any;
+        if (!row) return;
+        const otherId =
+          row.blocker_player_id === this.me.id
+            ? row.blocked_player_id
+            : row.blocked_player_id === this.me.id
+            ? row.blocker_player_id
+            : null;
+        if (!otherId) return;
+        this.remotePeers.delete(otherId);
+        this.emitPeers();
+        if (this.activeConversationPeerId === otherId && this.activeConversationId) {
+          const closedId = this.activeConversationId;
+          this.activeConversationId = null;
+          this.activeConversationPeerId = null;
+          this.onConversationClosed(closedId, 'Chat ended because a player block is active.');
         }
       }
     );
@@ -276,7 +360,6 @@ export class WorldMultiplayerSession {
     ch.subscribe();
     this.channel = ch;
 
-    // 3. Periodic 35s server heartbeat + 8s nearby scan
     this.heartbeatTimer = window.setInterval(() => {
       void this.sendHeartbeat();
       this.pruneStalePeers();
@@ -289,6 +372,7 @@ export class WorldMultiplayerSession {
   }
 
   public stop() {
+    this.isStopped = true;
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -301,11 +385,20 @@ export class WorldMultiplayerSession {
       supabase.removeChannel(this.channel);
       this.channel = null;
     }
+    this.activeConversationId = null;
+    this.activeConversationPeerId = null;
+    this.currentIncomingInviteId = null;
     this.remotePeers.clear();
     this.emitPeers();
   }
 
-  public publishLocalMotion(pos: { x: number; y?: number; z: number; heading: number; speed?: number }) {
+  public publishLocalMotion(pos: {
+    x: number;
+    y?: number;
+    z: number;
+    heading: number;
+    speed?: number;
+  }) {
     this.lastKnownPos = {
       x: pos.x,
       y: pos.y ?? 0,
@@ -315,7 +408,9 @@ export class WorldMultiplayerSession {
     };
 
     const now = performance.now();
-    if (!this.channel || now - this.lastBroadcastMs < BROADCAST_MIN_INTERVAL_MS) return;
+    if (this.isStopped || !this.channel || now - this.lastBroadcastMs < BROADCAST_MIN_INTERVAL_MS) {
+      return;
+    }
     this.lastBroadcastMs = now;
 
     this.channel.send({
@@ -337,6 +432,7 @@ export class WorldMultiplayerSession {
   }
 
   private async sendHeartbeat() {
+    if (this.isStopped) return;
     try {
       const { data } = await supabase.rpc('heartbeat_player_presence', {
         p_x: this.lastKnownPos.x,
@@ -353,16 +449,16 @@ export class WorldMultiplayerSession {
   }
 
   public async refreshNearbyPlayers(): Promise<void> {
+    if (this.isStopped) return;
     try {
       const { data, error } = await supabase.rpc('get_nearby_active_players');
-      if (error || !Array.isArray(data)) return;
+      if (this.isStopped || error || !Array.isArray(data)) return;
 
       const freshIds = new Set<string>();
       for (const row of data) {
         freshIds.add(row.player_id);
         this.nicknameCache.set(row.player_id, row.nickname);
         const existing = this.remotePeers.get(row.player_id);
-        // Preserve fresher broadcast coords if received in the last 3s
         const keepBroadcast = existing && Date.now() - existing.lastUpdatedAtMs < 3000;
         this.remotePeers.set(row.player_id, {
           playerId: row.player_id,
@@ -377,7 +473,9 @@ export class WorldMultiplayerSession {
           speed: keepBroadcast ? existing.speed : row.speed,
           distance: Math.round(row.distance),
           isOnline: true,
-          lastUpdatedAtMs: keepBroadcast ? existing.lastUpdatedAtMs : Date.parse(row.last_heartbeat_at) || Date.now(),
+          lastUpdatedAtMs: keepBroadcast
+            ? existing.lastUpdatedAtMs
+            : Date.parse(row.last_heartbeat_at) || Date.now(),
         });
       }
 
@@ -431,8 +529,10 @@ export class WorldMultiplayerSession {
       .limit(1)
       .maybeSingle();
 
-    if (data) {
+    if (data && !this.isStopped) {
       const senderNickname = await this.lookupPeerNickname(data.sender_player_id);
+      if (this.isStopped) return;
+      this.currentIncomingInviteId = data.id;
       this.onIncomingInvite({
         id: data.id,
         senderPlayerId: data.sender_player_id,
@@ -455,12 +555,17 @@ export class WorldMultiplayerSession {
       .eq('status', 'active')
       .maybeSingle();
 
-    if (!conv) return;
+    if (!conv || this.isStopped) return;
     await this.openConversationById(conv.id, peerPlayerId);
   }
 
-  public async openConversationById(conversationId: string, peerPlayerId: string, peerNicknameHint?: string) {
+  public async openConversationById(
+    conversationId: string,
+    peerPlayerId: string,
+    peerNicknameHint?: string
+  ) {
     this.activeConversationId = conversationId;
+    this.activeConversationPeerId = peerPlayerId;
     const peerNickname = peerNicknameHint || (await this.lookupPeerNickname(peerPlayerId));
 
     const { data: msgs } = await supabase
@@ -470,6 +575,8 @@ export class WorldMultiplayerSession {
       .in('moderation_status', ['approved', 'flagged_review'])
       .order('created_at', { ascending: true })
       .limit(100);
+
+    if (this.isStopped) return;
 
     const mapped: ChatMessageItem[] = (msgs || []).map((m: any) => ({
       id: m.id,
@@ -489,18 +596,47 @@ export class WorldMultiplayerSession {
     });
   }
 
-  public async sendChatInvitation(
-    recipientPlayerId: string
-  ): Promise<{ success: boolean; recipientNickname?: string; expiresAt?: string; error?: string }> {
+  public async sendChatInvitation(recipientPlayerId: string): Promise<{
+    success: boolean;
+    invitationId?: string;
+    recipientNickname?: string;
+    expiresAt?: string;
+    error?: string;
+  }> {
     const { data, error } = await supabase.rpc('send_chat_invitation', {
       p_recipient_player_id: recipientPlayerId,
     });
     if (error) return { success: false, error: error.message };
+    const recipientNickname =
+      data?.recipientNickname || (await this.lookupPeerNickname(recipientPlayerId));
+
+    if (data?.invitationId) {
+      this.onOutgoingInviteUpdate?.({
+        invitationId: data.invitationId,
+        recipientPlayerId,
+        recipientNickname,
+        status: 'pending',
+        expiresAt: data.expiresAt,
+      });
+    }
+
     return {
       success: true,
-      recipientNickname: data?.recipientNickname,
+      invitationId: data?.invitationId,
+      recipientNickname,
       expiresAt: data?.expiresAt,
     };
+  }
+
+  public async cancelChatInvitation(
+    invitationId: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const { error } = await supabase.rpc('cancel_chat_invitation', {
+      p_invitation_id: invitationId,
+    });
+    if (error) return { success: false, error: error.message };
+    this.onOutgoingInviteUpdate?.(null);
+    return { success: true };
   }
 
   public async respondToInvitation(
@@ -511,6 +647,7 @@ export class WorldMultiplayerSession {
       p_invitation_id: invitationId,
       p_accept: accept,
     });
+    this.currentIncomingInviteId = null;
     this.onIncomingInvite(null);
     if (error) return { success: false, error: error.message };
     if (accept && data?.conversationId && data?.peerPlayerId) {
@@ -531,7 +668,6 @@ export class WorldMultiplayerSession {
     const trimmed = content.trim();
     if (!trimmed) return { delivered: false, error: 'Message cannot be empty.' };
 
-    // Contextual pre-screen when API route is available; server SQL RPC remains authoritative
     try {
       const modRes = await fetch('/api/world/moderate-chat', {
         method: 'POST',
@@ -566,7 +702,8 @@ export class WorldMultiplayerSession {
       return {
         delivered: false,
         moderationWarning: {
-          message: data?.message || 'THIS MESSAGE DOES NOT MEET MANIFOLD COMMUNITY CHAT GUIDELINES.',
+          message:
+            data?.message || 'THIS MESSAGE DOES NOT MEET MANIFOLD COMMUNITY CHAT GUIDELINES.',
           explanation: data?.explanation,
           category: data?.category,
           violationCount: data?.violationCount,
@@ -590,5 +727,6 @@ export class WorldMultiplayerSession {
 
   public clearActiveConversation() {
     this.activeConversationId = null;
+    this.activeConversationPeerId = null;
   }
 }

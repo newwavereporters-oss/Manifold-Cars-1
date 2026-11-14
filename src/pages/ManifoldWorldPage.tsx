@@ -25,13 +25,10 @@ import {
 import {
   CarCustomization,
   VehicleModelType,
-  type MusicPreference,
-} from '../components/world/worldModels';
-import {
   HeadlightState,
   TurnSignalState,
-  CockpitHotspot,
-} from '../components/world/CockpitDashboardOverlay';
+  type MusicPreference,
+} from '../components/world/worldModels';
 import { AudioDriveMode, engineAudio } from '../utils/engineAudio';
 import { Car } from '../types';
 import {
@@ -54,6 +51,7 @@ import {
   type ActiveConversationState,
   type ChatInvitationItem,
   type ChatMessageItem,
+  type OutgoingInvitationState,
   type RemotePlayerPeer,
 } from '../services/worldMultiplayerService';
 import { Ban, Loader2, LogOut } from 'lucide-react';
@@ -172,7 +170,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('DAYLIGHT');
   const [activeZone, setActiveZone] = useState<string | null>(null);
 
-  // Cockpit & Vehicle Systems State
+  // Vehicle Systems State
   const [isEngineRunning, setIsEngineRunning] = useState<boolean>(true);
   const [driveMode, setDriveMode] = useState<AudioDriveMode>('SPORT');
   const [headlightState, setHeadlightState] = useState<HeadlightState>('LOW');
@@ -181,7 +179,6 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const [hornActive, setHornActive] = useState<boolean>(false);
   const [radioStation, setRadioStation] = useState<number>(1);
   const [radioVolume, setRadioVolume] = useState<number>(0.7);
-  const [cockpitHotspot, setCockpitHotspot] = useState<CockpitHotspot>('DRIVER');
 
   // Vehicle Telemetry
   const [speedKmh, setSpeedKmh] = useState<number>(0);
@@ -225,6 +222,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const [remotePlayers, setRemotePlayers] = useState<RemotePlayerPeer[]>([]);
   const [projectedPlayers, setProjectedPlayers] = useState<ProjectedRemotePlayer[]>([]);
   const [incomingInvite, setIncomingInvite] = useState<ChatInvitationItem | null>(null);
+  const [outgoingInvite, setOutgoingInvite] = useState<OutgoingInvitationState | null>(null);
   const [activeConversation, setActiveConversation] = useState<ActiveConversationState | null>(
     null
   );
@@ -311,6 +309,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         setIsConfigViewerOpen(false);
         setActiveConversation(null);
         setIncomingInvite(null);
+        setOutgoingInvite(null);
         setRemotePlayers([]);
         setProjectedPlayers([]);
       }
@@ -363,13 +362,33 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         mpSessionRef.current.stop();
         mpSessionRef.current = null;
       }
+      setOutgoingInvite(null);
       return;
     }
 
     const session = new WorldMultiplayerSession(playerProfile, {
       onPeersChange: (peers) => setRemotePlayers(peers),
       onIncomingInvite: (inv) => setIncomingInvite(inv),
+      onOutgoingInviteUpdate: (inv) => {
+        if (!inv) {
+          setOutgoingInvite(null);
+          return;
+        }
+        if (inv.status === 'pending') {
+          setOutgoingInvite(inv);
+        } else {
+          setOutgoingInvite(null);
+          if (inv.status === 'declined') {
+            setSocialToast(`${inv.recipientNickname} declined your chat request.`);
+            setTimeout(() => setSocialToast(null), 3500);
+          } else if (inv.status === 'expired') {
+            setSocialToast(`Chat request to ${inv.recipientNickname} expired.`);
+            setTimeout(() => setSocialToast(null), 3500);
+          }
+        }
+      },
       onConversationOpen: (conv) => {
+        setOutgoingInvite(null);
         setActiveConversation(conv);
         setIsChatMinimized(false);
       },
@@ -463,6 +482,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     setIsConfigViewerOpen(false);
     setActiveConversation(null);
     setIncomingInvite(null);
+    setOutgoingInvite(null);
     setRemotePlayers([]);
     setProjectedPlayers([]);
   };
@@ -663,6 +683,15 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     return await mpSessionRef.current.sendChatInvitation(recipientPlayerId);
   };
 
+  const handleCancelInvite = async (invitationId: string) => {
+    if (!mpSessionRef.current) return;
+    const res = await mpSessionRef.current.cancelChatInvitation(invitationId);
+    if (!res.success && res.error) {
+      setSocialToast(res.error);
+      setTimeout(() => setSocialToast(null), 3200);
+    }
+  };
+
   const handleRespondInvite = async (invitationId: string, accept: boolean) => {
     if (!mpSessionRef.current) return;
     await mpSessionRef.current.respondToInvitation(invitationId, accept);
@@ -699,6 +728,9 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const handlePeerBlocked = (blockedPlayerId: string) => {
     setRemotePlayers((prev) => prev.filter((p) => p.playerId !== blockedPlayerId));
     setProjectedPlayers((prev) => prev.filter((p) => p.playerId !== blockedPlayerId));
+    setOutgoingInvite((prev) =>
+      prev && prev.recipientPlayerId === blockedPlayerId ? null : prev
+    );
     setActiveConversation((prev) => {
       if (prev && prev.peerPlayerId === blockedPlayerId) {
         mpSessionRef.current?.clearActiveConversation();
@@ -711,12 +743,12 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   };
 
   return (
-    <div className="relative w-full h-[calc(100vh-76px)] mt-[76px] bg-[#071A2B] overflow-hidden select-none">
+    <div className="relative w-full h-[calc(100dvh-76px)] min-h-[420px] mt-[76px] bg-[#071A2B] overflow-hidden select-none">
       {/* 3D WebGL Canvas Layer (Aerial presentation mode before onboarding completes; full driving inside GAME) */}
       {worldStage !== 'CONFIG' && (
         <WorldCanvas
           customization={customization}
-          cameraMode={worldStage === 'GAME' ? cameraMode : 'ORBIT'}
+          cameraMode={cameraMode}
           timeOfDay={timeOfDay}
           presentationMode={worldStage !== 'GAME'}
           remotePlayers={worldStage === 'GAME' ? remotePlayers : []}
@@ -741,7 +773,6 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
           turnSignal={turnSignal}
           hazardLights={hazardLights}
           hornActive={hornActive}
-          cockpitHotspot={cockpitHotspot}
           onAwardCredits={handleAwardCredits}
           activeDestination={activeDestination}
           activeMissionSession={missionSession}
@@ -843,6 +874,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             remotePlayers={remotePlayers}
             projectedPlayers={projectedPlayers}
             incomingInvite={incomingInvite}
+            outgoingInvite={outgoingInvite}
             activeConversation={activeConversation}
             isChatMinimized={isChatMinimized}
             onToggleMinimizeChat={() => {
@@ -859,6 +891,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
               setActiveConversation(null);
             }}
             onSendInvite={handleSendInvite}
+            onCancelInvite={handleCancelInvite}
             onRespondInvite={handleRespondInvite}
             onSendMessage={handleSendMessage}
             onPeerBlocked={handlePeerBlocked}
@@ -916,8 +949,6 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             onSelectRadioStation={handleRadioStation}
             radioVolume={radioVolume}
             onRadioVolumeChange={handleRadioVolume}
-            cockpitHotspot={cockpitHotspot}
-            onSelectHotspot={(spot) => setCockpitHotspot(spot)}
             onOpenCityMap={() => setIsCityMapOpen(true)}
             onOpenMissions={() => setIsMissionDrawerOpen(true)}
             onResetVehicle={() => setResetVehicleTrigger((prev) => prev + 1)}

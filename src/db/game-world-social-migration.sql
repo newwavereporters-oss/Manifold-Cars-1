@@ -200,6 +200,8 @@ CREATE INDEX IF NOT EXISTS idx_chat_invitations_recipient
 CREATE INDEX IF NOT EXISTS idx_chat_invitations_sender
   ON public.chat_invitations (sender_player_id, created_at DESC);
 
+ALTER TABLE public.chat_invitations REPLICA IDENTITY FULL;
+
 -- ------------------------------------------------------------------------------
 -- 4. CHAT CONVERSATIONS
 -- ------------------------------------------------------------------------------
@@ -1022,6 +1024,8 @@ DECLARE
   v_expires TIMESTAMPTZ;
   v_radius DOUBLE PRECISION;
   v_timeout_mins INTEGER;
+  v_last_decline_at TIMESTAMPTZ;
+  v_cooldown_left INTEGER;
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'Authentication required';
@@ -1115,6 +1119,19 @@ BEGIN
     RAISE EXCEPTION 'A pending chat invitation already exists between you and this driver';
   END IF;
 
+  -- Enforce 20s per-pair cooldown after a declined request to prevent invitation spam
+  SELECT MAX(COALESCE(responded_at, created_at)) INTO v_last_decline_at
+  FROM public.chat_invitations
+  WHERE sender_player_id = v_sender.id
+    AND recipient_player_id = v_recipient.id
+    AND status = 'declined'
+    AND COALESCE(responded_at, created_at) > NOW() - INTERVAL '20 seconds';
+
+  IF v_last_decline_at IS NOT NULL THEN
+    v_cooldown_left := GREATEST(1, CEIL(EXTRACT(EPOCH FROM ((v_last_decline_at + INTERVAL '20 seconds') - NOW())))::INTEGER);
+    RAISE EXCEPTION 'Request recently declined. Wait %s before requesting chat again', v_cooldown_left;
+  END IF;
+
   SELECT COUNT(*) INTO v_recent_count
   FROM public.chat_invitations
   WHERE sender_player_id = v_sender.id AND created_at > NOW() - INTERVAL '1 minute';
@@ -1138,6 +1155,43 @@ BEGIN
     'expiresAt', v_expires,
     'serverNow', NOW()
   );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.cancel_chat_invitation(
+  p_invitation_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_me_id UUID;
+  v_inv public.chat_invitations%ROWTYPE;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  SELECT id INTO v_me_id FROM public.player_profiles WHERE user_id = v_uid;
+  IF v_me_id IS NULL THEN
+    RAISE EXCEPTION 'Player profile required';
+  END IF;
+
+  SELECT * INTO v_inv FROM public.chat_invitations WHERE id = p_invitation_id;
+  IF NOT FOUND OR v_inv.sender_player_id <> v_me_id THEN
+    RAISE EXCEPTION 'Invitation not found';
+  END IF;
+
+  IF v_inv.status = 'pending' THEN
+    UPDATE public.chat_invitations
+    SET status = 'cancelled', responded_at = NOW()
+    WHERE id = v_inv.id;
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'invitationId', v_inv.id, 'status', 'cancelled');
 END;
 $$;
 
@@ -2402,6 +2456,7 @@ REVOKE ALL ON FUNCTION public.heartbeat_player_presence(DOUBLE PRECISION, DOUBLE
 REVOKE ALL ON FUNCTION public.logout_player_presence() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.get_nearby_active_players() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.send_chat_invitation(UUID) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.cancel_chat_invitation(UUID) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.respond_chat_invitation(UUID, BOOLEAN) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.send_moderated_chat_message(UUID, TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.block_player(UUID) FROM PUBLIC, anon;
@@ -2426,6 +2481,7 @@ GRANT EXECUTE ON FUNCTION public.heartbeat_player_presence(DOUBLE PRECISION, DOU
 GRANT EXECUTE ON FUNCTION public.logout_player_presence() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_nearby_active_players() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.send_chat_invitation(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.cancel_chat_invitation(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.respond_chat_invitation(UUID, BOOLEAN) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.send_moderated_chat_message(UUID, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.block_player(UUID) TO authenticated;

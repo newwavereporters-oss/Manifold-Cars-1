@@ -7,9 +7,7 @@ import {
   Moon,
   Sunset,
   Palette,
-  ExternalLink,
   HelpCircle,
-  Sparkles,
   ShoppingBag,
   Car as CarIcon,
   Navigation,
@@ -17,7 +15,6 @@ import {
   Coins,
   Sliders,
   Power,
-  Zap,
   Smartphone,
   Map as MapIcon,
   Flag,
@@ -33,17 +30,38 @@ import {
   LogOut,
   Building2,
   ShieldCheck,
+  Lightbulb,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Radio,
+  ArrowLeft,
+  ArrowRight,
 } from 'lucide-react';
 import { CameraViewMode, TimeOfDay } from './WorldCanvas';
-import { VehicleModelType, VEHICLE_SPEC_PROFILES } from './worldModels';
+import {
+  VehicleModelType,
+  VEHICLE_SPEC_PROFILES,
+  HeadlightState,
+  TurnSignalState,
+} from './worldModels';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
-import { CockpitDashboardOverlay, HeadlightState, TurnSignalState, CockpitHotspot } from './CockpitDashboardOverlay';
-import { MobileTouchControls } from './MobileTouchControls';
+import { MobileTouchControls, VirtualDrivingInput } from './MobileTouchControls';
 import {
   LAGOS_ROAD_NODES,
   CITY_LANDMARKS,
   findShortestRoadPathDetailed,
 } from './lagosCityData';
+
+const RADIO_STATION_NAMES: Record<number, string> = {
+  0: 'Acoustic (Off)',
+  1: 'Afrobeats FM',
+  2: 'Hip-Hop Street',
+  3: 'R&B Midnight',
+  4: 'Gospel Praise',
+  5: 'Chill Lounge',
+  6: 'Electronic House',
+};
 
 interface WorldHUDProps {
   speedKmh: number;
@@ -62,20 +80,8 @@ interface WorldHUDProps {
   onOpenDealerLounge?: () => void;
   carPosition?: { x: number; z: number; heading: number };
   speedTrapRecord: number | null;
-  onVirtualInput?: (input: {
-    forward: boolean;
-    backward: boolean;
-    left: boolean;
-    right: boolean;
-    handbrake: boolean;
-  }) => void;
-  virtualInputState?: {
-    forward: boolean;
-    backward: boolean;
-    left: boolean;
-    right: boolean;
-    handbrake: boolean;
-  };
+  onVirtualInput?: (input: VirtualDrivingInput) => void;
+  virtualInputState?: VirtualDrivingInput;
   playerCredits: number;
   creditNotification: { amount: number; reason: string } | null;
   isEngineRunning: boolean;
@@ -95,8 +101,6 @@ interface WorldHUDProps {
   onSelectRadioStation: (st: number) => void;
   radioVolume: number;
   onRadioVolumeChange: (vol: number) => void;
-  cockpitHotspot: CockpitHotspot;
-  onSelectHotspot: (spot: CockpitHotspot) => void;
   onOpenCityMap?: () => void;
   onOpenMissions?: () => void;
   onResetVehicle?: () => void;
@@ -126,7 +130,6 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   timeOfDay,
   onTimeOfDayChange,
   selectedVehicleType,
-  onSelectVehicleType,
   onOpenCustomizer,
   onEnterMarketplace,
   onInspectCar,
@@ -160,8 +163,6 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   onSelectRadioStation,
   radioVolume,
   onRadioVolumeChange,
-  cockpitHotspot,
-  onSelectHotspot,
   onOpenCityMap,
   onOpenMissions,
   onResetVehicle,
@@ -177,9 +178,13 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   onLogout,
 }) => {
   const [isMuted, setIsMuted] = useState(() => engineAudio.getMuted());
+  const [masterVolume, setMasterVolume] = useState(() =>
+    Math.round(engineAudio.getMasterVolume() * 100)
+  );
   const [showControlsHelp, setShowControlsHelp] = useState(false);
   const [showGameMenu, setShowGameMenu] = useState(false);
   const [showPlayerMenu, setShowPlayerMenu] = useState(false);
+  const [showVehiclePanel, setShowVehiclePanel] = useState(false);
   const [touchControlsEnabled, setTouchControlsEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return (
@@ -188,7 +193,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         (navigator.maxTouchPoints || 0) > 0
       );
     }
-    return true;
+    return false;
   });
 
   const currentProfile =
@@ -200,31 +205,34 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
     setIsMuted(muted);
   };
 
+  const handleMasterVolumeChange = (pct: number) => {
+    engineAudio.init();
+    setMasterVolume(pct);
+    engineAudio.setMasterVolume(pct / 100);
+    if (pct > 0 && isMuted) {
+      setIsMuted(engineAudio.setMuted(false));
+    }
+  };
+
   const cameraOptions: { mode: CameraViewMode; label: string }[] = [
     { mode: 'CHASE', label: 'Chase' },
-    { mode: 'COCKPIT', label: 'Cockpit' },
-    { mode: 'ORBIT', label: 'Orbit' },
     { mode: 'DRONE', label: 'Drone' },
   ];
 
-  const cycleCamera = () => {
-    const list: CameraViewMode[] = ['CHASE', 'COCKPIT', 'ORBIT', 'DRONE'];
-    const idx = list.indexOf(cameraMode);
-    const next = list[(idx + 1) % list.length];
-    onCameraChange(next);
-  };
-
-  const cycleDriveMode = () => {
-    const modes: AudioDriveMode[] = ['COMFORT', 'SPORT', 'TRACK', 'ECO', 'DRIFT'];
-    const idx = modes.indexOf(driveMode);
-    const next = modes[(idx + 1) % modes.length];
-    onSelectDriveMode(next);
-  };
+  const driveModes: AudioDriveMode[] = ['ECO', 'COMFORT', 'SPORT', 'TRACK', 'DRIFT'];
 
   // Deduplicated Road Segments for Live Centered Minimap
   const radarRoadEdges = useMemo(() => {
     const seen = new Set<string>();
-    const list: { key: string; x1: number; z1: number; x2: number; z2: number; isDual: boolean; isBridge: boolean }[] = [];
+    const list: {
+      key: string;
+      x1: number;
+      z1: number;
+      x2: number;
+      z2: number;
+      isDual: boolean;
+      isBridge: boolean;
+    }[] = [];
     Object.values(LAGOS_ROAD_NODES).forEach((node) => {
       node.neighbors.forEach((nId) => {
         const nb = LAGOS_ROAD_NODES[nId];
@@ -252,9 +260,8 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
     return findShortestRoadPathDetailed(carPosition, activeDestination);
   }, [Math.round(carPosition.x / 3), Math.round(carPosition.z / 3), activeDestination]);
 
-  // Nearest district / road label for radar caption
   const nearestAreaLabel = useMemo(() => {
-    let bestName = 'Lagos Mainland';
+    let bestName = 'Lagos Island';
     let bestDist = Infinity;
     for (const node of Object.values(LAGOS_ROAD_NODES)) {
       const d = Math.hypot(node.x - carPosition.x, node.z - carPosition.z);
@@ -266,7 +273,6 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
     return bestName;
   }, [Math.round(carPosition.x / 10), Math.round(carPosition.z / 10)]);
 
-  // Centered local radar window: 280x280 world units centered on player car
   const radarHalfSpan = 140;
   const vbLeft = carPosition.x - radarHalfSpan;
   const vbTop = carPosition.z - radarHalfSpan;
@@ -274,413 +280,706 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   const formatDist = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`);
 
   return (
-    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-6 select-none z-20">
-      {/* 1. STREAMLINED DISTRACTION-FREE TOP BAR (Game Menu + Player Menu) */}
-      <header className="flex items-center justify-between w-full pointer-events-auto gap-2">
-        {/* Left: Compact Brand + Game Menu */}
-        <div className="relative flex items-center gap-2">
-          <div className="flex items-center gap-2 bg-[#071A2B]/90 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-white/10 shadow-xl">
-            <CarIcon className="w-4 h-4 text-[#EF233C]" />
-            <div className="hidden sm:flex flex-col leading-tight">
-              <span className="text-[8px] uppercase font-bold tracking-widest text-gray-400">
+    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between pt-[max(0.5rem,env(safe-area-inset-top))] px-[max(0.65rem,env(safe-area-inset-left))] pr-[max(0.65rem,env(safe-area-inset-right))] pb-3 sm:p-5 select-none z-20">
+      {/* 1. COMPACT TOP HUD BAR + FLOATING VEHICLE STATUS PILL */}
+      <div className="flex flex-col gap-2 w-full">
+        <header className="flex items-center justify-between w-full pointer-events-auto gap-1.5 sm:gap-2">
+          {/* Left: Compact Brand + Game Menu */}
+          <div className="relative flex items-center gap-1.5 sm:gap-2">
+            <div className="flex items-center gap-1.5 bg-[#071A2B]/88 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg">
+              <CarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#EF233C] shrink-0" />
+              <span className="text-[11px] sm:text-xs font-black tracking-wider text-white">
+                MANIFOLD
+              </span>
+              <span className="hidden md:inline text-[9px] uppercase font-bold tracking-wider text-gray-400 border-l border-white/15 pl-2 truncate max-w-[140px]">
                 {currentProfile.name}
               </span>
-              <span className="text-xs font-black tracking-wider text-white">MANIFOLD WORLD</span>
             </div>
-          </div>
 
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                setShowGameMenu((p) => !p);
-                setShowPlayerMenu(false);
-              }}
-              className="flex items-center gap-1.5 bg-[#071A2B]/92 hover:bg-[#0b233a] backdrop-blur-md px-3 py-2 rounded-2xl border border-white/15 shadow-xl text-xs font-black uppercase tracking-wider text-white transition-colors cursor-pointer whitespace-nowrap"
-            >
-              <Menu className="w-3.5 h-3.5 text-[#EF233C]" />
-              <span>Game Menu</span>
-              {nearbyPlayersCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-black">
-                  {nearbyPlayersCount}
-                </span>
-              )}
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowGameMenu((p) => !p);
+                  setShowPlayerMenu(false);
+                  setShowVehiclePanel(false);
+                }}
+                className="flex items-center gap-1.5 bg-[#071A2B]/90 hover:bg-[#0b233a] backdrop-blur-md px-2.5 sm:px-3 py-1.5 rounded-xl border border-white/15 shadow-lg text-[11px] sm:text-xs font-black uppercase tracking-wider text-white transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Menu className="w-3.5 h-3.5 text-[#EF233C]" />
+                <span>Menu</span>
+                {nearbyPlayersCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-black leading-tight">
+                    {nearbyPlayersCount}
+                  </span>
+                )}
+              </button>
 
-            {showGameMenu && (
-              <div className="absolute top-full left-0 mt-2 w-68 bg-[#071A2B]/98 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-2 z-50 space-y-1 text-xs">
-                {onOpenNearbyDrivers && (
+              {showGameMenu && (
+                <div className="absolute top-full left-0 mt-2 w-68 max-w-[calc(100vw-1.5rem)] bg-[#071A2B]/98 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-2 z-50 space-y-1 text-xs">
+                  {onOpenNearbyDrivers && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGameMenu(false);
+                        onOpenNearbyDrivers();
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Users className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Nearby Drivers</span>
+                      </span>
+                      <span className="text-[10px] font-mono text-emerald-400">
+                        {nearbyPlayersCount} online
+                      </span>
+                    </button>
+                  )}
+
+                  {onOpenCityMap && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGameMenu(false);
+                        onOpenCityMap();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                    >
+                      <MapIcon className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Lagos City GPS Map [M]</span>
+                    </button>
+                  )}
+
+                  {onOpenMissions && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGameMenu(false);
+                        onOpenMissions();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                    >
+                      <Flag className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Missions & Street Races</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
                       setShowGameMenu(false);
-                      onOpenNearbyDrivers();
+                      onOpenCustomizer();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                  >
+                    <Palette className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Tuning & Upgrades [C]</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGameMenu(false);
+                      onCameraChange(cameraMode === 'CHASE' ? 'DRONE' : 'CHASE');
                     }}
                     className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
                   >
                     <span className="flex items-center gap-2">
-                      <Users className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Nearby Drivers</span>
+                      <Camera className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Camera View</span>
                     </span>
-                    <span className="text-[10px] font-mono text-emerald-400">{nearbyPlayersCount} online</span>
+                    <span className="text-[10px] font-mono text-sky-300">{cameraMode}</span>
                   </button>
-                )}
 
-                {onOpenCityMap && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowGameMenu(false);
-                      onOpenCityMap();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
-                  >
-                    <MapIcon className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Lagos City GPS Map [M]</span>
-                  </button>
-                )}
-
-                {onOpenMissions && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowGameMenu(false);
-                      onOpenMissions();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
-                  >
-                    <Flag className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Missions & Street Races</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowGameMenu(false);
-                    onOpenCustomizer();
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
-                >
-                  <Palette className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Tuning & Upgrades [C]</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowGameMenu(false);
-                    cycleCamera();
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
-                >
-                  <span className="flex items-center gap-2">
-                    <Camera className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Camera View</span>
-                  </span>
-                  <span className="text-[10px] font-mono text-gray-400">{cameraMode}</span>
-                </button>
-
-                <div className="px-3 py-1.5 flex items-center justify-between gap-2">
-                  <span className="text-[10px] uppercase font-bold text-gray-400">Time of Day</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => onTimeOfDayChange('DAYLIGHT')}
-                      className={`p-1 rounded-lg ${timeOfDay === 'DAYLIGHT' ? 'bg-amber-400 text-black' : 'text-gray-400 hover:text-white'}`}
-                      title="Daylight"
-                    >
-                      <Sun className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onTimeOfDayChange('SUNSET')}
-                      className={`p-1 rounded-lg ${timeOfDay === 'SUNSET' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'}`}
-                      title="Sunset"
-                    >
-                      <Sunset className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onTimeOfDayChange('MIDNIGHT')}
-                      className={`p-1 rounded-lg ${timeOfDay === 'MIDNIGHT' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                      title="Midnight"
-                    >
-                      <Moon className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="px-3 py-1.5 flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase font-bold text-gray-400">
+                      Time of Day
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => onTimeOfDayChange('DAYLIGHT')}
+                        className={`p-1 rounded-lg ${
+                          timeOfDay === 'DAYLIGHT'
+                            ? 'bg-amber-400 text-black'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                        title="Daylight"
+                      >
+                        <Sun className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onTimeOfDayChange('SUNSET')}
+                        className={`p-1 rounded-lg ${
+                          timeOfDay === 'SUNSET'
+                            ? 'bg-orange-500 text-white'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                        title="Sunset"
+                      >
+                        <Sunset className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onTimeOfDayChange('MIDNIGHT')}
+                        className={`p-1 rounded-lg ${
+                          timeOfDay === 'MIDNIGHT'
+                            ? 'bg-indigo-600 text-white'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                        title="Midnight"
+                      >
+                        <Moon className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTouchControlsEnabled((p) => !p);
-                    setShowGameMenu(false);
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
-                >
-                  <span className="flex items-center gap-2">
-                    <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Touch Controls</span>
-                  </span>
-                  <span className="text-[10px] font-mono text-gray-400">
-                    {touchControlsEnabled ? 'ON' : 'OFF'}
-                  </span>
-                </button>
-
-                {onResetVehicle && (
                   <button
                     type="button"
                     onClick={() => {
+                      setTouchControlsEnabled((p) => !p);
                       setShowGameMenu(false);
-                      onResetVehicle();
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
                   >
-                    <RotateCcw className="w-3.5 h-3.5 text-gray-300" />
-                    <span>Reset Vehicle [R]</span>
+                    <span className="flex items-center gap-2">
+                      <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Touch Pedals</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-gray-300">
+                      {touchControlsEnabled ? 'ON' : 'OFF'}
+                    </span>
                   </button>
-                )}
 
-                <div className="border-t border-white/10 pt-1 mt-1 space-y-1">
-                  {onOpenShowroomSample && (
+                  {onResetVehicle && (
                     <button
                       type="button"
                       onClick={() => {
                         setShowGameMenu(false);
-                        onOpenShowroomSample();
+                        onResetVehicle();
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-200 hover:bg-white/10 font-semibold"
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
                     >
-                      <Compass className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Showroom Pavilion</span>
+                      <RotateCcw className="w-3.5 h-3.5 text-gray-300" />
+                      <span>Reset Vehicle [R]</span>
                     </button>
                   )}
-                  {onOpenDealerLounge && (
+
+                  <div className="border-t border-white/10 pt-1 mt-1 space-y-1">
+                    {onOpenShowroomSample && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowGameMenu(false);
+                          onOpenShowroomSample();
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-200 hover:bg-white/10 font-semibold"
+                      >
+                        <Compass className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Showroom Pavilion</span>
+                      </button>
+                    )}
+                    {onOpenDealerLounge && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowGameMenu(false);
+                          onOpenDealerLounge();
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-200 hover:bg-white/10 font-semibold"
+                      >
+                        <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                        <span>VIP Dealer Lounge</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
                         setShowGameMenu(false);
-                        onOpenDealerLounge();
+                        onEnterMarketplace();
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-200 hover:bg-white/10 font-semibold"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-[#EF233C] hover:bg-white/10 font-black"
                     >
-                      <Building2 className="w-3.5 h-3.5 text-amber-400" />
-                      <span>VIP Dealer Lounge</span>
+                      <ShoppingBag className="w-3.5 h-3.5" />
+                      <span>MANIFOLD Marketplace</span>
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowGameMenu(false);
-                      onEnterMarketplace();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-[#EF233C] hover:bg-white/10 font-black"
-                  >
-                    <ShoppingBag className="w-3.5 h-3.5" />
-                    <span>MANIFOLD Marketplace</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowGameMenu(false);
-                      setShowControlsHelp(true);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-300 hover:bg-white/10 font-semibold"
-                  >
-                    <HelpCircle className="w-3.5 h-3.5" />
-                    <span>Controls Guide</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right: Credits Pill + Player Menu + Audio Mute */}
-        <div className="relative flex items-center gap-2">
-          <div className="hidden xs:flex sm:flex bg-[#071A2B]/90 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/10 shadow-xl items-center gap-1.5 text-xs font-mono font-black text-amber-400">
-            <Coins className="w-3.5 h-3.5" />
-            <span className="tabular-nums">{playerCredits.toLocaleString()}</span>
-            <span className="text-[9px] text-gray-400 font-sans font-bold">MC</span>
-          </div>
-
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                setShowPlayerMenu((p) => !p);
-                setShowGameMenu(false);
-              }}
-              className="flex items-center gap-2 bg-[#071A2B]/92 hover:bg-[#0b233a] backdrop-blur-md px-3 py-2 rounded-2xl border border-white/15 shadow-xl text-xs font-bold text-white cursor-pointer whitespace-nowrap"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-              <User className="w-3.5 h-3.5 text-sky-400 hidden sm:inline" />
-              <span className="max-w-[96px] truncate font-black">{playerNickname}</span>
-            </button>
-
-            {showPlayerMenu && (
-              <div className="absolute top-full right-0 mt-2 w-72 bg-[#071A2B]/98 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-2.5 text-xs">
-                <div className="pb-2 border-b border-white/10">
-                  <div className="flex items-center justify-between">
-                    <span className="font-black text-white">{playerNickname}</span>
-                    <span className="text-[10px] font-bold text-emerald-400 uppercase">Online</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGameMenu(false);
+                        setShowControlsHelp(true);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-300 hover:bg-white/10 font-semibold"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5" />
+                      <span>Controls Guide</span>
+                    </button>
                   </div>
-                  <span className="text-[10px] text-amber-400 font-mono font-bold block mt-0.5">
-                    {playerCredits.toLocaleString()} MC Balance
-                  </span>
                 </div>
+              )}
+            </div>
+          </div>
 
-                {/* Vehicle Lock Status / Reconfigure CTA */}
-                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
-                  <div className="flex items-center justify-between text-[10px] font-black uppercase">
-                    <span className="flex items-center gap-1 text-gray-300">
-                      {lockStatus?.isLocked ? (
-                        <Lock className="w-3 h-3 text-amber-400" />
-                      ) : (
-                        <Unlock className="w-3 h-3 text-emerald-400" />
-                      )}
-                      <span>Vehicle Setup</span>
-                    </span>
-                    <span className={`font-mono ${lockStatus?.isLocked ? 'text-amber-300' : 'text-emerald-400'}`}>
-                      {lockStatus?.isLocked ? lockStatus.hhmmss : 'Unlocked'}
+          {/* Right: Credits (Desktop+) + Player Status + Mute Toggle */}
+          <div className="relative flex items-center gap-1.5 sm:gap-2">
+            <div className="hidden md:flex bg-[#071A2B]/88 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/12 shadow-lg items-center gap-1.5 text-xs font-mono font-black text-amber-400">
+              <Coins className="w-3.5 h-3.5" />
+              <span className="tabular-nums">{playerCredits.toLocaleString()}</span>
+              <span className="text-[9px] text-gray-400 font-sans font-bold">MC</span>
+            </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPlayerMenu((p) => !p);
+                  setShowGameMenu(false);
+                  setShowVehiclePanel(false);
+                }}
+                className="flex items-center gap-1.5 bg-[#071A2B]/90 hover:bg-[#0b233a] backdrop-blur-md px-2.5 sm:px-3 py-1.5 rounded-xl border border-white/15 shadow-lg text-[11px] sm:text-xs font-bold text-white cursor-pointer whitespace-nowrap"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                <User className="w-3.5 h-3.5 text-sky-400 hidden sm:inline" />
+                <span className="max-w-[78px] sm:max-w-[110px] truncate font-black">
+                  {playerNickname}
+                </span>
+              </button>
+
+              {showPlayerMenu && (
+                <div className="absolute top-full right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] bg-[#071A2B]/98 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-2.5 text-xs">
+                  <div className="pb-2 border-b border-white/10">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-white">{playerNickname}</span>
+                      <span className="text-[10px] font-bold text-emerald-400 uppercase">
+                        Online
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-amber-400 font-mono font-bold block mt-0.5">
+                      {playerCredits.toLocaleString()} MC Balance
                     </span>
                   </div>
 
-                  {onOpenVehicleConfig && (
+                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase">
+                      <span className="flex items-center gap-1 text-gray-300">
+                        {lockStatus?.isLocked ? (
+                          <Lock className="w-3 h-3 text-amber-400" />
+                        ) : (
+                          <Unlock className="w-3 h-3 text-emerald-400" />
+                        )}
+                        <span>Vehicle Setup</span>
+                      </span>
+                      <span
+                        className={`font-mono ${
+                          lockStatus?.isLocked ? 'text-amber-300' : 'text-emerald-400'
+                        }`}
+                      >
+                        {lockStatus?.isLocked ? lockStatus.hhmmss : 'Unlocked'}
+                      </span>
+                    </div>
+
+                    {onOpenVehicleConfig && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowPlayerMenu(false);
+                          onOpenVehicleConfig();
+                        }}
+                        className="w-full py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold"
+                      >
+                        {lockStatus?.isLocked ? 'View Lock Countdown' : 'Reconfigure Vehicle'}
+                      </button>
+                    )}
+                  </div>
+
+                  {onOpenBlockedDrivers && (
                     <button
                       type="button"
                       onClick={() => {
                         setShowPlayerMenu(false);
-                        onOpenVehicleConfig();
+                        onOpenBlockedDrivers();
                       }}
-                      className="w-full py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold"
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-gray-200 hover:bg-white/10 font-bold"
                     >
-                      {lockStatus?.isLocked ? 'View Lock Countdown' : 'Reconfigure Vehicle'}
+                      <Ban className="w-3.5 h-3.5 text-red-400" />
+                      <span>Blocked Drivers</span>
                     </button>
                   )}
-                </div>
 
-                {onOpenBlockedDrivers && (
                   <button
                     type="button"
                     onClick={() => {
                       setShowPlayerMenu(false);
-                      onOpenBlockedDrivers();
+                      setShowControlsHelp(true);
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-gray-200 hover:bg-white/10 font-bold"
                   >
-                    <Ban className="w-3.5 h-3.5 text-red-400" />
-                    <span>Blocked Drivers</span>
+                    <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Driving & Community Guide</span>
                   </button>
-                )}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPlayerMenu(false);
-                    setShowControlsHelp(true);
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-gray-200 hover:bg-white/10 font-bold"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Community & Driving Guide</span>
-                </button>
+                  {onLogout && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPlayerMenu(false);
+                        onLogout();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-red-300 hover:bg-red-500/15 font-black"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sign Out of Game</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
 
-                {onLogout && (
+            <button
+              type="button"
+              onClick={toggleSound}
+              className="p-1.5 sm:p-2 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md rounded-xl border border-white/15 shadow-lg text-gray-300 hover:text-white transition-colors cursor-pointer"
+              title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
+              aria-label={isMuted ? 'Unmute Audio' : 'Mute Audio'}
+            >
+              {isMuted ? (
+                <VolumeX className="w-4 h-4 text-red-400" />
+              ) : (
+                <Volume2 className="w-4 h-4 text-emerald-400" />
+              )}
+            </button>
+          </div>
+        </header>
+
+        {/* COMPACT FLOATING VEHICLE STATUS BAR & EXPANDABLE PANEL */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+          <div className="relative pointer-events-auto flex items-center gap-1.5">
+            {/* Always-compact Speed + Gear + Expand Drawer Pill */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowVehiclePanel((p) => !p);
+                setShowGameMenu(false);
+                setShowPlayerMenu(false);
+              }}
+              className="flex items-center gap-2 bg-[#071A2B]/86 hover:bg-[#0b233a] backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 shadow-lg cursor-pointer"
+              title="Toggle Vehicle Controls"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isEngineRunning ? 'bg-emerald-400' : 'bg-red-400'
+                }`}
+              />
+              <span className="text-xs font-black text-[#EF233C] font-mono">{gear}</span>
+              <span className="w-px h-3.5 bg-white/15" />
+              <div className="flex items-baseline gap-0.5 font-mono">
+                <span className="text-sm font-black text-white tabular-nums">{speedKmh}</span>
+                <span className="text-[8px] text-gray-400 font-bold">KM/H</span>
+              </div>
+              <span className="hidden sm:inline w-px h-3.5 bg-white/15" />
+              <span className="hidden sm:inline text-[10px] font-black text-sky-300 uppercase">
+                {driveMode}
+              </span>
+              {showVehiclePanel ? (
+                <ChevronUp className="w-3.5 h-3.5 text-gray-300" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-gray-300" />
+              )}
+            </button>
+
+            {/* Quick Camera Mode Toggle / Return to Chase CTA */}
+            {cameraMode === 'DRONE' ? (
+              <button
+                type="button"
+                onClick={() => onCameraChange('CHASE')}
+                className="flex items-center gap-1.5 bg-[#EF233C] hover:bg-[#d90429] text-white px-3 py-1.5 rounded-xl shadow-lg text-[10px] sm:text-xs font-black uppercase tracking-wider cursor-pointer animate-in fade-in duration-150"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Return to Chase</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onCameraChange('DRONE')}
+                className="flex items-center gap-1.5 bg-[#071A2B]/84 hover:bg-[#0b233a] backdrop-blur-md text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg text-[10px] sm:text-[11px] font-bold uppercase cursor-pointer"
+                title="Switch to Drone Aerial Camera"
+              >
+                <Camera className="w-3.5 h-3.5 text-sky-400" />
+                <span>Drone</span>
+              </button>
+            )}
+
+            {/* Expandable Vehicle Systems Drawer */}
+            {showVehiclePanel && (
+              <div className="absolute top-full left-0 mt-2 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-[#071A2B]/96 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-3 text-xs">
+                <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-[#EF233C]" />
+                    <span>Vehicle Systems</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-gray-400">
+                    {rpm} RPM
+                  </span>
+                </div>
+
+                {/* Primary Electrical & Horn Controls */}
+                <div className="grid grid-cols-4 gap-1.5">
                   <button
                     type="button"
                     onClick={() => {
-                      setShowPlayerMenu(false);
-                      onLogout();
+                      engineAudio.init();
+                      onToggleEngine();
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-red-300 hover:bg-red-500/15 font-black"
+                    className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                      isEngineRunning
+                        ? 'bg-red-600/90 border-red-400 text-white'
+                        : 'bg-white/5 border-white/10 text-gray-400'
+                    }`}
                   >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Sign Out of Game</span>
+                    <Power className="w-3.5 h-3.5" />
+                    <span>{isEngineRunning ? 'Engine' : 'Off'}</span>
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={onCycleHeadlights}
+                    className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                      headlightState === 'HIGH'
+                        ? 'bg-blue-600 border-blue-400 text-white'
+                        : headlightState === 'LOW'
+                        ? 'bg-emerald-600 border-emerald-400 text-white'
+                        : 'bg-white/5 border-white/10 text-gray-400'
+                    }`}
+                  >
+                    <Lightbulb className="w-3.5 h-3.5" />
+                    <span>{headlightState}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={onToggleHazard}
+                    className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                      hazardLights
+                        ? 'bg-amber-500 border-amber-300 text-slate-950'
+                        : 'bg-white/5 border-white/10 text-gray-400'
+                    }`}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>Hazard</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      engineAudio.init();
+                      onHornDown();
+                    }}
+                    onPointerUp={onHornUp}
+                    onPointerCancel={onHornUp}
+                    onPointerLeave={onHornUp}
+                    className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                      hornActive
+                        ? 'bg-yellow-400 border-yellow-200 text-slate-950'
+                        : 'bg-white/5 border-white/10 text-yellow-400'
+                    }`}
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span>Horn</span>
+                  </button>
+                </div>
+
+                {/* Turn Indicators */}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase text-gray-400">
+                    Indicators
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onToggleTurnSignal('LEFT')}
+                      className={`px-2.5 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
+                        turnSignal === 'LEFT'
+                          ? 'bg-amber-500 text-slate-950 border-amber-300'
+                          : 'bg-white/5 border-white/10 text-gray-300'
+                      }`}
+                    >
+                      <ArrowLeft className="w-3 h-3" />L
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onToggleTurnSignal('RIGHT')}
+                      className={`px-2.5 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
+                        turnSignal === 'RIGHT'
+                          ? 'bg-amber-500 text-slate-950 border-amber-300'
+                          : 'bg-white/5 border-white/10 text-gray-300'
+                      }`}
+                    >
+                      R<ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Camera Mode Selector (Chase / Drone ONLY) */}
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1.5">
+                    Camera Perspective
+                  </span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {cameraOptions.map((opt) => (
+                      <button
+                        key={opt.mode}
+                        type="button"
+                        onClick={() => onCameraChange(opt.mode)}
+                        className={`py-1.5 rounded-xl text-[11px] font-black uppercase transition-colors cursor-pointer ${
+                          cameraMode === opt.mode
+                            ? 'bg-white text-slate-950'
+                            : 'bg-white/8 text-gray-300 hover:bg-white/15'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Driving Mode Selector */}
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1.5">
+                    Driving Mode
+                  </span>
+                  <div className="grid grid-cols-5 gap-1">
+                    {driveModes.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => onSelectDriveMode(m)}
+                        className={`py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors cursor-pointer ${
+                          driveMode === m
+                            ? 'bg-[#EF233C] text-white'
+                            : 'bg-white/8 text-gray-300 hover:bg-white/15'
+                        }`}
+                      >
+                        {m === 'COMFORT' ? 'CMFT' : m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sound & Audio Volume */}
+                <div className="space-y-1.5 pt-1 border-t border-white/10">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-gray-300">
+                    <span>Master Audio Volume</span>
+                    <span className="font-mono">{isMuted ? 'MUTED' : `${masterVolume}%`}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={isMuted ? 0 : masterVolume}
+                    onChange={(e) => handleMasterVolumeChange(Number(e.target.value))}
+                    className="w-full accent-[#EF233C] h-1.5 bg-white/15 rounded-lg cursor-pointer"
+                  />
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="text-[10px] font-bold text-gray-300 flex items-center gap-1 shrink-0">
+                      <Radio className="w-3 h-3 text-emerald-400" />
+                      <span>Radio</span>
+                    </span>
+                    <select
+                      value={radioStation}
+                      onChange={(e) => {
+                        engineAudio.init();
+                        onSelectRadioStation(Number(e.target.value));
+                      }}
+                      className="flex-1 h-7 px-2 rounded-lg bg-white/10 border border-white/15 text-[10px] font-bold text-white outline-none"
+                    >
+                      {Object.entries(RADIO_STATION_NAMES).map(([id, name]) => (
+                        <option key={id} value={id} className="bg-[#071A2B] text-white">
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.round(radioVolume * 100)}
+                      onChange={(e) => onRadioVolumeChange(Number(e.target.value) / 100)}
+                      className="w-16 accent-emerald-400 h-1 bg-white/15 rounded-lg cursor-pointer"
+                      title="Radio Volume"
+                    />
+                  </div>
+                </div>
               </div>
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={toggleSound}
-            className="p-2 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-xl text-gray-300 hover:text-white transition-colors cursor-pointer"
-            title={isMuted ? 'Unmute Audio Engine' : 'Mute Audio Engine'}
-          >
-            {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
-          </button>
+          {/* Drone Mode Subtle Interactive Guide */}
+          {cameraMode === 'DRONE' && (
+            <div className="hidden sm:flex items-center gap-2 bg-[#071A2B]/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-sky-400/30 text-[10px] font-bold text-sky-200 pointer-events-none">
+              <span>DRONE VIEW — Drag anywhere to orbit • Scroll to zoom</span>
+            </div>
+          )}
         </div>
-      </header>
+      </div>
 
-      {/* 2. CONTROLS MODAL OVERLAY */}
+      {/* 2. CONTROLS GUIDE MODAL OVERLAY */}
       {showControlsHelp && (
-        <div className="pointer-events-auto self-center max-w-lg w-full bg-[#071A2B]/95 backdrop-blur-2xl border border-white/15 p-6 rounded-3xl shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-150 z-50">
+        <div className="pointer-events-auto self-center max-w-lg w-full bg-[#071A2B]/96 backdrop-blur-2xl border border-white/15 p-5 sm:p-6 rounded-3xl shadow-2xl my-auto z-50">
           <div className="flex items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2">
               <Navigation className="w-5 h-5 text-[#EF233C]" />
               <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                Proving Ground Flight & Drive Controls
+                MANIFOLD Driving & Camera Guide
               </h3>
             </div>
             <button
+              type="button"
               onClick={() => setShowControlsHelp(false)}
-              className="text-gray-400 hover:text-white text-xs font-bold"
+              className="text-gray-400 hover:text-white text-xs font-bold cursor-pointer"
             >
-              Close [ESC]
+              Close
             </button>
           </div>
           <div className="grid grid-cols-2 gap-2.5 mt-4 text-xs">
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
-              <span className="font-bold text-[#EF233C] block mb-0.5">W / Arrow Up / Gas</span>
+              <span className="font-bold text-[#EF233C] block mb-0.5">W / ↑ / GAS</span>
               <span className="text-gray-300 text-[11px]">Throttle & Dynamic Acceleration</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
-              <span className="font-bold text-[#EF233C] block mb-0.5">S / Arrow Down / Brake</span>
+              <span className="font-bold text-[#EF233C] block mb-0.5">S / ↓ / BRAKE</span>
               <span className="text-gray-300 text-[11px]">Braking & Reverse Gear</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
-              <span className="font-bold text-[#EF233C] block mb-0.5">A / D or Left / Right</span>
+              <span className="font-bold text-[#EF233C] block mb-0.5">A / D or ◀ / ▶</span>
               <span className="text-gray-300 text-[11px]">Steering Authority</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
               <span className="font-bold text-amber-400 block mb-0.5">Spacebar / DRIFT</span>
-              <span className="text-gray-300 text-[11px]">Handbrake Drift Slide</span>
+              <span className="text-gray-300 text-[11px]">Handbrake Drift (Sport/Drift)</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
-              <span className="font-bold text-yellow-400 block mb-0.5">H / Horn Button</span>
-              <span className="text-gray-300 text-[11px]">Polyphonic Dual-Tone Horn</span>
+              <span className="font-bold text-sky-400 block mb-0.5">Chase & Drone Cameras</span>
+              <span className="text-gray-300 text-[11px]">Drag to orbit in Drone view</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
-              <span className="font-bold text-white block mb-0.5">E / Ignition</span>
-              <span className="text-gray-300 text-[11px]">Push-to-Start Engine / Hotspots</span>
-            </div>
-            <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
-              <span className="font-bold text-emerald-400 block mb-0.5">Q / E (Blinkers)</span>
-              <span className="text-gray-300 text-[11px]">Left / Right Turn Signals</span>
-            </div>
-            <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
-              <span className="font-bold text-blue-400 block mb-0.5">C</span>
-              <span className="text-gray-300 text-[11px]">Tuning & Upgrades Studio</span>
+              <span className="font-bold text-emerald-400 block mb-0.5">R / C / M / E</span>
+              <span className="text-gray-300 text-[11px]">Reset, Tuning, GPS Map, Interact</span>
             </div>
           </div>
-          <p className="mt-4 text-[11px] text-gray-400 text-center">
-            Procedural audio synthesizes dynamically as your vehicle accelerates through 6 gears.
-          </p>
         </div>
       )}
 
       {/* 3. CENTER NOTIFICATION & LIVE GPS GUIDANCE BANNERS */}
-      <div className="self-center flex flex-col items-center gap-2">
-        {/* Active Turn-by-Turn GPS Guidance Pill */}
+      <div className="self-center flex flex-col items-center gap-2 max-w-md w-full px-2">
         {activeDestination && gpsRouteInfo && (
-          <div className="pointer-events-auto bg-[#071A2B]/90 backdrop-blur-xl border border-emerald-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 max-w-md">
+          <div className="pointer-events-auto bg-[#071A2B]/90 backdrop-blur-xl border border-emerald-500/50 px-3.5 py-2 rounded-2xl shadow-2xl flex items-center gap-3 w-full">
             <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
               <Navigation className="w-4 h-4" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-emerald-400">
                 <span className="truncate">{activeDestination.name}</span>
                 <span>•</span>
@@ -693,6 +992,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             </div>
             {onClearDestination && (
               <button
+                type="button"
                 onClick={onClearDestination}
                 className="p-1.5 rounded-lg bg-white/10 hover:bg-red-500/30 text-gray-300 hover:text-white transition-colors shrink-0"
                 title="Clear GPS Route"
@@ -703,33 +1003,32 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           </div>
         )}
 
-        {/* Speed Trap Banner */}
         {speedTrapRecord && (
-          <div className="bg-[#10b981]/95 backdrop-blur-md border border-[#10b981] px-6 py-2.5 rounded-2xl shadow-2xl animate-bounce">
+          <div className="bg-[#10b981]/95 backdrop-blur-md border border-[#10b981] px-5 py-2 rounded-2xl shadow-2xl">
             <p className="text-xs font-extrabold uppercase tracking-widest text-black flex items-center gap-2">
-              <span>⚡ SPEED TRAP RECORDED:</span>
-              <span className="text-base font-black font-mono tabular-nums">{speedTrapRecord} KM/H</span>
+              <span>⚡ SPEED TRAP:</span>
+              <span className="text-base font-black font-mono tabular-nums">
+                {speedTrapRecord} KM/H
+              </span>
             </p>
           </div>
         )}
 
-        {/* Economy Reward Notification */}
         {creditNotification && (
-          <div className="bg-amber-400 text-black px-5 py-2 rounded-2xl shadow-2xl border border-amber-300 animate-in slide-in-from-top duration-200 flex items-center gap-2 text-xs font-black">
+          <div className="bg-amber-400 text-black px-4 py-1.5 rounded-2xl shadow-2xl border border-amber-300 flex items-center gap-2 text-xs font-black">
             <Coins className="w-4 h-4 text-black" />
-            <span>+{creditNotification.amount} MC EARNED:</span>
-            <span className="font-normal">{creditNotification.reason}</span>
+            <span>+{creditNotification.amount} MC:</span>
+            <span className="font-semibold">{creditNotification.reason}</span>
           </div>
         )}
 
-        {/* Proximity Interactive Action Prompt */}
         {activeZone && (
-          <div className="pointer-events-auto bg-[#071A2B]/90 backdrop-blur-xl border border-[#EF233C] px-6 py-3.5 rounded-2xl shadow-2xl flex items-center gap-4 transition-all">
-            <div className="w-9 h-9 rounded-xl bg-[#EF233C]/20 border border-[#EF233C]/40 flex items-center justify-center text-[#EF233C] font-black text-sm">
+          <div className="pointer-events-auto bg-[#071A2B]/92 backdrop-blur-xl border border-[#EF233C] px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 w-full">
+            <div className="w-8 h-8 rounded-xl bg-[#EF233C]/20 border border-[#EF233C]/40 flex items-center justify-center text-[#EF233C] font-black text-xs shrink-0">
               E
             </div>
-            <div>
-              <div className="text-xs font-bold text-white uppercase tracking-wider">
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold text-white uppercase tracking-wider truncate">
                 {activeZone === 'marketplace'
                   ? 'Grand Marketplace Gateway'
                   : activeZone === 'customizer'
@@ -738,24 +1037,25 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                   ? 'VIP Concierge & Dealer Lounge'
                   : 'Showroom Vehicle Showcase'}
               </div>
-              <div className="text-[11px] text-gray-300">
+              <div className="text-[10px] text-gray-300 truncate">
                 {activeZone === 'marketplace'
-                  ? 'Drive through or click to explore verified live inventory'
+                  ? 'Explore verified live vehicle inventory'
                   : activeZone === 'customizer'
-                  ? 'Upgrade ECU stages, suspension, tires, and neon underglow'
+                  ? 'Upgrade ECU stages, suspension & rims'
                   : activeZone === 'dealer-lounge'
-                  ? 'Access dealer inventory onboarding, enquiries & financing'
-                  : 'Inspect vehicle specs, verified Naira price & video review'}
+                  ? 'Dealer inventory, enquiries & financing'
+                  : 'Inspect specs & verified Naira pricing'}
               </div>
             </div>
             <button
+              type="button"
               onClick={() => {
                 if (activeZone === 'marketplace') onEnterMarketplace();
                 else if (activeZone === 'customizer') onOpenCustomizer();
                 else if (activeZone === 'dealer-lounge') onOpenDealerLounge?.();
                 else onInspectCar?.(activeZone);
               }}
-              className="px-4 py-2 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-bold uppercase rounded-xl transition-colors shrink-0"
+              className="px-3.5 py-1.5 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-bold uppercase rounded-xl transition-colors shrink-0 cursor-pointer"
             >
               Open
             </button>
@@ -763,66 +1063,25 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         )}
       </div>
 
-      {/* 4. COCKPIT DASHBOARD OVERLAY (Active when in COCKPIT mode) */}
-      {cameraMode === 'COCKPIT' && (
-        <CockpitDashboardOverlay
-          speedKmh={speedKmh}
-          rpm={rpm}
-          gear={gear}
-          spec={currentProfile}
-          isEngineRunning={isEngineRunning}
-          onToggleEngine={onToggleEngine}
-          headlightState={headlightState}
-          onCycleHeadlights={onCycleHeadlights}
-          turnSignal={turnSignal}
-          onToggleTurnSignal={onToggleTurnSignal}
-          hazardLights={hazardLights}
-          onToggleHazard={onToggleHazard}
-          hornActive={hornActive}
-          onHornDown={onHornDown}
-          onHornUp={onHornUp}
-          driveMode={driveMode}
-          onSelectDriveMode={onSelectDriveMode}
-          radioStation={radioStation}
-          onSelectRadioStation={onSelectRadioStation}
-          radioVolume={radioVolume}
-          onRadioVolumeChange={onRadioVolumeChange}
-          cockpitHotspot={cockpitHotspot}
-          onSelectHotspot={onSelectHotspot}
-          isMusicLocked={Boolean(lockStatus?.isLocked)}
-        />
-      )}
-
-      {/* 5. MOBILE & ON-SCREEN TOUCH CONTROLS */}
+      {/* 4. MOBILE THUMB DRIVING CONTROLS (Clean, Ergonomic, Safe-Area Bounded) */}
       {touchControlsEnabled && (
         <MobileTouchControls
           onVirtualInput={onVirtualInput || (() => {})}
           virtualInputState={virtualInputState}
-          isEngineRunning={isEngineRunning}
-          onToggleEngine={onToggleEngine}
-          headlightState={headlightState}
-          onCycleHeadlights={onCycleHeadlights}
-          hazardLights={hazardLights}
-          onToggleHazard={onToggleHazard}
-          onHornDown={onHornDown}
-          onHornUp={onHornUp}
           cameraMode={cameraMode}
-          onCycleCamera={cycleCamera}
           driveMode={driveMode}
-          onCycleDriveMode={cycleDriveMode}
           speedKmh={speedKmh}
-          gear={gear}
-          rpm={rpm}
+          disabled={showGameMenu || showPlayerMenu || showControlsHelp}
         />
       )}
 
-      {/* 6. BOTTOM DESKTOP HUD BAR: TELEMETRY & CONTROLS + MINIMAP */}
+      {/* 5. DESKTOP BOTTOM HUD BAR (Hidden when touch pedals active on compact viewports) */}
       <footer
         className={`${
           touchControlsEnabled ? 'hidden xl:flex' : 'hidden sm:flex'
         } items-end justify-between w-full pointer-events-auto gap-4`}
       >
-        {/* Left: Camera Selector & Navigation Mini-Compass */}
+        {/* Left: Simplified 2-Mode Camera Selector (Chase / Drone) */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1 bg-[#071A2B]/85 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shadow-lg">
             <div className="px-2 py-1 text-gray-400 text-xs font-bold uppercase flex items-center gap-1.5">
@@ -832,8 +1091,9 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             {cameraOptions.map((opt) => (
               <button
                 key={opt.mode}
+                type="button"
                 onClick={() => onCameraChange(opt.mode)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${
                   cameraMode === opt.mode
                     ? 'bg-white text-slate-900 shadow-sm'
                     : 'text-gray-300 hover:text-white'
@@ -844,15 +1104,12 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             ))}
           </div>
 
-          {/* Vehicle Stats Badge */}
           <div className="flex items-center gap-2 bg-[#071A2B]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-gray-400 font-mono">
             <span>MODE: {driveMode}</span>
             <span>•</span>
             <span>TOP: {Math.round(currentProfile.maxSpeed * 4.6)} KM/H</span>
             <span>•</span>
-            <span>ACCEL: {currentProfile.acceleration} M/S²</span>
-            <span>•</span>
-            <span>REDLINE: {currentProfile.redlineRpm} RPM</span>
+            <span>{currentProfile.horsepower} HP</span>
           </div>
         </div>
 
@@ -864,14 +1121,12 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             title="Click to open Full Lagos Metro GPS Map [M]"
           >
             <svg viewBox={`${vbLeft} ${vbTop} ${vbSize} ${vbSize}`} className="w-full h-full">
-              {/* Lagos Lagoon & Coastal Water Channels */}
               <rect x={-1200} y={-585} width={3050} height={420} fill="#0b3b59" fillOpacity="0.65" />
               <rect x={445} y={-165} width={150} height={420} fill="#0b3b59" fillOpacity="0.65" />
               <rect x={1350} y={-165} width={75} height={420} fill="#0b3b59" fillOpacity="0.65" />
               <rect x={1600} y={-165} width={450} height={420} fill="#0b3b59" fillOpacity="0.6" />
               <rect x={-1200} y={250} width={3250} height={260} fill="#0b3b59" fillOpacity="0.6" />
 
-              {/* Real Nearby Roads */}
               {radarRoadEdges.map((e) => (
                 <line
                   key={e.key}
@@ -885,10 +1140,11 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                 />
               ))}
 
-              {/* Active GPS Polyline */}
               {gpsRouteInfo && gpsRouteInfo.path.length >= 2 && (
                 <polyline
-                  points={gpsRouteInfo.path.map((pt) => `${pt.x.toFixed(1)},${pt.z.toFixed(1)}`).join(' ')}
+                  points={gpsRouteInfo.path
+                    .map((pt) => `${pt.x.toFixed(1)},${pt.z.toFixed(1)}`)
+                    .join(' ')}
                   fill="none"
                   stroke="#10b981"
                   strokeWidth="6"
@@ -898,7 +1154,6 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                 />
               )}
 
-              {/* Landmarks inside/near window */}
               {CITY_LANDMARKS.map((lm) => (
                 <circle
                   key={lm.id}
@@ -911,18 +1166,21 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                 />
               ))}
 
-              {/* Centered Player Arrow */}
               <g
                 transform={`translate(${carPosition.x}, ${carPosition.z}) rotate(${
                   180 - (carPosition.heading * 180) / Math.PI
                 })`}
               >
                 <circle cx="0" cy="0" r="14" fill="rgba(250, 204, 21, 0.22)" />
-                <polygon points="0,-13 9,9 0,3 -9,9" fill="#facc15" stroke="#071A2B" strokeWidth="2" />
+                <polygon
+                  points="0,-13 9,9 0,3 -9,9"
+                  fill="#facc15"
+                  stroke="#071A2B"
+                  strokeWidth="2"
+                />
               </g>
             </svg>
 
-            {/* District Overlay (No raw coordinates exposed) */}
             <div className="absolute top-1 left-1.5 px-1.5 py-0.5 rounded bg-black/55 text-[8px] font-extrabold uppercase text-sky-300 truncate max-w-[125px]">
               {nearestAreaLabel}
             </div>
@@ -932,15 +1190,13 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           </span>
         </div>
 
-        {/* Right: Racing Cluster (Speedometer & RPM) */}
+        {/* Right: Racing Telemetry Cluster (Speedometer & RPM) */}
         <div className="bg-[#071A2B]/90 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-6">
-          {/* Gear Shift Box */}
           <div className="flex flex-col items-center">
             <span className="text-[10px] text-gray-400 uppercase font-semibold">Gear</span>
             <span className="text-2xl font-black text-[#EF233C] font-mono">{gear}</span>
           </div>
 
-          {/* Speed Number & Unit */}
           <div className="flex flex-col items-end">
             <div className="flex items-baseline gap-1">
               <span className="text-4xl font-black text-white font-mono tabular-nums tracking-tight">
@@ -949,7 +1205,6 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
               <span className="text-xs font-extrabold text-gray-400 uppercase">KM/H</span>
             </div>
 
-            {/* RPM Progress Bar */}
             <div className="w-32 h-1.5 bg-white/10 rounded-full overflow-hidden mt-1">
               <div
                 className={`h-full transition-all duration-75 rounded-full ${
