@@ -120,6 +120,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const [isConfigViewerOpen, setIsConfigViewerOpen] = useState(false);
   const [lockTick, setLockTick] = useState(0);
   const accessTokenRef = useRef<string | null>(null);
+  const lastAppliedPlayerIdRef = useRef<string | null>(null);
 
   // Vehicle Customization & Active Model State
   const [customization, setCustomization] = useState<CarCustomization>(() => {
@@ -250,6 +251,8 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const lastMissionUiHashRef = useRef<string>('');
 
   const applyProfileToWorld = useCallback((profile: PlayerProfile, offsetMs: number) => {
+    const isAccountSwitch = lastAppliedPlayerIdRef.current !== profile.id;
+    lastAppliedPlayerIdRef.current = profile.id;
     setPlayerProfile(profile);
     setServerClockOffsetMs(offsetMs);
 
@@ -257,17 +260,19 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     const station = MUSIC_TO_STATION[musicPref] ?? 1;
 
     setCustomization((prev) => ({
-      ...prev,
-      vehicleType: profile.selected_vehicle || prev.vehicleType || 'SPORTS_COUPE',
-      paintColor: profile.selected_vehicle_color || prev.paintColor || '#DC2626',
-      interiorTheme: profile.selected_interior || prev.interiorTheme || 'BLACK',
+      ...(isAccountSwitch ? DEFAULT_CUSTOMIZATION : prev),
+      vehicleType: profile.selected_vehicle || DEFAULT_CUSTOMIZATION.vehicleType || 'SPORTS_COUPE',
+      paintColor: profile.selected_vehicle_color || DEFAULT_CUSTOMIZATION.paintColor || '#DC2626',
+      interiorTheme: profile.selected_interior || DEFAULT_CUSTOMIZATION.interiorTheme || 'BLACK',
       musicPreference: musicPref,
     }));
 
     setRadioStation(station);
     engineAudio.setMusicPreference(musicPref);
 
-    if (typeof profile.credits_balance === 'number' && profile.credits_balance > 0) {
+    if (isAccountSwitch && typeof profile.credits_balance === 'number') {
+      setPlayerCredits(profile.credits_balance);
+    } else if (typeof profile.credits_balance === 'number' && profile.credits_balance > 0) {
       setPlayerCredits((prev) => Math.max(prev, profile.credits_balance));
     }
   }, []);
@@ -299,7 +304,10 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       accessTokenRef.current = session?.access_token || null;
       if (event === 'SIGNED_OUT') {
+        lastAppliedPlayerIdRef.current = null;
         setPlayerProfile(null);
+        setCustomization(DEFAULT_CUSTOMIZATION);
+        setPlayerCredits(5000);
         setIsConfigViewerOpen(false);
         setActiveConversation(null);
         setIncomingInvite(null);
@@ -448,7 +456,10 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     }
     engineAudio.stop();
     await logoutPlayerAccount();
+    lastAppliedPlayerIdRef.current = null;
     setPlayerProfile(null);
+    setCustomization(DEFAULT_CUSTOMIZATION);
+    setPlayerCredits(5000);
     setIsConfigViewerOpen(false);
     setActiveConversation(null);
     setIncomingInvite(null);

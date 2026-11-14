@@ -92,9 +92,20 @@ function mapWorldError(err: any): string {
     msg.includes('Could not find the function') ||
     msg.includes('does not exist') ||
     err?.code === 'PGRST205' ||
-    err?.code === '42P01'
+    err?.code === 'PGRST202' ||
+    err?.code === '42P01' ||
+    err?.code === '42703'
   ) {
     return 'Game world database schema is not yet applied. Run src/db/game-world-social-migration.sql in your Supabase SQL Editor.';
+  }
+  if (msg.includes('idx_player_profiles_nickname_lower') || msg.toLowerCase().includes('nickname')) {
+    return 'That public nickname is already taken or invalid. Choose a unique 3–20 character nickname.';
+  }
+  if (msg.toLowerCase().includes('database error saving new user')) {
+    return 'Unable to save player profile during signup. Ensure the latest src/db/game-world-social-migration.sql has been applied and the nickname is unique.';
+  }
+  if (msg.toLowerCase().includes('email not confirmed')) {
+    return 'Please verify your email address using the confirmation link in your inbox before signing in.';
   }
   return msg;
 }
@@ -198,19 +209,20 @@ export async function registerPlayerAccount(params: {
   });
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: mapWorldError(error) };
   }
 
   // Ensure profile row exists if session was returned immediately, then signOut so user MUST login explicitly
   if (data.session) {
-    try {
-      await supabase.rpc('get_or_create_my_player_profile', {
-        p_full_name: fullName,
-        p_nickname: nickname,
-        p_phone_number: phoneNumber,
-      });
-    } catch {}
+    const { error: profileErr } = await supabase.rpc('get_or_create_my_player_profile', {
+      p_full_name: fullName,
+      p_nickname: nickname,
+      p_phone_number: phoneNumber,
+    });
     await supabase.auth.signOut();
+    if (profileErr) {
+      return { success: false, error: mapWorldError(profileErr) };
+    }
     return { success: true, needsEmailVerification: false };
   }
 
@@ -239,7 +251,7 @@ export async function loginPlayerAccount(
   });
 
   if (error || !data.user) {
-    return { success: false, error: error?.message || 'Invalid email or password.' };
+    return { success: false, error: error ? mapWorldError(error) : 'Invalid email or password.' };
   }
 
   return await fetchMyPlayerProfile();

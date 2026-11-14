@@ -7,6 +7,73 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ------------------------------------------------------------------------------
+-- 0. ADMIN AUTHORIZATION PREREQUISITE (Non-destructive; preserves existing admin setup)
+-- Ensures public.admin_users and public.is_active_admin() exist before any RLS
+-- policy or admin RPC references them, eliminating ERROR 42883 on standalone runs.
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.admin_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT DEFAULT 'MANIFOLD Administrator',
+  role TEXT NOT NULL DEFAULT 'admin',
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
+
+INSERT INTO public.admin_users (email, name, role, status)
+VALUES ('newwavereporters@gmail.com', 'MANIFOLD Lead Administrator', 'admin', 'active')
+ON CONFLICT (email) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.is_active_admin()
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.admin_users
+    WHERE status = 'active'
+      AND (
+        user_id = auth.uid()
+        OR LOWER(email) = LOWER(COALESCE(auth.jwt()->>'email', ''))
+      )
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.is_active_admin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_active_admin() TO anon, authenticated, service_role;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'admin_users' AND policyname = 'Self read admin authorization'
+  ) THEN
+    CREATE POLICY "Self read admin authorization" ON public.admin_users
+      FOR SELECT USING (
+        user_id = auth.uid()
+        OR LOWER(email) = LOWER(COALESCE(auth.jwt()->>'email', ''))
+      );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'admin_users' AND policyname = 'Admins manage admin users'
+  ) THEN
+    CREATE POLICY "Admins manage admin users" ON public.admin_users
+      FOR ALL USING (public.is_active_admin()) WITH CHECK (public.is_active_admin());
+  END IF;
+END $$;
+
+-- ------------------------------------------------------------------------------
 -- 1. PLAYER PROFILES (Private PII + Onboarding + 24h Lock + Separated Statuses)
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.player_profiles (
@@ -458,7 +525,7 @@ CREATE OR REPLACE FUNCTION public.handle_new_manifold_player()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, auth, pg_temp
 AS $$
 DECLARE
   v_nickname TEXT;
@@ -470,6 +537,10 @@ BEGIN
   v_nickname := NULLIF(BTRIM(NEW.raw_user_meta_data->>'nickname'), '');
   IF v_nickname IS NULL THEN
     RETURN NEW;
+  END IF;
+
+  IF char_length(v_nickname) < 3 OR char_length(v_nickname) > 20 OR v_nickname !~ '^[A-Za-z0-9_ ]+$' THEN
+    RAISE EXCEPTION 'Nickname must be 3 to 20 characters using letters, numbers, spaces, or underscores';
   END IF;
 
   v_full_name := NULLIF(BTRIM(NEW.raw_user_meta_data->>'full_name'), '');
@@ -493,7 +564,8 @@ BEGIN
     'active',
     'enabled',
     'registered'
-  );
+  )
+  ON CONFLICT (user_id) DO NOTHING;
 
   RETURN NEW;
 END;
@@ -515,7 +587,7 @@ CREATE OR REPLACE FUNCTION public.check_player_registration_available(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, auth, pg_temp
 AS $$
 DECLARE
   v_email_taken BOOLEAN := false;
@@ -550,7 +622,7 @@ CREATE OR REPLACE FUNCTION public.get_or_create_my_player_profile(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, auth, pg_temp
 AS $$
 DECLARE
   v_uid UUID := auth.uid();
@@ -584,7 +656,9 @@ BEGIN
       v_uid, v_name, v_nick, LOWER(v_auth_email), v_phone,
       NOW(), 'active', 'enabled', 'registered'
     )
-    RETURNING * INTO v_profile;
+    ON CONFLICT (user_id) DO NOTHING;
+
+    SELECT * INTO v_profile FROM public.player_profiles WHERE user_id = v_uid;
   END IF;
 
   -- Expire temporary chat restriction automatically using database time (never touches account_status)
@@ -2023,7 +2097,7 @@ BEGIN
   SELECT COALESCE(NULLIF(email, ''), auth.jwt()->>'email', 'admin@manifold.local')
   INTO v_admin_email
   FROM public.admin_users
-  WHERE (user_id = v_admin_uid OR email = auth.jwt()->>'email')
+  WHERE (user_id = v_admin_uid OR LOWER(email) = LOWER(COALESCE(auth.jwt()->>'email', '')))
     AND status = 'active'
   LIMIT 1;
 
@@ -2180,7 +2254,7 @@ BEGIN
     LIMIT 100
   ) sub;
 
-  SELECT COALESCE(jsonb_agg(p ORDER BY p->>'chat_violation_count' DESC), '[]'::jsonb)
+  SELECT COALESCE(jsonb_agg(p ORDER BY (p->>'chat_violation_count')::INTEGER DESC), '[]'::jsonb)
   INTO v_restricted
   FROM (
     SELECT jsonb_build_object(
@@ -2318,6 +2392,7 @@ GRANT SELECT ON public.player_admin_audit_logs TO authenticated;
 GRANT SELECT ON public.chat_moderation_config TO authenticated;
 
 -- Revoke default PostgreSQL PUBLIC execution privileges on ALL functions in this migration
+REVOKE ALL ON FUNCTION public.is_active_admin() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.prevent_player_admin_audit_mutation() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.current_player_id() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.handle_new_manifold_player() FROM PUBLIC, anon, authenticated;
@@ -2343,6 +2418,7 @@ REVOKE ALL ON FUNCTION public.admin_get_moderation_overview() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.admin_update_moderation_config(DOUBLE PRECISION, INTEGER, INTEGER, INTEGER, INTEGER) FROM PUBLIC, anon;
 
 -- Grant strictly required execution scopes
+GRANT EXECUTE ON FUNCTION public.is_active_admin() TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.current_player_id() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_player_registration_available(TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_or_create_my_player_profile(TEXT, TEXT, TEXT) TO authenticated;

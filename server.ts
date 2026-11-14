@@ -1225,8 +1225,9 @@ app.get('/api/world/db-status', async (req: Request, res: Response) => {
   const checks: Record<string, { exists: boolean; code?: string; error?: string }> = {};
   const checkOneTable = async (t: string) => {
     try {
+      const cols = t === 'player_profiles' ? 'created_at, chat_status' : 'created_at';
       const result = await Promise.race([
-        supabase.from(t).select('created_at').limit(1),
+        supabase.from(t).select(cols).limit(1),
         new Promise<{ error: { code: string; message: string } }>((resolve) =>
           setTimeout(
             () => resolve({ error: { code: 'TIMEOUT', message: 'Supabase check timed out' } }),
@@ -1235,7 +1236,13 @@ app.get('/api/world/db-status', async (req: Request, res: Response) => {
         ),
       ]);
       const error = (result as any)?.error;
-      if (error && (error.code === 'PGRST205' || error.code === '42P01' || error.message?.includes('does not exist'))) {
+      if (
+        error &&
+        (error.code === 'PGRST205' ||
+          error.code === '42P01' ||
+          error.code === '42703' ||
+          error.message?.includes('does not exist'))
+      ) {
         checks[t] = { exists: false, code: error.code, error: error.message };
       } else if (error && error.code !== '42501' && error.code !== 'PGRST116') {
         checks[t] = { exists: false, code: error.code, error: error.message };
@@ -1248,6 +1255,42 @@ app.get('/api/world/db-status', async (req: Request, res: Response) => {
   };
 
   await Promise.all(worldTables.map((t) => checkOneTable(t)));
+
+  const checkRpcExists = async (fnName: string, args: Record<string, any>) => {
+    try {
+      const result = await Promise.race([
+        supabase.rpc(fnName, args),
+        new Promise<{ error: { code: string; message: string } }>((resolve) =>
+          setTimeout(
+            () => resolve({ error: { code: 'TIMEOUT', message: 'Supabase check timed out' } }),
+            2500
+          )
+        ),
+      ]);
+      const error = (result as any)?.error;
+      if (
+        error &&
+        (error.code === 'PGRST202' ||
+          error.code === '42883' ||
+          error.message?.includes('Could not find the function') ||
+          (error.message?.includes('function') && error.message?.includes('does not exist')))
+      ) {
+        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
+      } else if (error && (error.code === 'TIMEOUT' || error.code === 'FETCH_ERROR')) {
+        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
+      } else {
+        // Any authorization/admin-check error proves the RPC itself is installed and gated
+        checks[`rpc:${fnName}`] = { exists: true };
+      }
+    } catch (err: any) {
+      checks[`rpc:${fnName}`] = { exists: false, code: 'FETCH_ERROR', error: err?.message || 'Fetch failed' };
+    }
+  };
+
+  await Promise.all([
+    checkRpcExists('check_player_registration_available', { p_email: '', p_nickname: '' }),
+    checkRpcExists('admin_get_players_directory', {}),
+  ]);
 
   const timedOut = Object.values(checks).every((c) => c.code === 'TIMEOUT' || c.code === 'FETCH_ERROR');
   const allExist = Object.values(checks).every((c) => c.exists);
