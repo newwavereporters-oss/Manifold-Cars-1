@@ -302,12 +302,28 @@ export const UNDERGLOW_PALETTE: Record<UnderglowColor, { label: string; hex: str
 
 export interface Vehicle3DResult {
   carGroup: THREE.Group;
+  chassisGroup?: THREE.Group;
   frontLeftWheel: THREE.Group;
   frontRightWheel: THREE.Group;
   rearLeftWheel: THREE.Group;
   rearRightWheel: THREE.Group;
+  wheelSteeringGroups?: {
+    frontLeft: THREE.Group;
+    frontRight: THREE.Group;
+  };
+  wheelSpinGroups?: {
+    frontLeft: THREE.Group;
+    frontRight: THREE.Group;
+    rearLeft: THREE.Group;
+    rearRight: THREE.Group;
+  };
+  wheelRadius?: number;
+  steeringWheelGroup?: THREE.Group;
+  driverGroup?: THREE.Group;
+  driverHeadGroup?: THREE.Group;
+  driverArmGroups?: [THREE.Group, THREE.Group];
   bodyMesh: THREE.Mesh;
-  paintMaterial: THREE.MeshStandardMaterial;
+  paintMaterial: THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
   headlightsGroup: THREE.Group;
   taillightsGroup: THREE.Group;
   turnSignalMeshes: {

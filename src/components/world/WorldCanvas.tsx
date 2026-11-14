@@ -9,6 +9,7 @@ import {
   Vehicle3DResult,
   VEHICLE_SPEC_PROFILES,
 } from './worldModels';
+import { animateVehicleModel } from '../../three/VehicleModelFactory';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
 import { HeadlightState, TurnSignalState, CockpitHotspot } from './CockpitDashboardOverlay';
 import { buildLagosCityDistrict, LagosCityResult } from './lagosCityBuilder';
@@ -233,6 +234,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       string,
       {
         group: THREE.Group;
+        vehicle: Vehicle3DResult;
+        wheelSpinAngle: number;
         modelKey: string;
         x: number;
         y: number;
@@ -1020,11 +1023,11 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       rivalsEngine.update(delta, currentTime);
       cityData.updateTrafficSignals?.(currentTime / 1000);
 
-      // Building, Traffic & Rival Collision Resolution
+      // Building, Traffic & Rival Collision Resolution matched to actual vehicle dimensions
       const collisionEvent = collisionEngine.checkAndResolvePlayerCollisions(
         cs,
-        1.05,
-        2.3,
+        baseSpec.bodyWidth * 0.5,
+        baseSpec.bodyLength * 0.5,
         cityData.collidableBuildings,
         trafficEngine.getTrafficBoundingBoxes(),
         rivalsEngine.isRaceActive ? rivalsEngine.getRivalsBoundingBoxes() : []
@@ -1117,22 +1120,43 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         }
       }
 
-      // Wheels physics: front wheel steering and spin rotation
-      const wheels = wheelsRef.current;
-      if (wheels.frontLeftWheel && wheels.frontRightWheel) {
-        wheels.frontLeftWheel.rotation.y = cs.steeringAngle;
-        wheels.frontRightWheel.rotation.y = Math.PI + cs.steeringAngle;
-      }
-
-      const wheelCircumference = 2 * Math.PI * 0.38;
+      // Wheels, steering wheel, driver animation, suspension squat/roll & COCKPIT driver culling
+      const activeVehicle = activeVehicleRef.current;
+      const wheelRadius = activeVehicle?.wheelRadius || 0.38;
+      const wheelCircumference = 2 * Math.PI * wheelRadius;
       const wheelDelta = (cs.speed * delta) / wheelCircumference;
       cs.wheelSpinAngle += wheelDelta * Math.PI * 2;
 
-      if (wheels.frontLeftWheel && wheels.frontRightWheel && wheels.rearLeftWheel && wheels.rearRightWheel) {
-        wheels.frontLeftWheel.rotation.x = cs.wheelSpinAngle;
-        wheels.frontRightWheel.rotation.x = -cs.wheelSpinAngle;
-        wheels.rearLeftWheel.rotation.x = cs.wheelSpinAngle;
-        wheels.rearRightWheel.rotation.x = -cs.wheelSpinAngle;
+      const accelLoad =
+        input.forward && isEngineOn
+          ? 1
+          : input.backward && cs.speed > 0.1
+          ? -1.2
+          : input.backward && isEngineOn
+          ? -0.7
+          : 0;
+
+      if (activeVehicle) {
+        animateVehicleModel(activeVehicle, {
+          speed: cs.speed,
+          steeringAngle: cs.steeringAngle,
+          wheelSpinAngle: cs.wheelSpinAngle,
+          accelLoad,
+          delta,
+          isCockpitCamera: cameraModeRef.current === 'COCKPIT',
+        });
+      } else {
+        const wheels = wheelsRef.current;
+        if (wheels.frontLeftWheel && wheels.frontRightWheel) {
+          wheels.frontLeftWheel.rotation.y = cs.steeringAngle;
+          wheels.frontRightWheel.rotation.y = Math.PI + cs.steeringAngle;
+        }
+        if (wheels.frontLeftWheel && wheels.frontRightWheel && wheels.rearLeftWheel && wheels.rearRightWheel) {
+          wheels.frontLeftWheel.rotation.x = cs.wheelSpinAngle;
+          wheels.frontRightWheel.rotation.x = -cs.wheelSpinAngle;
+          wheels.rearLeftWheel.rotation.x = cs.wheelSpinAngle;
+          wheels.rearRightWheel.rotation.x = -cs.wheelSpinAngle;
+        }
       }
 
       // Exterior Turn Signals & Hazard Blinking sync
@@ -1373,6 +1397,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           scene.add(remoteModel.carGroup);
           entry = {
             group: remoteModel.carGroup,
+            vehicle: remoteModel,
+            wheelSpinAngle: 0,
             modelKey: mKey,
             x: peer.x,
             y: peer.y,
@@ -1397,6 +1423,16 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           entry.distance = peer.distance;
           entry.worldRegion = peer.worldRegion;
           entry.speedKmh = Math.round(Math.abs(peer.speed) * 4.6);
+
+          const peerWheelR = entry.vehicle.wheelRadius || 0.38;
+          entry.wheelSpinAngle += (peer.speed * delta) / peerWheelR;
+          animateVehicleModel(entry.vehicle, {
+            speed: peer.speed,
+            steeringAngle: THREE.MathUtils.clamp(angleDiff * 0.65, -0.35, 0.35),
+            wheelSpinAngle: entry.wheelSpinAngle,
+            delta,
+            isCockpitCamera: false,
+          });
 
           entry.group.position.set(entry.x, entry.y, entry.z);
           entry.group.rotation.y = entry.heading;

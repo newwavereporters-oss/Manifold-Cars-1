@@ -90,6 +90,8 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
   const orbitYawRef = useRef<number>(0.65);
   const cameraFocusRef = useRef(cameraFocus);
   cameraFocusRef.current = cameraFocus;
+  const vehicleTypeRef = useRef(vehicleType);
+  vehicleTypeRef.current = vehicleType;
   const draggingRef = useRef<{ active: boolean; lastX: number }>({ active: false, lastX: 0 });
 
   useEffect(() => {
@@ -185,8 +187,18 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
       }
 
       if (cameraFocusRef.current === 'INTERIOR') {
-        camera.position.lerp(new THREE.Vector3(-0.35, 1.32, 0.12), Math.min(1, dt * 5));
-        camera.lookAt(-0.15, 0.86, 0.75);
+        const spec = VEHICLE_SPEC_PROFILES[vehicleTypeRef.current];
+        const eyePos = new THREE.Vector3(
+          0.36,
+          spec.cockpitOffset.y + 0.08,
+          spec.cockpitOffset.z - 0.14
+        );
+        camera.position.lerp(eyePos, Math.min(1, dt * 5));
+        camera.lookAt(
+          spec.cockpitOffset.x * 0.6,
+          spec.cockpitOffset.y - 0.16,
+          spec.cockpitOffset.z + 0.44
+        );
       } else {
         const radius = 5.9;
         const targetPos = new THREE.Vector3(
@@ -195,7 +207,7 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
           Math.cos(orbitYawRef.current) * radius
         );
         camera.position.lerp(targetPos, Math.min(1, dt * 6));
-        camera.lookAt(0, 0.75, 0);
+        camera.lookAt(0, 0.78, 0);
       }
 
       renderer.render(scene, camera);

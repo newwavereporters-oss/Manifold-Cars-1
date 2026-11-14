@@ -3,7 +3,8 @@
 
 import * as THREE from 'three';
 import { RIVAL_RACE_CHECKPOINTS, RaceCheckpoint } from './lagosCityData';
-import { createVehicleByType, CarCustomization } from './worldModels';
+import { createVehicleByType, CarCustomization, Vehicle3DResult } from './worldModels';
+import { animateVehicleModel } from '../../three/VehicleModelFactory';
 
 export interface RivalDriver {
   id: string;
@@ -12,6 +13,8 @@ export interface RivalDriver {
   vehicleType: 'SPORTS_COUPE' | 'LUXURY_SUV' | 'EXECUTIVE_SEDAN';
   paintColor: string;
   group: THREE.Group;
+  vehicle: Vehicle3DResult;
+  wheelSpinAngle: number;
   x: number;
   z: number;
   rotation: number;
@@ -115,6 +118,8 @@ export class RivalsEngine {
         vehicleType: cfg.vehicleType,
         paintColor: cfg.paintColor,
         group: vehObj.carGroup,
+        vehicle: vehObj,
+        wheelSpinAngle: 0,
         x: startX,
         z: startZ,
         rotation: Math.PI / 2,
@@ -203,6 +208,16 @@ export class RivalsEngine {
 
       rival.group.position.set(rival.x, 0, rival.z);
       rival.group.rotation.y = rival.rotation;
+
+      const rivalWheelR = rival.vehicle.wheelRadius || 0.38;
+      rival.wheelSpinAngle += (rival.speed * delta) / rivalWheelR;
+      animateVehicleModel(rival.vehicle, {
+        speed: rival.speed,
+        steeringAngle: THREE.MathUtils.clamp(angleDiff * 0.6, -0.38, 0.38),
+        wheelSpinAngle: rival.wheelSpinAngle,
+        delta,
+        isCockpitCamera: false,
+      });
 
       // Checkpoint passing detection
       if (dist < targetCP.radius + 2.5) {
