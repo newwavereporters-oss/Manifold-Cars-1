@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   ExternalLink,
   Sparkles,
+  Megaphone,
 } from 'lucide-react';
 
 interface DealerLayoutProps {
@@ -48,6 +49,7 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard, route: '/dealer/dashboard' },
+    { id: 'billboard', label: 'Game Billboard Ad', icon: Megaphone, tab: 'billboard' },
     { id: 'cars', label: 'My Cars', icon: CarFront, route: '/dealer/cars' },
     { id: 'new-car', label: 'Add Vehicle', icon: PlusCircle, route: '/dealer/cars/new' },
     { id: 'offer', label: 'Explore MANIFOLD', icon: Sparkles, route: '/dealer/offer' },

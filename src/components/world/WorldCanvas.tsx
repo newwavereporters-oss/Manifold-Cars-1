@@ -10,6 +10,8 @@ import {
   VEHICLE_SPEC_PROFILES,
   HeadlightState,
   TurnSignalState,
+  TransmissionGear,
+  TRANSMISSION_GEAR_PROFILES,
 } from './worldModels';
 import { animateVehicleModel } from '../../three/VehicleModelFactory';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
@@ -26,7 +28,7 @@ import {
   enforceBridgeAndWaterBarriers,
   WORLD_BOUNDS,
 } from './lagosCityData';
-import { ActiveMissionSession } from './missionEngine';
+import { ActiveMissionSession, MISSIONS_CATALOG } from './missionEngine';
 import type { RemotePlayerPeer } from '../../services/worldMultiplayerService';
 
 export type CameraViewMode = 'CHASE' | 'DRONE';
@@ -69,14 +71,21 @@ export interface WorldCanvasProps {
   };
   isEngineRunning?: boolean;
   driveMode?: AudioDriveMode;
+  selectedGear?: TransmissionGear;
+  onSelectGear?: (gear: TransmissionGear) => void;
   headlightState?: HeadlightState;
   turnSignal?: TurnSignalState;
   hazardLights?: boolean;
   hornActive?: boolean;
   onAwardCredits?: (amount: number, reason: string) => void;
   activeDestination?: { x: number; z: number; name: string } | null;
+  activeMissionTarget?: { x: number; z: number; radius: number; isFinalDestination: boolean } | null;
   activeMissionSession?: ActiveMissionSession | null;
-  onMissionUpdate?: (delta: number, playerPos: { x: number; z: number; speed: number }, onCollisionImpact?: boolean) => void;
+  onMissionUpdate?: (
+    delta: number,
+    playerPos: { x: number; z: number; speed: number; gear?: TransmissionGear },
+    onCollisionImpact?: boolean
+  ) => void;
   onRaceCheckpointPassed?: (cpIdx: number, rank: number) => void;
   onTrafficPositionsUpdate?: (positions: { x: number; z: number }[]) => void;
   onRivalPositionsUpdate?: (positions: { name: string; x: number; z: number }[]) => void;
@@ -102,12 +111,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   virtualInput,
   isEngineRunning = true,
   driveMode = 'SPORT',
+  selectedGear = 'D2',
+  onSelectGear,
   headlightState = 'LOW',
   turnSignal = 'OFF',
   hazardLights = false,
   hornActive = false,
   onAwardCredits,
   activeDestination,
+  activeMissionTarget,
   activeMissionSession,
   onMissionUpdate,
   onRaceCheckpointPassed,
@@ -169,6 +181,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const driveModeRef = useRef(driveMode);
   driveModeRef.current = driveMode;
 
+  const selectedGearRef = useRef<TransmissionGear>(selectedGear);
+  selectedGearRef.current = selectedGear;
+
+  const onSelectGearRef = useRef(onSelectGear);
+  onSelectGearRef.current = onSelectGear;
+
   const customizationRef = useRef(customization);
   customizationRef.current = customization;
 
@@ -216,6 +234,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
   const activeDestinationRef = useRef(activeDestination);
   activeDestinationRef.current = activeDestination;
+
+  const activeMissionTargetRef = useRef(activeMissionTarget);
+  activeMissionTargetRef.current = activeMissionTarget;
 
   const activeMissionSessionRef = useRef(activeMissionSession);
   activeMissionSessionRef.current = activeMissionSession;
@@ -472,20 +493,29 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           cp.mesh.visible = false;
         });
       }
-    } else if (activeMissionSession.missionId === 'MISSION_A_DELIVERY') {
+    } else {
       if (rivals) rivals.group.visible = false;
       cityData?.checkpointMeshes.forEach((cp) => {
         cp.mesh.visible = false;
       });
       if (activeMissionSession.state === 'ACTIVE') {
-        cs.x = 0;
-        cs.z = -124;
-        cs.rotation = 0; // Facing South down Herbert Macaulay Way
-        cs.speed = 0;
-        cs.steeringAngle = 0;
-        if (playerCarGroupRef.current) {
-          playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
-          playerCarGroupRef.current.rotation.y = cs.rotation;
+        const missionDef = MISSIONS_CATALOG[activeMissionSession.missionId];
+        if (missionDef) {
+          const firstTarget = missionDef.checkpoints[0] || {
+            x: missionDef.destX,
+            z: missionDef.destZ,
+          };
+          cs.x = missionDef.startX;
+          cs.z = missionDef.startZ;
+          cs.y = resolveSurfaceY(cs.x, cs.z, 0);
+          cs.rotation = Math.atan2(firstTarget.x - cs.x, firstTarget.z - cs.z);
+          cs.speed = 0;
+          cs.steeringAngle = 0;
+          chaseCamRef.current.yaw = cs.rotation;
+          if (playerCarGroupRef.current) {
+            playerCarGroupRef.current.position.set(cs.x, cs.y, cs.z);
+            playerCarGroupRef.current.rotation.y = cs.rotation;
+          }
         }
       }
     }
@@ -599,6 +629,13 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       if (k === 'c') {
         onOpenCustomizer?.();
       }
+
+      // Transmission gear shortcuts: 1 (P), 2 (D0), 3 (D2), 4 (D1), 5 (R)
+      if (k === '1') onSelectGearRef.current?.('P');
+      else if (k === '2') onSelectGearRef.current?.('D0');
+      else if (k === '3') onSelectGearRef.current?.('D2');
+      else if (k === '4') onSelectGearRef.current?.('D1');
+      else if (k === '5') onSelectGearRef.current?.('R');
 
       // Vehicle Recovery / Reset on 'R'
       if (k === 'r') {
@@ -889,6 +926,34 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     marketplaceMarkerSprite.scale.set(13, 3.2, 1);
     scene.add(marketplaceMarkerSprite);
 
+    // Dynamic 3D Mission Checkpoint / Destination Waypoint Beacon
+    const missionBeaconGroup = new THREE.Group();
+    missionBeaconGroup.visible = false;
+    const beaconRingGeo = new THREE.RingGeometry(4.2, 5.4, 32);
+    const beaconRingMat = new THREE.MeshBasicMaterial({
+      color: 0x10b981,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const beaconRing = new THREE.Mesh(beaconRingGeo, beaconRingMat);
+    beaconRing.rotation.x = -Math.PI / 2;
+    beaconRing.position.y = 0.25;
+    missionBeaconGroup.add(beaconRing);
+
+    const beaconPillarGeo = new THREE.CylinderGeometry(1.1, 1.1, 24, 16, 1, true);
+    const beaconPillarMat = new THREE.MeshBasicMaterial({
+      color: 0x10b981,
+      transparent: true,
+      opacity: 0.22,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const beaconPillar = new THREE.Mesh(beaconPillarGeo, beaconPillarMat);
+    beaconPillar.position.y = 12;
+    missionBeaconGroup.add(beaconPillar);
+    scene.add(missionBeaconGroup);
+
     // Pre-allocated scratch vectors for zero-GC animation loop
     const tmpPodWorldPos = new THREE.Vector3();
     const tmpLookTarget = new THREE.Vector3();
@@ -987,49 +1052,87 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         modeDriftMod = 2.4;
       }
 
-      const effectiveAccel = baseSpec.acceleration * ecuAccelBonus * modeAccelMod;
-      const effectiveMaxSpeed = baseSpec.maxSpeed * ecuSpeedBonus * modeSpeedMod;
+      const currentGear = selectedGearRef.current || 'D2';
+      const gearProfile =
+        TRANSMISSION_GEAR_PROFILES[currentGear] || TRANSMISSION_GEAR_PROFILES.D2;
+
+      const rawGearMaxSpeed = baseSpec.maxSpeed * ecuSpeedBonus * modeSpeedMod * gearProfile.maxSpeedMultiplier;
+      const effectiveMaxSpeed = currentGear === 'P' ? 0 : Math.max(4, rawGearMaxSpeed);
+      const effectiveAccel = baseSpec.acceleration * ecuAccelBonus * modeAccelMod * gearProfile.accelMultiplier;
       const effectiveSteerSpeed = baseSpec.steerSpeed * steerSpeedMultiplier * modeSteerMod;
 
-      // Throttle & Braking Dynamics
-      // Forward input: brakes if reversing, accelerates if moving forward/stopped and engine is running
-      // Backward input: brakes if moving forward, reverses if stopped/reversing and engine is running
-      if (input.forward) {
-        if (cs.speed < -0.1) {
-          // Brakes reverse motion towards zero
-          cs.speed = Math.min(0, cs.speed + brakeDecelEffective * delta);
-        } else if (isEngineOn) {
-          // Accelerate forward
-          cs.speed = Math.min(cs.speed + effectiveAccel * delta, effectiveMaxSpeed);
+      // Transmission-Governed Throttle & Braking Dynamics
+      // Strict hierarchy: D1 (Fast) > D2 (Moderate) > D0 (Slow); P locks vehicle; R governs reverse
+      if (currentGear === 'P') {
+        if (Math.abs(cs.speed) > 0.1) {
+          const decel = brakeDecelEffective * delta;
+          cs.speed = cs.speed > 0 ? Math.max(0, cs.speed - decel) : Math.min(0, cs.speed + decel);
+        } else {
+          cs.speed = 0;
         }
-      } else if (input.backward) {
-        if (cs.speed > 0.1) {
-          // Brakes forward motion towards zero
-          cs.speed = Math.max(0, cs.speed - brakeDecelEffective * delta);
-        } else if (isEngineOn) {
-          // Reverse acceleration
-          const maxReverseSpeed = -20;
-          cs.speed = Math.max(cs.speed - effectiveAccel * 0.6 * delta, maxReverseSpeed);
+      } else if (currentGear === 'R') {
+        const maxReverseSpeed = -(baseSpec.maxSpeed * ecuSpeedBonus * gearProfile.maxSpeedMultiplier);
+        if (input.backward) {
+          // Pressing Brake pedal slows down smoothly
+          if (cs.speed < 0) {
+            cs.speed = Math.min(0, cs.speed + brakeDecelEffective * delta);
+          } else if (cs.speed > 0) {
+            cs.speed = Math.max(0, cs.speed - brakeDecelEffective * delta);
+          }
+        } else if (input.forward && isEngineOn) {
+          // Pressing GAS in Reverse gear drives backward smoothly
+          if (cs.speed > 0.1) {
+            cs.speed = Math.max(0, cs.speed - brakeDecelEffective * delta);
+          } else {
+            cs.speed = Math.max(cs.speed - effectiveAccel * delta, maxReverseSpeed);
+          }
+        } else {
+          if (cs.speed > 0) {
+            cs.speed = Math.max(0, cs.speed - baseSpec.deceleration * delta);
+          } else if (cs.speed < 0) {
+            cs.speed = Math.min(0, cs.speed + baseSpec.deceleration * delta);
+          }
         }
       } else {
-        // Natural rolling resistance
-        if (cs.speed > 0) {
-          cs.speed = Math.max(0, cs.speed - baseSpec.deceleration * delta);
-        } else if (cs.speed < 0) {
-          cs.speed = Math.min(0, cs.speed + baseSpec.deceleration * delta);
+        // Forward Drive Gears (D0 Slow, D2 Moderate, D1 Fast)
+        if (input.backward) {
+          if (cs.speed > 0.1) {
+            cs.speed = Math.max(0, cs.speed - brakeDecelEffective * delta);
+          } else if (cs.speed < -0.1) {
+            cs.speed = Math.min(0, cs.speed + brakeDecelEffective * delta);
+          } else {
+            cs.speed = 0;
+          }
+        } else if (input.forward) {
+          if (cs.speed < -0.1) {
+            cs.speed = Math.min(0, cs.speed + brakeDecelEffective * delta);
+          } else if (isEngineOn) {
+            if (cs.speed > effectiveMaxSpeed) {
+              // Smooth engine braking down to newly selected lower gear cap (e.g. D1 -> D0)
+              cs.speed = Math.max(effectiveMaxSpeed, cs.speed - baseSpec.deceleration * 1.4 * delta);
+            } else {
+              cs.speed = Math.min(cs.speed + effectiveAccel * delta, effectiveMaxSpeed);
+            }
+          }
+        } else {
+          if (cs.speed > 0) {
+            cs.speed = Math.max(0, cs.speed - baseSpec.deceleration * delta);
+          } else if (cs.speed < 0) {
+            cs.speed = Math.min(0, cs.speed + baseSpec.deceleration * delta);
+          }
         }
       }
 
       // Handbrake drift
-      if (input.handbrake) {
+      if (input.handbrake && currentGear !== 'P') {
         cs.isDrifting = Math.abs(cs.speed) > 9;
         cs.speed *= Math.pow(0.89, delta * 30);
       } else {
         cs.isDrifting = false;
       }
 
-      // Speed-based steering damping
-      const speedSteerFactor = Math.max(0.32, 1 - Math.abs(cs.speed) / (effectiveMaxSpeed * 1.35));
+      // Speed-based steering damping (safe denominator so D0 and R turn smoothly)
+      const speedSteerFactor = Math.max(0.32, 1 - Math.abs(cs.speed) / Math.max(16, effectiveMaxSpeed * 1.35));
       const targetSteer = input.left
         ? baseSpec.maxSteer * speedSteerFactor
         : input.right
@@ -1042,8 +1145,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       if (Math.abs(cs.speed) > 0.05) {
         const turnDirection = cs.speed > 0 ? 1 : -1;
         const driftMultiplier = (cs.isDrifting ? 1.7 : 1.0) * modeDriftMod * driftControlMultiplier;
+        const turnRefSpeed = Math.max(18, baseSpec.maxSpeed * 0.72);
         cs.rotation +=
-          (cs.steeringAngle * (cs.speed / effectiveMaxSpeed) * 2.8 * turnDirection * delta) *
+          (cs.steeringAngle * (cs.speed / turnRefSpeed) * 2.8 * turnDirection * delta) *
           driftMultiplier;
       }
 
@@ -1148,9 +1252,24 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         const hasHeavyImpact = Boolean(collisionEvent && collisionEvent.impactVelocity > 6);
         onMissionUpdateRef.current?.(
           delta,
-          { x: cs.x, z: cs.z, speed: cs.speed },
+          { x: cs.x, z: cs.z, speed: cs.speed, gear: currentGear },
           hasHeavyImpact
         );
+      }
+
+      // Update 3D Mission Target Waypoint Beacon visibility & pulse
+      const mTarget = activeMissionTargetRef.current;
+      if (mTarget) {
+        const beaconY = resolveSurfaceY(mTarget.x, mTarget.z, 0);
+        missionBeaconGroup.visible = true;
+        missionBeaconGroup.position.set(mTarget.x, beaconY, mTarget.z);
+        const pulseScale = (mTarget.radius / 5) * (1 + 0.08 * Math.sin(currentTime * 0.005));
+        beaconRing.scale.set(pulseScale, pulseScale, 1);
+        const targetColor = mTarget.isFinalDestination ? 0x10b981 : 0x38bdf8;
+        beaconRingMat.color.setHex(targetColor);
+        beaconPillarMat.color.setHex(targetColor);
+      } else {
+        missionBeaconGroup.visible = false;
       }
 
       // Throttled Dynamic GPS Road Guidance Ribbon (every 250ms)
@@ -1264,10 +1383,11 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
       // Engine, Braking, Road Surface & Tyre Audio Synthesis Update
       const steerIntensity = Math.min(1, Math.abs(cs.steeringAngle) / Math.max(0.1, baseSpec.maxSteer));
+      const audioSpeedCap = Math.max(12, baseSpec.maxSpeed * ecuSpeedBonus);
       engineAudio.update(
         cs.speed,
-        effectiveMaxSpeed,
-        isEngineOn && (input.forward || input.backward),
+        audioSpeedCap,
+        isEngineOn && input.forward && currentGear !== 'P',
         isBrakingNow,
         cs.isDrifting,
         currentDriveMode,
@@ -1276,30 +1396,17 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           steerRatio: steerIntensity,
           onBridge: carY > 0.35,
           brakeIntensity: isBrakingNow ? (input.handbrake ? 0.95 : 0.78) : 0,
+          transmissionGear: currentGear,
         }
       );
 
-      // HUD Telemetry (Speed km/h, RPM, Gear)
+      // HUD Telemetry (Speed km/h, RPM, Selected Transmission Gear)
       const speedKmh = Math.round(Math.abs(cs.speed) * 4.6);
-      const speedRatio = Math.abs(cs.speed) / effectiveMaxSpeed;
-      const rpm = Math.round(baseSpec.idleRpm + speedRatio * (baseSpec.redlineRpm - baseSpec.idleRpm));
-      const gear = !isEngineOn
-        ? 'OFF'
-        : cs.speed < -0.5
-        ? 'R'
-        : Math.abs(cs.speed) < 0.2
-        ? 'P'
-        : speedKmh < 35
-        ? 'D1'
-        : speedKmh < 70
-        ? 'D2'
-        : speedKmh < 110
-        ? 'D3'
-        : speedKmh < 155
-        ? 'D4'
-        : speedKmh < 205
-        ? 'D5'
-        : 'D6';
+      const speedRatio = Math.min(1, Math.abs(cs.speed) / Math.max(12, effectiveMaxSpeed || baseSpec.maxSpeed));
+      const rpm = !isEngineOn
+        ? 0
+        : Math.round(baseSpec.idleRpm + speedRatio * (baseSpec.redlineRpm - baseSpec.idleRpm));
+      const gear = !isEngineOn ? 'OFF' : currentGear;
 
       onSpeedChangeRef.current?.(speedKmh, rpm, gear);
       onCarPositionUpdateRef.current?.({ x: cs.x, y: cs.y, z: cs.z, heading: cs.rotation, speed: cs.speed });
@@ -1642,6 +1749,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       skyMat.dispose();
       markerTex.dispose();
       markerSpriteMat.dispose();
+      beaconRingGeo.dispose();
+      beaconRingMat.dispose();
+      beaconPillarGeo.dispose();
+      beaconPillarMat.dispose();
       envRT.dispose();
       pmremGenerator.dispose();
       if (renderer.domElement && container.contains(renderer.domElement)) {

@@ -32,6 +32,9 @@ export interface PlayerProfile {
   settings_confirmed_at: string | null;
   settings_lock_expires_at: string | null;
   credits_balance: number;
+  xp_balance?: number;
+  missions_completed_count?: number;
+  badges_earned?: string[];
   chat_violation_count: number;
   chat_restricted_until: string | null;
   chat_restriction_reason: string | null;

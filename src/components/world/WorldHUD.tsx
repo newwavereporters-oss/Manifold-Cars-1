@@ -37,6 +37,7 @@ import {
   Radio,
   ArrowLeft,
   ArrowRight,
+  Music,
 } from 'lucide-react';
 import { CameraViewMode, TimeOfDay } from './WorldCanvas';
 import {
@@ -44,9 +45,14 @@ import {
   VEHICLE_SPEC_PROFILES,
   HeadlightState,
   TurnSignalState,
+  TransmissionGear,
+  TRANSMISSION_GEAR_ORDER,
+  TRANSMISSION_GEAR_PROFILES,
 } from './worldModels';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
 import { MobileTouchControls, VirtualDrivingInput } from './MobileTouchControls';
+import { GameBillboardOverlay } from './GameBillboardOverlay';
+import { GameBillboardItem } from '../../services/billboardService';
 import {
   LAGOS_ROAD_NODES,
   CITY_LANDMARKS,
@@ -88,6 +94,8 @@ interface WorldHUDProps {
   onToggleEngine: () => void;
   driveMode: AudioDriveMode;
   onSelectDriveMode: (mode: AudioDriveMode) => void;
+  selectedGear: TransmissionGear;
+  onSelectGear: (gear: TransmissionGear) => void;
   headlightState: HeadlightState;
   onCycleHeadlights: () => void;
   turnSignal: TurnSignalState;
@@ -103,9 +111,13 @@ interface WorldHUDProps {
   onRadioVolumeChange: (vol: number) => void;
   onOpenCityMap?: () => void;
   onOpenMissions?: () => void;
+  onOpenMusicLibrary?: () => void;
+  isMusicPlaying?: boolean;
   onResetVehicle?: () => void;
   activeDestination?: { x: number; z: number; name: string } | null;
   onClearDestination?: () => void;
+  billboardItems?: GameBillboardItem[];
+  onOpenBillboardListing?: (slug: string) => void;
   playerNickname?: string;
   nearbyPlayersCount?: number;
   lockStatus?: {
@@ -150,6 +162,8 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   onToggleEngine,
   driveMode,
   onSelectDriveMode,
+  selectedGear,
+  onSelectGear,
   headlightState,
   onCycleHeadlights,
   turnSignal,
@@ -165,9 +179,13 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   onRadioVolumeChange,
   onOpenCityMap,
   onOpenMissions,
+  onOpenMusicLibrary,
+  isMusicPlaying = false,
   onResetVehicle,
   activeDestination,
   onClearDestination,
+  billboardItems = [],
+  onOpenBillboardListing,
   playerNickname = 'DRIVER',
   nearbyPlayersCount = 0,
   lockStatus,
@@ -360,7 +378,28 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                       className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
                     >
                       <Flag className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Missions & Street Races</span>
+                      <span>Missions &amp; Street Races</span>
+                    </button>
+                  )}
+
+                  {onOpenMusicLibrary && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGameMenu(false);
+                        onOpenMusicLibrary();
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Music className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Music Library</span>
+                      </span>
+                      {isMusicPlaying && (
+                        <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[9px] font-black uppercase">
+                          Playing
+                        </span>
+                      )}
                     </button>
                   )}
 
@@ -373,7 +412,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                     className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
                   >
                     <Palette className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Tuning & Upgrades [C]</span>
+                    <span>Tuning &amp; Upgrades [C]</span>
                   </button>
 
                   <button
@@ -652,277 +691,351 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           </div>
         </header>
 
-        {/* COMPACT FLOATING VEHICLE STATUS BAR & EXPANDABLE PANEL */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-          <div className="relative pointer-events-auto flex items-center gap-1.5">
-            {/* Always-compact Speed + Gear + Expand Drawer Pill */}
-            <button
-              type="button"
-              onClick={() => {
-                setShowVehiclePanel((p) => !p);
-                setShowGameMenu(false);
-                setShowPlayerMenu(false);
-              }}
-              className="flex items-center gap-2 bg-[#071A2B]/86 hover:bg-[#0b233a] backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 shadow-lg cursor-pointer"
-              title="Toggle Vehicle Controls"
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isEngineRunning ? 'bg-emerald-400' : 'bg-red-400'
-                }`}
-              />
-              <span className="text-xs font-black text-[#EF233C] font-mono">{gear}</span>
-              <span className="w-px h-3.5 bg-white/15" />
-              <div className="flex items-baseline gap-0.5 font-mono">
-                <span className="text-sm font-black text-white tabular-nums">{speedKmh}</span>
-                <span className="text-[8px] text-gray-400 font-bold">KM/H</span>
-              </div>
-              <span className="hidden sm:inline w-px h-3.5 bg-white/15" />
-              <span className="hidden sm:inline text-[10px] font-black text-sky-300 uppercase">
-                {driveMode}
-              </span>
-              {showVehiclePanel ? (
-                <ChevronUp className="w-3.5 h-3.5 text-gray-300" />
-              ) : (
-                <ChevronDown className="w-3.5 h-3.5 text-gray-300" />
-              )}
-            </button>
+        {/* PROMINENT SUSPENDED DEALER ADVERTISING BILLBOARD IMMEDIATELY BELOW HEADER */}
+        <GameBillboardOverlay
+          items={billboardItems}
+          onOpenListing={(slug) => onOpenBillboardListing?.(slug)}
+          onBrowseMarketplace={onEnterMarketplace}
+          hidden={showGameMenu || showPlayerMenu || showControlsHelp}
+        />
 
-            {/* Quick Camera Mode Toggle / Return to Chase CTA */}
-            {cameraMode === 'DRONE' ? (
-              <button
-                type="button"
-                onClick={() => onCameraChange('CHASE')}
-                className="flex items-center gap-1.5 bg-[#EF233C] hover:bg-[#d90429] text-white px-3 py-1.5 rounded-xl shadow-lg text-[10px] sm:text-xs font-black uppercase tracking-wider cursor-pointer animate-in fade-in duration-150"
-              >
-                <Camera className="w-3.5 h-3.5" />
-                <span>Return to Chase</span>
-              </button>
+        {/* Drone Mode Subtle Interactive Guide */}
+        {cameraMode === 'DRONE' && (
+          <div className="hidden sm:flex self-center items-center gap-2 bg-[#071A2B]/80 backdrop-blur-md px-3 py-1 rounded-xl border border-sky-400/30 text-[10px] font-bold text-sky-200 pointer-events-none">
+            <span>DRONE VIEW — Drag anywhere to orbit · Scroll to zoom</span>
+          </div>
+        )}
+      </div>
+
+      {/* LEFT-SIDE VERTICAL CONTROL STACK (Clear of top billboard & bottom mobile pedals) */}
+      <div
+        className="absolute left-[max(0.65rem,env(safe-area-inset-left))] sm:left-5 top-[134px] sm:top-[152px] z-20 pointer-events-auto flex flex-col items-start gap-1.5"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        {/* Expandable Speed / Gear / Vehicle Systems Trigger */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setShowVehiclePanel((p) => !p);
+              setShowGameMenu(false);
+              setShowPlayerMenu(false);
+            }}
+            className="flex items-center gap-2 bg-[#071A2B]/88 hover:bg-[#0b233a] backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg cursor-pointer"
+            title="Toggle Vehicle Controls"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isEngineRunning ? 'bg-emerald-400' : 'bg-red-400'
+              }`}
+            />
+            <span className="text-xs font-black text-[#EF233C] font-mono">{selectedGear}</span>
+            <span className="w-px h-3.5 bg-white/15" />
+            <div className="flex items-baseline gap-0.5 font-mono">
+              <span className="text-sm font-black text-white tabular-nums">{speedKmh}</span>
+              <span className="text-[8px] text-gray-400 font-bold">KM/H</span>
+            </div>
+            {showVehiclePanel ? (
+              <ChevronUp className="w-3.5 h-3.5 text-gray-300" />
             ) : (
-              <button
-                type="button"
-                onClick={() => onCameraChange('DRONE')}
-                className="flex items-center gap-1.5 bg-[#071A2B]/84 hover:bg-[#0b233a] backdrop-blur-md text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg text-[10px] sm:text-[11px] font-bold uppercase cursor-pointer"
-                title="Switch to Drone Aerial Camera"
-              >
-                <Camera className="w-3.5 h-3.5 text-sky-400" />
-                <span>Drone</span>
-              </button>
+              <ChevronDown className="w-3.5 h-3.5 text-gray-300" />
             )}
+          </button>
 
-            {/* Expandable Vehicle Systems Drawer */}
-            {showVehiclePanel && (
-              <div className="absolute top-full left-0 mt-2 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-[#071A2B]/96 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-3 text-xs">
-                <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
-                    <Sliders className="w-3.5 h-3.5 text-[#EF233C]" />
-                    <span>Vehicle Systems</span>
-                  </span>
-                  <span className="text-[10px] font-mono text-gray-400">
-                    {rpm} RPM
-                  </span>
+          {/* Expandable Vehicle Systems Drawer */}
+          {showVehiclePanel && (
+            <div className="absolute left-0 top-full mt-2 sm:left-full sm:top-0 sm:mt-0 sm:ml-2 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-[#071A2B]/96 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-3 text-xs">
+              <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-[#EF233C]" />
+                  <span>Vehicle Systems</span>
+                </span>
+                <span className="text-[10px] font-mono text-gray-400">{rpm} RPM</span>
+              </div>
+
+              {/* Primary Electrical & Horn Controls */}
+              <div className="grid grid-cols-4 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    engineAudio.init();
+                    onToggleEngine();
+                  }}
+                  className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                    isEngineRunning
+                      ? 'bg-red-600/90 border-red-400 text-white'
+                      : 'bg-white/5 border-white/10 text-gray-400'
+                  }`}
+                >
+                  <Power className="w-3.5 h-3.5" />
+                  <span>{isEngineRunning ? 'Engine' : 'Off'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onCycleHeadlights}
+                  className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                    headlightState === 'HIGH'
+                      ? 'bg-blue-600 border-blue-400 text-white'
+                      : headlightState === 'LOW'
+                      ? 'bg-emerald-600 border-emerald-400 text-white'
+                      : 'bg-white/5 border-white/10 text-gray-400'
+                  }`}
+                >
+                  <Lightbulb className="w-3.5 h-3.5" />
+                  <span>{headlightState}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onToggleHazard}
+                  className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                    hazardLights
+                      ? 'bg-amber-500 border-amber-300 text-slate-950'
+                      : 'bg-white/5 border-white/10 text-gray-400'
+                  }`}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>Hazard</span>
+                </button>
+
+                <button
+                  type="button"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    engineAudio.init();
+                    onHornDown();
+                  }}
+                  onPointerUp={onHornUp}
+                  onPointerCancel={onHornUp}
+                  onPointerLeave={onHornUp}
+                  className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                    hornActive
+                      ? 'bg-yellow-400 border-yellow-200 text-slate-950'
+                      : 'bg-white/5 border-white/10 text-yellow-400'
+                  }`}
+                >
+                  <Volume2 className="w-3.5 h-3.5" />
+                  <span>Horn</span>
+                </button>
+              </div>
+
+              {/* Turn Indicators */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-bold uppercase text-gray-400">Indicators</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onToggleTurnSignal('LEFT')}
+                    className={`px-2.5 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
+                      turnSignal === 'LEFT'
+                        ? 'bg-amber-500 text-slate-950 border-amber-300'
+                        : 'bg-white/5 border-white/10 text-gray-300'
+                    }`}
+                  >
+                    <ArrowLeft className="w-3 h-3" />L
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleTurnSignal('RIGHT')}
+                    className={`px-2.5 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
+                      turnSignal === 'RIGHT'
+                        ? 'bg-amber-500 text-slate-950 border-amber-300'
+                        : 'bg-white/5 border-white/10 text-gray-300'
+                    }`}
+                  >
+                    R<ArrowRight className="w-3 h-3" />
+                  </button>
                 </div>
+              </div>
 
-                {/* Primary Electrical & Horn Controls */}
-                <div className="grid grid-cols-4 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      engineAudio.init();
-                      onToggleEngine();
-                    }}
-                    className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
-                      isEngineRunning
-                        ? 'bg-red-600/90 border-red-400 text-white'
-                        : 'bg-white/5 border-white/10 text-gray-400'
-                    }`}
-                  >
-                    <Power className="w-3.5 h-3.5" />
-                    <span>{isEngineRunning ? 'Engine' : 'Off'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={onCycleHeadlights}
-                    className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
-                      headlightState === 'HIGH'
-                        ? 'bg-blue-600 border-blue-400 text-white'
-                        : headlightState === 'LOW'
-                        ? 'bg-emerald-600 border-emerald-400 text-white'
-                        : 'bg-white/5 border-white/10 text-gray-400'
-                    }`}
-                  >
-                    <Lightbulb className="w-3.5 h-3.5" />
-                    <span>{headlightState}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={onToggleHazard}
-                    className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
-                      hazardLights
-                        ? 'bg-amber-500 border-amber-300 text-slate-950'
-                        : 'bg-white/5 border-white/10 text-gray-400'
-                    }`}
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>Hazard</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      engineAudio.init();
-                      onHornDown();
-                    }}
-                    onPointerUp={onHornUp}
-                    onPointerCancel={onHornUp}
-                    onPointerLeave={onHornUp}
-                    className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
-                      hornActive
-                        ? 'bg-yellow-400 border-yellow-200 text-slate-950'
-                        : 'bg-white/5 border-white/10 text-yellow-400'
-                    }`}
-                  >
-                    <Volume2 className="w-3.5 h-3.5" />
-                    <span>Horn</span>
-                  </button>
-                </div>
-
-                {/* Turn Indicators */}
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold uppercase text-gray-400">
-                    Indicators
-                  </span>
-                  <div className="flex items-center gap-1.5">
+              {/* Camera Mode Selector (Chase / Drone ONLY) */}
+              <div>
+                <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1.5">
+                  Camera Perspective
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {cameraOptions.map((opt) => (
                     <button
+                      key={opt.mode}
                       type="button"
-                      onClick={() => onToggleTurnSignal('LEFT')}
-                      className={`px-2.5 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
-                        turnSignal === 'LEFT'
-                          ? 'bg-amber-500 text-slate-950 border-amber-300'
-                          : 'bg-white/5 border-white/10 text-gray-300'
+                      onClick={() => onCameraChange(opt.mode)}
+                      className={`py-1.5 rounded-xl text-[11px] font-black uppercase transition-colors cursor-pointer ${
+                        cameraMode === opt.mode
+                          ? 'bg-white text-slate-950'
+                          : 'bg-white/8 text-gray-300 hover:bg-white/15'
                       }`}
                     >
-                      <ArrowLeft className="w-3 h-3" />L
+                      {opt.label}
                     </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Driving Mode Selector */}
+              <div>
+                <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1.5">
+                  Driving Mode
+                </span>
+                <div className="grid grid-cols-5 gap-1">
+                  {driveModes.map((m) => (
                     <button
+                      key={m}
                       type="button"
-                      onClick={() => onToggleTurnSignal('RIGHT')}
-                      className={`px-2.5 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
-                        turnSignal === 'RIGHT'
-                          ? 'bg-amber-500 text-slate-950 border-amber-300'
-                          : 'bg-white/5 border-white/10 text-gray-300'
+                      onClick={() => onSelectDriveMode(m)}
+                      className={`py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors cursor-pointer ${
+                        driveMode === m
+                          ? 'bg-[#EF233C] text-white'
+                          : 'bg-white/8 text-gray-300 hover:bg-white/15'
                       }`}
                     >
-                      R<ArrowRight className="w-3 h-3" />
+                      {m === 'COMFORT' ? 'CMFT' : m}
                     </button>
-                  </div>
+                  ))}
                 </div>
+              </div>
 
-                {/* Camera Mode Selector (Chase / Drone ONLY) */}
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1.5">
-                    Camera Perspective
+              {/* Sound & Audio Volume */}
+              <div className="space-y-1.5 pt-1 border-t border-white/10">
+                <div className="flex items-center justify-between text-[10px] font-bold text-gray-300">
+                  <span>Master Audio Volume</span>
+                  <span className="font-mono">{isMuted ? 'MUTED' : `${masterVolume}%`}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={isMuted ? 0 : masterVolume}
+                  onChange={(e) => handleMasterVolumeChange(Number(e.target.value))}
+                  className="w-full accent-[#EF233C] h-1.5 bg-white/15 rounded-lg cursor-pointer"
+                />
+
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <span className="text-[10px] font-bold text-gray-300 flex items-center gap-1 shrink-0">
+                    <Radio className="w-3 h-3 text-emerald-400" />
+                    <span>Radio</span>
                   </span>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {cameraOptions.map((opt) => (
-                      <button
-                        key={opt.mode}
-                        type="button"
-                        onClick={() => onCameraChange(opt.mode)}
-                        className={`py-1.5 rounded-xl text-[11px] font-black uppercase transition-colors cursor-pointer ${
-                          cameraMode === opt.mode
-                            ? 'bg-white text-slate-950'
-                            : 'bg-white/8 text-gray-300 hover:bg-white/15'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
+                  <select
+                    value={radioStation}
+                    onChange={(e) => {
+                      engineAudio.init();
+                      onSelectRadioStation(Number(e.target.value));
+                    }}
+                    className="flex-1 h-7 px-2 rounded-lg bg-white/10 border border-white/15 text-[10px] font-bold text-white outline-none"
+                  >
+                    {Object.entries(RADIO_STATION_NAMES).map(([id, name]) => (
+                      <option key={id} value={id} className="bg-[#071A2B] text-white">
+                        {name}
+                      </option>
                     ))}
-                  </div>
-                </div>
-
-                {/* Driving Mode Selector */}
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1.5">
-                    Driving Mode
-                  </span>
-                  <div className="grid grid-cols-5 gap-1">
-                    {driveModes.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => onSelectDriveMode(m)}
-                        className={`py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors cursor-pointer ${
-                          driveMode === m
-                            ? 'bg-[#EF233C] text-white'
-                            : 'bg-white/8 text-gray-300 hover:bg-white/15'
-                        }`}
-                      >
-                        {m === 'COMFORT' ? 'CMFT' : m}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Sound & Audio Volume */}
-                <div className="space-y-1.5 pt-1 border-t border-white/10">
-                  <div className="flex items-center justify-between text-[10px] font-bold text-gray-300">
-                    <span>Master Audio Volume</span>
-                    <span className="font-mono">{isMuted ? 'MUTED' : `${masterVolume}%`}</span>
-                  </div>
+                  </select>
                   <input
                     type="range"
                     min={0}
                     max={100}
-                    value={isMuted ? 0 : masterVolume}
-                    onChange={(e) => handleMasterVolumeChange(Number(e.target.value))}
-                    className="w-full accent-[#EF233C] h-1.5 bg-white/15 rounded-lg cursor-pointer"
+                    value={Math.round(radioVolume * 100)}
+                    onChange={(e) => onRadioVolumeChange(Number(e.target.value) / 100)}
+                    className="w-16 accent-emerald-400 h-1 bg-white/15 rounded-lg cursor-pointer"
+                    title="Radio Volume"
                   />
-
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    <span className="text-[10px] font-bold text-gray-300 flex items-center gap-1 shrink-0">
-                      <Radio className="w-3 h-3 text-emerald-400" />
-                      <span>Radio</span>
-                    </span>
-                    <select
-                      value={radioStation}
-                      onChange={(e) => {
-                        engineAudio.init();
-                        onSelectRadioStation(Number(e.target.value));
-                      }}
-                      className="flex-1 h-7 px-2 rounded-lg bg-white/10 border border-white/15 text-[10px] font-bold text-white outline-none"
-                    >
-                      {Object.entries(RADIO_STATION_NAMES).map(([id, name]) => (
-                        <option key={id} value={id} className="bg-[#071A2B] text-white">
-                          {name}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={Math.round(radioVolume * 100)}
-                      onChange={(e) => onRadioVolumeChange(Number(e.target.value) / 100)}
-                      className="w-16 accent-emerald-400 h-1 bg-white/15 rounded-lg cursor-pointer"
-                      title="Radio Volume"
-                    />
-                  </div>
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* Drone Mode Subtle Interactive Guide */}
-          {cameraMode === 'DRONE' && (
-            <div className="hidden sm:flex items-center gap-2 bg-[#071A2B]/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-sky-400/30 text-[10px] font-bold text-sky-200 pointer-events-none">
-              <span>DRONE VIEW — Drag anywhere to orbit • Scroll to zoom</span>
             </div>
           )}
         </div>
+
+        {/* Quick Camera Mode Toggle */}
+        {cameraMode === 'DRONE' ? (
+          <button
+            type="button"
+            onClick={() => onCameraChange('CHASE')}
+            className="flex items-center gap-1.5 bg-[#EF233C] hover:bg-[#d90429] text-white px-2.5 py-1.5 rounded-xl shadow-lg text-[10px] sm:text-xs font-black uppercase tracking-wider cursor-pointer"
+          >
+            <Camera className="w-3.5 h-3.5" />
+            <span>Chase Cam</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onCameraChange('DRONE')}
+            className="flex items-center gap-1.5 bg-[#071A2B]/84 hover:bg-[#0b233a] backdrop-blur-md text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg text-[10px] sm:text-[11px] font-bold uppercase cursor-pointer"
+            title="Switch to Drone Aerial Camera"
+          >
+            <Camera className="w-3.5 h-3.5 text-sky-400" />
+            <span>Drone</span>
+          </button>
+        )}
+
+        {/* Quick Left-Side Navigation Stack: Map, Missions, Music */}
+        <div className="flex flex-col items-start gap-1.5">
+          {onOpenCityMap && (
+            <button
+              type="button"
+              onClick={onOpenCityMap}
+              className="flex items-center gap-1.5 bg-[#071A2B]/84 hover:bg-[#0b233a] backdrop-blur-md text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
+              title="Lagos City GPS Map [M]"
+            >
+              <MapIcon className="w-3.5 h-3.5 text-sky-400" />
+              <span>Map</span>
+            </button>
+          )}
+          {onOpenMissions && (
+            <button
+              type="button"
+              onClick={onOpenMissions}
+              className="flex items-center gap-1.5 bg-[#071A2B]/84 hover:bg-[#0b233a] backdrop-blur-md text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
+              title="Open Missions & Street Races"
+            >
+              <Flag className="w-3.5 h-3.5 text-amber-400" />
+              <span>Missions</span>
+            </button>
+          )}
+          {onOpenMusicLibrary && (
+            <button
+              type="button"
+              onClick={onOpenMusicLibrary}
+              className="flex items-center gap-1.5 bg-[#071A2B]/84 hover:bg-[#0b233a] backdrop-blur-md text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
+              title="Open Manifold Music Library"
+            >
+              <Music className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Music</span>
+              {isMusicPlaying && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />}
+            </button>
+          )}
+        </div>
+
+        {/* Desktop Compact Transmission Strip (When touch pedals are off) */}
+        {!touchControlsEnabled && (
+          <div
+            className="hidden sm:flex items-center gap-1 bg-[#071A2B]/88 backdrop-blur-md p-1 rounded-xl border border-white/15 shadow-xl"
+            role="group"
+            aria-label="Transmission Gear Selector"
+          >
+            {TRANSMISSION_GEAR_ORDER.map((g, idx) => {
+              const prof = TRANSMISSION_GEAR_PROFILES[g];
+              const active = selectedGear === g;
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => onSelectGear(g)}
+                  title={`${prof.label} — ${prof.shortDesc} (Key ${idx + 1})`}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-black font-mono transition-colors cursor-pointer ${
+                    active
+                      ? g === 'D1'
+                        ? 'bg-[#EF233C] text-white shadow'
+                        : g === 'P'
+                        ? 'bg-amber-400 text-slate-950 shadow'
+                        : 'bg-sky-500 text-slate-950 shadow'
+                      : 'text-gray-300 hover:bg-white/10'
+                  }`}
+                >
+                  {g}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 2. CONTROLS GUIDE MODAL OVERLAY */}
@@ -961,8 +1074,10 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
               <span className="text-gray-300 text-[11px]">Handbrake Drift (Sport/Drift)</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
-              <span className="font-bold text-sky-400 block mb-0.5">Chase & Drone Cameras</span>
-              <span className="text-gray-300 text-[11px]">Drag to orbit in Drone view</span>
+              <span className="font-bold text-sky-400 block mb-0.5">1–5 Keys: Transmission</span>
+              <span className="text-gray-300 text-[11px]">
+                P (Park), D0 (Slow), D2 (Moderate), D1 (Fastest), R (Reverse)
+              </span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
               <span className="font-bold text-emerald-400 block mb-0.5">R / C / M / E</span>
@@ -1070,6 +1185,8 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           virtualInputState={virtualInputState}
           cameraMode={cameraMode}
           driveMode={driveMode}
+          selectedGear={selectedGear}
+          onSelectGear={onSelectGear}
           speedKmh={speedKmh}
           disabled={showGameMenu || showPlayerMenu || showControlsHelp}
         />
@@ -1104,10 +1221,12 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             ))}
           </div>
 
-          <div className="flex items-center gap-2 bg-[#071A2B]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-gray-400 font-mono">
-            <span>MODE: {driveMode}</span>
+          <div className="flex items-center gap-2 bg-[#071A2B]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-gray-300 font-mono">
+            <span className="text-amber-300 font-bold">
+              GEAR: {selectedGear} ({TRANSMISSION_GEAR_PROFILES[selectedGear].label}) [1-5]
+            </span>
             <span>•</span>
-            <span>TOP: {Math.round(currentProfile.maxSpeed * 4.6)} KM/H</span>
+            <span>MODE: {driveMode}</span>
             <span>•</span>
             <span>{currentProfile.horsepower} HP</span>
           </div>
@@ -1194,7 +1313,8 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         <div className="bg-[#071A2B]/90 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-6">
           <div className="flex flex-col items-center">
             <span className="text-[10px] text-gray-400 uppercase font-semibold">Gear</span>
-            <span className="text-2xl font-black text-[#EF233C] font-mono">{gear}</span>
+            <span className="text-2xl font-black text-[#EF233C] font-mono">{selectedGear}</span>
+            <span className="text-[9px] text-gray-400 font-mono">{gear}</span>
           </div>
 
           <div className="flex flex-col items-end">

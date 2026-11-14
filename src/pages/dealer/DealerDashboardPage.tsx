@@ -12,6 +12,7 @@ import {
   CommissionRule,
   CommissionCalculationResult,
 } from '../../services/commissionService';
+import { DealerBillboardPanel } from '../../components/dealer/DealerBillboardPanel';
 import {
   CarFront,
   PlusCircle,
@@ -35,6 +36,7 @@ import {
   User,
   Calendar,
   Loader2,
+  Megaphone,
 } from 'lucide-react';
 
 interface DealerDashboardPageProps {
@@ -176,6 +178,14 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                   >
                     <Sparkles className="w-3.5 h-3.5 text-[#EF233C]" />
                     <span>Explore Dealer Offer</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('billboard')}
+                    className="px-4 py-2.5 bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 text-xs font-bold rounded-xl transition flex items-center gap-1.5 border border-amber-400/30"
+                  >
+                    <Megaphone className="w-3.5 h-3.5" />
+                    <span>Game Billboard Ad</span>
                   </button>
                 </div>
               </div>
@@ -725,8 +735,18 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
           </div>
         )}
 
+        {/* TAB: GAME BILLBOARD ADVERTISING */}
+        {activeTab === 'billboard' && (
+          <DealerBillboardPanel
+            dealerId={dealerAccount?.dealerId}
+            dealerName={businessName}
+            cars={cars}
+            navigate={navigate}
+          />
+        )}
+
         {/* COMING SOON PROFESSIONAL CARDS FOR OTHER UNBUILT SECTIONS */}
-        {activeTab !== 'overview' && activeTab !== 'pricing-intel' && (
+        {activeTab !== 'overview' && activeTab !== 'pricing-intel' && activeTab !== 'billboard' && (
           <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-8 sm:p-12 text-center max-w-2xl mx-auto space-y-4">
             <div className="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mx-auto text-[#EF233C]">
               {activeTab === 'market-intel' && <BarChart3 className="w-7 h-7" />}

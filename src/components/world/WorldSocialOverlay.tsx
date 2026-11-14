@@ -310,7 +310,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
 
       {/* 2. INTERACTIVE PLAYER CARD ("REQUEST CHAT") */}
       {selectedPeer && (
-        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-40 w-[calc(100vw-2rem)] max-w-xs bg-[#071A2B]/96 backdrop-blur-2xl border border-white/20 rounded-2xl p-4 shadow-2xl pointer-events-auto">
+        <div className="absolute top-[138px] sm:top-[156px] left-1/2 -translate-x-1/2 z-40 w-[calc(100vw-2rem)] max-w-xs bg-[#071A2B]/96 backdrop-blur-2xl border border-white/20 rounded-2xl p-4 shadow-2xl pointer-events-auto">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
@@ -448,7 +448,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
 
       {/* 3. INCOMING CHAT INVITATION CARD (Two-Way Acceptance Prompt) */}
       {incomingInvite && inviteSecondsLeft > 0 && (
-        <div className="absolute top-24 left-3 sm:left-6 z-40 w-[calc(100vw-1.5rem)] max-w-xs bg-[#071A2B]/96 backdrop-blur-2xl border border-emerald-400/55 rounded-2xl p-3.5 shadow-2xl pointer-events-auto">
+        <div className="absolute top-[138px] sm:top-[156px] left-3 sm:left-6 z-40 w-[calc(100vw-1.5rem)] max-w-xs bg-[#071A2B]/96 backdrop-blur-2xl border border-emerald-400/55 rounded-2xl p-3.5 shadow-2xl pointer-events-auto">
           <div className="flex items-center justify-between gap-2 mb-1">
             <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
               PLAYER WANTS TO CHAT
@@ -501,7 +501,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
       {/* 4. COMPACT FLOATING PRIVATE TWO-WAY CHAT CARD (Above Mobile Pedals Safe Zone) */}
       {activeConversation && (
         <div
-          className={`absolute right-3 sm:right-6 top-24 lg:top-auto lg:bottom-28 z-40 pointer-events-auto transition-all ${
+          className={`absolute right-3 sm:right-6 top-[138px] sm:top-[156px] lg:top-auto lg:bottom-28 z-40 pointer-events-auto transition-all ${
             isChatMinimized ? 'w-56' : 'w-[calc(100vw-1.5rem)] sm:w-88'
           }`}
         >

@@ -8,10 +8,13 @@
 export type EngineVehicleType = 'SPORTS_COUPE' | 'LUXURY_SUV' | 'EXECUTIVE_SEDAN' | 'RUGGED_4X4';
 export type AudioDriveMode = 'COMFORT' | 'SPORT' | 'TRACK' | 'ECO' | 'DRIFT';
 
+export type EngineTransmissionGear = 'P' | 'D0' | 'D2' | 'D1' | 'R';
+
 export interface EngineAudioUpdateOptions {
   steerRatio?: number; // 0..1 steering intensity for cornering tyre scrub
   onBridge?: boolean; // Elevated bridge deck expansion texture
   brakeIntensity?: number; // 0..1 braking load
+  transmissionGear?: EngineTransmissionGear;
 }
 
 class EngineAudioSystem {
@@ -518,6 +521,12 @@ class EngineAudioSystem {
       modeFilterBoost = -70;
     }
 
+    const gear = options.transmissionGear || 'D2';
+    const gearFreqFactor =
+      gear === 'P' ? 0.88 : gear === 'R' ? 0.94 : gear === 'D0' ? 0.84 : gear === 'D2' ? 0.96 : 1.08;
+    const gearFilterBoost =
+      gear === 'D1' ? 140 : gear === 'D2' ? 20 : gear === 'D0' ? -55 : gear === 'R' ? -20 : -80;
+
     // Smooth 6-speed virtual gear sweep
     const gearThresholds = [0, 0.16, 0.33, 0.51, 0.69, 0.86, 1.0];
     let gearIdx = 0;
@@ -528,14 +537,17 @@ class EngineAudioSystem {
     const gEnd = gearThresholds[gearIdx + 1];
     const gearLocal = Math.min(1, Math.max(0, (normalizedSpeed - gStart) / Math.max(0.05, gEnd - gStart)));
 
-    // Stationary idle vs driving RPM progression
-    const throttleBoost = isAccelerating ? 22 + normalizedSpeed * 12 : 0;
-    const revFloor = isStationary ? idlePitch : idlePitch + gearIdx * 9 + gearLocal * gearSpan;
-    const targetBaseFreq = revFloor + (isStationary ? 0 : modeFreqBoost) + throttleBoost;
+    // Stationary idle vs driving RPM progression (P stays at composed idle)
+    const effectiveAccel = gear === 'P' ? false : isAccelerating;
+    const throttleBoost = effectiveAccel ? (gear === 'D1' ? 26 : 19) + normalizedSpeed * 12 : 0;
+    const revFloor = isStationary
+      ? idlePitch
+      : idlePitch + (gear === 'R' ? 22 : gearIdx * 9 + gearLocal * gearSpan * gearFreqFactor);
+    const targetBaseFreq = revFloor + (isStationary ? 0 : modeFreqBoost + gearFilterBoost * 0.06) + throttleBoost;
     this.targetFreq = Math.min(340, Math.max(32, targetBaseFreq));
 
     // Smooth deceleration coastdown vs brisk throttle spool
-    const freqLerp = isAccelerating ? 0.22 : 0.12;
+    const freqLerp = effectiveAccel ? 0.22 : 0.12;
     this.currentFreq += (this.targetFreq - this.currentFreq) * freqLerp;
 
     if (this.oscPrimary && this.oscHarmonic && this.oscSub && this.filter && this.engineBus) {

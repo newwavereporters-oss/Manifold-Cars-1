@@ -5,6 +5,62 @@ export { VehicleModelFactory };
 export type VehicleModelType = 'SPORTS_COUPE' | 'LUXURY_SUV' | 'EXECUTIVE_SEDAN' | 'RUGGED_4X4';
 export type HeadlightState = 'OFF' | 'LOW' | 'HIGH';
 export type TurnSignalState = 'OFF' | 'LEFT' | 'RIGHT';
+export type TransmissionGear = 'P' | 'D0' | 'D2' | 'D1' | 'R';
+
+export interface TransmissionGearProfile {
+  gear: TransmissionGear;
+  label: string;
+  shortDesc: string;
+  maxSpeedMultiplier: number;
+  accelMultiplier: number;
+  shortcut: string;
+}
+
+export const TRANSMISSION_GEAR_ORDER: TransmissionGear[] = ['P', 'D0', 'D2', 'D1', 'R'];
+
+// Strict speed & acceleration hierarchy: D1 (Fastest) > D2 (Moderate) > D0 (Slow)
+export const TRANSMISSION_GEAR_PROFILES: Record<TransmissionGear, TransmissionGearProfile> = {
+  P: {
+    gear: 'P',
+    label: 'Park',
+    shortDesc: 'Vehicle held stationary',
+    maxSpeedMultiplier: 0,
+    accelMultiplier: 0,
+    shortcut: '1',
+  },
+  D0: {
+    gear: 'D0',
+    label: 'Slow Drive',
+    shortDesc: 'Low-speed city crawl & parking',
+    maxSpeedMultiplier: 0.36,
+    accelMultiplier: 0.52,
+    shortcut: '2',
+  },
+  D2: {
+    gear: 'D2',
+    label: 'Moderate Drive',
+    shortDesc: 'Balanced daily cruise & highway flow',
+    maxSpeedMultiplier: 0.68,
+    accelMultiplier: 0.85,
+    shortcut: '3',
+  },
+  D1: {
+    gear: 'D1',
+    label: 'Fast Drive',
+    shortDesc: 'Full performance & top speed',
+    maxSpeedMultiplier: 1.0,
+    accelMultiplier: 1.18,
+    shortcut: '4',
+  },
+  R: {
+    gear: 'R',
+    label: 'Reverse',
+    shortDesc: 'Controlled reverse maneuvering',
+    maxSpeedMultiplier: 0.24,
+    accelMultiplier: 0.58,
+    shortcut: '5',
+  },
+};
 
 export interface VehicleSpecProfile {
   id: VehicleModelType;

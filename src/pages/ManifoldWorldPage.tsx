@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   WorldCanvas,
   CameraViewMode,
@@ -6,12 +6,14 @@ import {
   type ProjectedRemotePlayer,
 } from '../components/world/WorldCanvas';
 import { WorldHUD } from '../components/world/WorldHUD';
+import { type VirtualDrivingInput } from '../components/world/MobileTouchControls';
 import { CustomizerDrawer } from '../components/world/CustomizerDrawer';
 import { MarketplaceGatewayModal } from '../components/world/MarketplaceGatewayModal';
 import { VehicleInspectorModal } from '../components/world/VehicleInspectorModal';
 import { DealerLoungeModal } from '../components/world/DealerLoungeModal';
 import { CityMapModal } from '../components/world/CityMapModal';
 import { MissionHUDOverlay } from '../components/world/MissionHUDOverlay';
+import { MusicLibraryModal } from '../components/world/MusicLibraryModal';
 import { WorldGateAuth } from '../components/world/WorldGateAuth';
 import { WorldBriefingPortal } from '../components/world/WorldBriefingPortal';
 import { VehicleConfigPortal } from '../components/world/VehicleConfigPortal';
@@ -19,6 +21,7 @@ import { WorldSocialOverlay } from '../components/world/WorldSocialOverlay';
 import {
   MissionManager,
   ActiveMissionSession,
+  MissionDef,
   MissionId,
   MISSIONS_CATALOG,
 } from '../components/world/missionEngine';
@@ -27,9 +30,13 @@ import {
   VehicleModelType,
   HeadlightState,
   TurnSignalState,
+  TransmissionGear,
   type MusicPreference,
 } from '../components/world/worldModels';
 import { AudioDriveMode, engineAudio } from '../utils/engineAudio';
+import { musicLibrary } from '../utils/musicLibraryService';
+import { billboardService, type GameBillboardItem } from '../services/billboardService';
+import { missionService, type MissionProgressStat } from '../services/missionService';
 import { Car } from '../types';
 import {
   isSupabaseConfigured,
@@ -173,6 +180,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   // Vehicle Systems State
   const [isEngineRunning, setIsEngineRunning] = useState<boolean>(true);
   const [driveMode, setDriveMode] = useState<AudioDriveMode>('SPORT');
+  const [selectedGear, setSelectedGear] = useState<TransmissionGear>('D2');
   const [headlightState, setHeadlightState] = useState<HeadlightState>('LOW');
   const [turnSignal, setTurnSignal] = useState<TurnSignalState>('OFF');
   const [hazardLights, setHazardLights] = useState<boolean>(false);
@@ -180,10 +188,15 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const [radioStation, setRadioStation] = useState<number>(1);
   const [radioVolume, setRadioVolume] = useState<number>(0.7);
 
+  // Music Library & Dealer Billboard State
+  const [isMusicLibraryOpen, setIsMusicLibraryOpen] = useState(false);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [billboardItems, setBillboardItems] = useState<GameBillboardItem[]>([]);
+
   // Vehicle Telemetry
   const [speedKmh, setSpeedKmh] = useState<number>(0);
   const [rpm, setRpm] = useState<number>(850);
-  const [gear, setGear] = useState<string>('P');
+  const [gear, setGear] = useState<string>('D2');
   const [speedTrapRecord, setSpeedTrapRecord] = useState<number | null>(null);
   const [carPosition, setCarPosition] = useState<{
     x: number;
@@ -200,13 +213,17 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   });
 
   // Virtual Touch Input
-  const [virtualInputState, setVirtualInputState] = useState({
+  const [virtualInputState, setVirtualInputState] = useState<VirtualDrivingInput>({
     forward: false,
     backward: false,
     left: false,
     right: false,
     handbrake: false,
   });
+
+  const handleVirtualInput = useCallback((input: VirtualDrivingInput) => {
+    setVirtualInputState(input);
+  }, []);
 
   // Modals & Drawers
   const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
@@ -245,6 +262,11 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     { name: string; x: number; z: number }[]
   >([]);
   const [missionSession, setMissionSession] = useState<ActiveMissionSession | null>(null);
+  const [missionOverrides, setMissionOverrides] = useState<Record<string, Partial<MissionDef>>>({});
+  const [missionProgress, setMissionProgress] = useState<Record<string, MissionProgressStat>>({});
+  const [serverMissionOffsetMs, setServerMissionOffsetMs] = useState(0);
+  const missionOverridesRef = useRef<Record<string, Partial<MissionDef>>>({});
+  missionOverridesRef.current = missionOverrides;
   const missionManagerRef = useRef<MissionManager>(new MissionManager());
   const lastMissionUiHashRef = useRef<string>('');
 
@@ -348,10 +370,67 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     serverClockOffsetMs
   );
 
-  // Stop audio if returning to Auth/Briefing screens
+  // Subscribe to persistent Music Library player state
+  useEffect(() => {
+    return musicLibrary.subscribe((snap) => {
+      setIsMusicPlaying(snap.isPlaying);
+    });
+  }, []);
+
+  // Fetch Dealer Game Billboards & Server Mission Config/Progress inside GAME stage
+  const loadMissionOverview = useCallback(async () => {
+    const overview = await missionService.getMyMissionOverview();
+    const map: Record<string, Partial<MissionDef>> = {};
+    for (const row of overview.missions) {
+      map[row.id] = {
+        title: row.title,
+        subTitle: row.subtitle,
+        briefing: row.description,
+        distanceMeters: row.distance_meters,
+        estimatedMinutes: row.estimated_minutes,
+        baseRewardCredits: row.reward_credits,
+        reputationXP: row.reward_xp,
+        rewardBadge: row.reward_badge,
+        timeLimitSec: row.time_limit_seconds,
+        difficulty: row.difficulty,
+        cooldownSec: row.cooldown_seconds,
+        requiresNoCollision: row.requires_no_collision,
+        requireParkGear: row.require_park_gear,
+        is_active: row.is_active,
+      } as Partial<MissionDef>;
+    }
+    setMissionOverrides(map);
+    setMissionProgress(overview.progress || {});
+    const parsedNow = Date.parse(overview.serverNow);
+    if (!Number.isNaN(parsedNow)) {
+      setServerMissionOffsetMs(parsedNow - Date.now());
+    }
+  }, []);
+
+  useEffect(() => {
+    if (worldStage !== 'GAME') return;
+    let mounted = true;
+    const refreshBillboards = () => {
+      void billboardService.getActiveBillboards().then((items) => {
+        if (mounted) setBillboardItems(items);
+      });
+    };
+    refreshBillboards();
+    void loadMissionOverview();
+    const timer = window.setInterval(refreshBillboards, 60000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, [worldStage, loadMissionOverview]);
+
+  // Stop audio if returning to Auth/Suspended/Briefing screens
   useEffect(() => {
     if (worldStage !== 'GAME') {
       engineAudio.stop();
+      if (worldStage === 'AUTH' || worldStage === 'SUSPENDED') {
+        musicLibrary.pause();
+      }
     }
   }, [worldStage]);
 
@@ -488,7 +567,38 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   };
 
   useEffect(() => {
-    missionManagerRef.current.setRewardCallback(handleAwardCredits);
+    missionManagerRef.current.setCompletionCallback(
+      (missionId, success, credits, _xp, reason, runToken, runData) => {
+        if (success && credits > 0) {
+          handleAwardCredits(credits, reason);
+        }
+        if (runToken && !runToken.startsWith('local-')) {
+          void missionService
+            .completeMission({ missionId, runToken, success, runData })
+            .then((res) => {
+              if (res.persisted) {
+                if (typeof res.creditsBalance === 'number') {
+                  setPlayerCredits(res.creditsBalance);
+                }
+                setPlayerProfile((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        credits_balance:
+                          typeof res.creditsBalance === 'number'
+                            ? res.creditsBalance
+                            : prev.credits_balance,
+                        xp_balance:
+                          typeof res.xpBalance === 'number' ? res.xpBalance : prev.xp_balance,
+                      }
+                    : prev
+                );
+              }
+              void loadMissionOverview();
+            });
+        }
+      }
+    );
   });
 
   const syncMissionUi = useCallback((session: ActiveMissionSession | null, force = false) => {
@@ -502,6 +612,8 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     const hash = `${session.missionId}|${session.state}|${Math.ceil(
       session.timeRemainingSec
     )}|${session.cargoIntegrityPercent}|${Math.ceil(session.countdownVal)}|${
+      session.currentCheckpointIdx
+    }|${session.insideDestAwaitingPark ? 1 : 0}|${
       session.currentRaceCheckpointIdx
     }|${session.playerRaceRank}`;
     if (force || hash !== lastMissionUiHashRef.current) {
@@ -512,17 +624,35 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
 
   const handleOpenMissionBriefing = useCallback(
     (id: MissionId) => {
-      const s = missionManagerRef.current.openBriefing(id);
+      const s = missionManagerRef.current.openBriefing(id, missionOverridesRef.current);
       syncMissionUi(s, true);
     },
     [syncMissionUi]
   );
 
-  const handleStartMission = useCallback(() => {
-    const s = missionManagerRef.current.startMission();
+  const handleStartMission = useCallback(async () => {
+    const activeId = missionManagerRef.current.session?.missionId;
+    if (!activeId) return;
+
+    const startRes = await missionService.startMission(activeId);
+    if (!startRes.success) {
+      setSocialToast(startRes.message || 'This mission is currently unavailable or on cooldown.');
+      setTimeout(() => setSocialToast(null), 3500);
+      return;
+    }
+
+    const s = missionManagerRef.current.startMission(startRes.runToken);
     if (s) {
-      const def = MISSIONS_CATALOG[s.missionId];
-      setActiveDestination({ x: def.destX, z: def.destZ, name: def.destinationName });
+      const target = missionManagerRef.current.getActiveTarget(missionOverridesRef.current);
+      if (target) {
+        setActiveDestination({ x: target.x, z: target.z, name: target.name });
+      } else {
+        const def = missionManagerRef.current.getMissionDef(
+          s.missionId,
+          missionOverridesRef.current
+        );
+        setActiveDestination({ x: def.destX, z: def.destZ, name: def.destinationName });
+      }
     }
     syncMissionUi(s, true);
   }, [syncMissionUi]);
@@ -536,10 +666,26 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const handleMissionUpdate = useCallback(
     (
       delta: number,
-      playerPos: { x: number; z: number; speed: number },
+      playerPos: { x: number; z: number; speed: number; gear?: TransmissionGear },
       onCollisionImpact?: boolean
     ) => {
-      const updated = missionManagerRef.current.update(delta, playerPos, onCollisionImpact);
+      const prevCpIdx = missionManagerRef.current.session?.currentCheckpointIdx ?? -1;
+      const updated = missionManagerRef.current.update(
+        delta,
+        playerPos,
+        onCollisionImpact,
+        missionOverridesRef.current
+      );
+      if (
+        updated &&
+        updated.state === 'ACTIVE' &&
+        updated.currentCheckpointIdx !== prevCpIdx
+      ) {
+        const nextTarget = missionManagerRef.current.getActiveTarget(missionOverridesRef.current);
+        if (nextTarget) {
+          setActiveDestination({ x: nextTarget.x, z: nextTarget.z, name: nextTarget.name });
+        }
+      }
       syncMissionUi(updated);
     },
     [syncMissionUi]
@@ -547,11 +693,59 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
 
   const handleRaceCheckpointPassed = useCallback(
     (cpIdx: number, rank: number) => {
-      const updated = missionManagerRef.current.onPlayerReachRaceCheckpoint(cpIdx + 1, rank);
+      const updated = missionManagerRef.current.onPlayerReachRaceCheckpoint(
+        cpIdx + 1,
+        rank,
+        missionOverridesRef.current
+      );
       syncMissionUi(updated, true);
     },
     [syncMissionUi]
   );
+
+  const activeMissionTarget = useMemo(() => {
+    if (
+      !missionSession ||
+      (missionSession.state !== 'ACTIVE' && missionSession.state !== 'COUNTDOWN')
+    ) {
+      return null;
+    }
+    const def = missionOverrides[missionSession.missionId]
+      ? { ...MISSIONS_CATALOG[missionSession.missionId], ...missionOverrides[missionSession.missionId] }
+      : MISSIONS_CATALOG[missionSession.missionId];
+    if (!def || def.category === 'STREET_RACE') return null;
+
+    if (missionSession.currentCheckpointIdx < def.checkpoints.length) {
+      const cp = def.checkpoints[missionSession.currentCheckpointIdx];
+      return {
+        x: cp.x,
+        z: cp.z,
+        radius: cp.radius,
+        name: cp.name,
+        isFinalDestination: false,
+      };
+    }
+    return {
+      x: def.destX,
+      z: def.destZ,
+      radius: def.destRadius,
+      name: def.destinationName,
+      isFinalDestination: true,
+    };
+  }, [
+    missionSession?.missionId,
+    missionSession?.state,
+    missionSession?.currentCheckpointIdx,
+    missionOverrides,
+  ]);
+
+  const distToMissionTargetMeters = useMemo(() => {
+    if (!activeMissionTarget) return 0;
+    return Math.round(
+      Math.hypot(carPosition.x - activeMissionTarget.x, carPosition.z - activeMissionTarget.z) *
+        2.5
+    );
+  }, [carPosition.x, carPosition.z, activeMissionTarget]);
 
   const handleSpeedTrap = (recordedSpeed: number) => {
     setSpeedTrapRecord(recordedSpeed);
@@ -769,12 +963,15 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
           virtualInput={virtualInputState}
           isEngineRunning={isEngineRunning}
           driveMode={driveMode}
+          selectedGear={selectedGear}
+          onSelectGear={setSelectedGear}
           headlightState={headlightState}
           turnSignal={turnSignal}
           hazardLights={hazardLights}
           hornActive={hornActive}
           onAwardCredits={handleAwardCredits}
           activeDestination={activeDestination}
+          activeMissionTarget={activeMissionTarget}
           activeMissionSession={missionSession}
           onMissionUpdate={handleMissionUpdate}
           onRaceCheckpointPassed={handleRaceCheckpointPassed}
@@ -928,7 +1125,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             onOpenDealerLounge={() => setIsDealerLoungeOpen(true)}
             carPosition={carPosition}
             speedTrapRecord={speedTrapRecord}
-            onVirtualInput={(input) => setVirtualInputState(input)}
+            onVirtualInput={handleVirtualInput}
             virtualInputState={virtualInputState}
             playerCredits={playerCredits}
             creditNotification={creditNotification}
@@ -936,6 +1133,8 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             onToggleEngine={handleToggleEngine}
             driveMode={driveMode}
             onSelectDriveMode={(mode) => setDriveMode(mode)}
+            selectedGear={selectedGear}
+            onSelectGear={setSelectedGear}
             headlightState={headlightState}
             onCycleHeadlights={handleCycleHeadlights}
             turnSignal={turnSignal}
@@ -951,9 +1150,13 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             onRadioVolumeChange={handleRadioVolume}
             onOpenCityMap={() => setIsCityMapOpen(true)}
             onOpenMissions={() => setIsMissionDrawerOpen(true)}
+            onOpenMusicLibrary={() => setIsMusicLibraryOpen(true)}
+            isMusicPlaying={isMusicPlaying}
             onResetVehicle={() => setResetVehicleTrigger((prev) => prev + 1)}
             activeDestination={activeDestination}
             onClearDestination={() => setActiveDestination(null)}
+            billboardItems={billboardItems}
+            onOpenBillboardListing={(slug) => navigate(`/cars/${slug}`)}
             playerNickname={playerProfile.nickname}
             nearbyPlayersCount={remotePlayers.length}
             lockStatus={{
@@ -970,11 +1173,22 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
 
           <MissionHUDOverlay
             session={missionSession}
-            onStartMission={handleStartMission}
+            missionOverrides={missionOverrides}
+            missionProgress={missionProgress}
+            serverClockOffsetMs={serverMissionOffsetMs}
+            selectedGear={selectedGear}
+            onStartMission={() => void handleStartMission()}
             onAbandonMission={handleAbandonMission}
             onOpenMissionBriefing={handleOpenMissionBriefing}
             isMissionDrawerOpen={isMissionDrawerOpen}
             onCloseMissionDrawer={() => setIsMissionDrawerOpen(false)}
+            distToDestMeters={distToMissionTargetMeters}
+            activeTargetName={activeMissionTarget?.name}
+          />
+
+          <MusicLibraryModal
+            isOpen={isMusicLibraryOpen}
+            onClose={() => setIsMusicLibraryOpen(false)}
           />
 
           <CustomizerDrawer

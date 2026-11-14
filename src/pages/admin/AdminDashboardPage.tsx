@@ -42,10 +42,14 @@ import {
   Globe,
   Sparkles,
   ShieldAlert,
+  Megaphone,
+  Flag,
 } from 'lucide-react';
 import { AdminMarketIntelligenceView } from '../../components/admin/AdminMarketIntelligenceView';
 import { AdminModerationView } from '../../components/admin/AdminModerationView';
 import { AdminGamePlayersView } from '../../components/admin/AdminGamePlayersView';
+import { AdminBillboardView } from '../../components/admin/AdminBillboardView';
+import { AdminMissionsView } from '../../components/admin/AdminMissionsView';
 import { useAuth } from '../../context/AuthContext';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../../data/mockCars';
 import { Car, CarBrand, BodyTypeCategory } from '../../types';
@@ -83,6 +87,8 @@ export type AdminTabType =
   | 'intelligence'
   | 'players'
   | 'moderation'
+  | 'billboards'
+  | 'missions'
   | 'settings';
 
 interface AdminDashboardPageProps {
@@ -112,6 +118,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     if (route.startsWith('/admin/market-intelligence') || route.startsWith('/admin/intelligence')) return 'intelligence';
     if (route.startsWith('/admin/players') || route.startsWith('/admin/game-players')) return 'players';
     if (route.startsWith('/admin/moderation')) return 'moderation';
+    if (route.startsWith('/admin/billboards')) return 'billboards';
+    if (route.startsWith('/admin/missions')) return 'missions';
     if (route.startsWith('/admin/settings')) return 'settings';
     return defaultTab;
   };
@@ -142,6 +150,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       intelligence: '/admin/market-intelligence',
       players: '/admin/players',
       moderation: '/admin/moderation',
+      billboards: '/admin/billboards',
+      missions: '/admin/missions',
       settings: '/admin/settings',
     };
     navigate(routeMap[tab]);
@@ -978,6 +988,30 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             >
               <ShieldAlert className="w-4 h-4" />
               <span>Safety &amp; Chat Moderation</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('billboards')}
+              className={`py-3 px-1 border-b-2 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer ${
+                activeTab === 'billboards'
+                  ? 'border-[#EF233C] text-[#EF233C]'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              <Megaphone className="w-4 h-4" />
+              <span>Game Billboards</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('missions')}
+              className={`py-3 px-1 border-b-2 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer ${
+                activeTab === 'missions'
+                  ? 'border-[#EF233C] text-[#EF233C]'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              <Flag className="w-4 h-4" />
+              <span>Game Missions</span>
             </button>
 
             <button
@@ -2136,6 +2170,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         {/* TAB 9C: GAME WORLD SAFETY & CHAT MODERATION */}
         {activeTab === 'moderation' && (
           <AdminModerationView />
+        )}
+
+        {/* TAB 9D: GAME BILLBOARD & DEALER ADVERTISING QUOTAS */}
+        {activeTab === 'billboards' && (
+          <AdminBillboardView />
+        )}
+
+        {/* TAB 9E: GAME MISSIONS CONFIGURATION */}
+        {activeTab === 'missions' && (
+          <AdminMissionsView />
         )}
 
         {/* TAB 10: DATABASE & SETTINGS */}
