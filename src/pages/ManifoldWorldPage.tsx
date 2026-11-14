@@ -44,6 +44,7 @@ import {
   checkWorldDbStatus,
   computeLockStatus,
   fetchMyPlayerProfile,
+  isPlayerChatRestricted,
   logoutPlayerAccount,
   type PlayerProfile,
   type WorldDbStatus,
@@ -669,6 +670,13 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
           messages: [...prev.messages, newMsg],
         };
       });
+    } else if (res.moderationWarning?.restrictedUntil !== undefined) {
+      // Sync authoritative chat_status & expiry from server DB
+      void fetchMyPlayerProfile().then((profRes) => {
+        if (profRes.success && profRes.profile) {
+          applyProfileToWorld(profRes.profile, profRes.serverClockOffsetMs || 0);
+        }
+      });
     }
     return {
       delivered: res.delivered,
@@ -767,6 +775,12 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
               Access to MANIFOLD CARS 3D has been suspended due to community safety policy
               violations. Marketplace browsing remains accessible outside the game.
             </p>
+            {playerProfile?.suspended_reason && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 text-[11px] text-red-200">
+                <strong className="font-bold block text-red-300 mb-0.5">Reason:</strong>
+                <span>{playerProfile.suspended_reason}</span>
+              </div>
+            )}
             <div className="flex gap-2.5 pt-2">
               <button
                 onClick={() => navigate('/car-marketplace')}
@@ -841,6 +855,10 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             onCloseNearbyPanel={() => setIsNearbyPanelOpen(false)}
             isBlockedPanelOpen={isBlockedPanelOpen}
             onCloseBlockedPanel={() => setIsBlockedPanelOpen(false)}
+            chatRestriction={{
+              ...isPlayerChatRestricted(playerProfile, serverClockOffsetMs),
+              reason: playerProfile.chat_restriction_reason,
+            }}
           />
 
           {socialToast && (

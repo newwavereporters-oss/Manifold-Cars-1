@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { AdminMarketIntelligenceView } from '../../components/admin/AdminMarketIntelligenceView';
 import { AdminModerationView } from '../../components/admin/AdminModerationView';
+import { AdminGamePlayersView } from '../../components/admin/AdminGamePlayersView';
 import { useAuth } from '../../context/AuthContext';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../../data/mockCars';
 import { Car, CarBrand, BodyTypeCategory } from '../../types';
@@ -80,6 +81,7 @@ export type AdminTabType =
   | 'sales'
   | 'commissions'
   | 'intelligence'
+  | 'players'
   | 'moderation'
   | 'settings';
 
@@ -108,6 +110,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     if (route.startsWith('/admin/commissions') || route.startsWith('/admin/commission-rules')) return 'commissions';
     if (route.startsWith('/admin/sales')) return 'sales';
     if (route.startsWith('/admin/market-intelligence') || route.startsWith('/admin/intelligence')) return 'intelligence';
+    if (route.startsWith('/admin/players') || route.startsWith('/admin/game-players')) return 'players';
     if (route.startsWith('/admin/moderation')) return 'moderation';
     if (route.startsWith('/admin/settings')) return 'settings';
     return defaultTab;
@@ -137,6 +140,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       sales: '/admin/sales',
       commissions: '/admin/commissions',
       intelligence: '/admin/market-intelligence',
+      players: '/admin/players',
       moderation: '/admin/moderation',
       settings: '/admin/settings',
     };
@@ -950,6 +954,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             >
               <Globe className="w-4 h-4" />
               <span>Market Intelligence</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('players')}
+              className={`py-3 px-1 border-b-2 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer ${
+                activeTab === 'players'
+                  ? 'border-[#EF233C] text-[#EF233C]'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>GAME PLAYERS</span>
             </button>
 
             <button
@@ -2112,7 +2128,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           <AdminMarketIntelligenceView />
         )}
 
-        {/* TAB 9B: GAME WORLD SAFETY & CHAT MODERATION */}
+        {/* TAB 9B: GAME PLAYERS DIRECTORY */}
+        {activeTab === 'players' && (
+          <AdminGamePlayersView />
+        )}
+
+        {/* TAB 9C: GAME WORLD SAFETY & CHAT MODERATION */}
         {activeTab === 'moderation' && (
           <AdminModerationView />
         )}

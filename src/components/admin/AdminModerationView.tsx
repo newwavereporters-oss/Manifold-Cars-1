@@ -14,18 +14,33 @@ import {
   Copy,
   Check,
   Database,
+  History,
+  X,
 } from 'lucide-react';
 import {
+  adminExecutePlayerAction,
   adminFetchModerationOverview,
   adminSaveModerationConfig,
-  adminUpdatePlayerModerationAction,
   checkWorldDbStatus,
   type AdminModerationOverview,
-  type PlayerAccountStatus,
+  type AdminPlayerActionType,
   type WorldDbStatus,
 } from '../../services/playerService';
 
-type ModerationSubTab = 'reports' | 'incidents' | 'flagged' | 'config';
+type ModerationSubTab = 'reports' | 'incidents' | 'flagged' | 'auditLogs' | 'config';
+
+interface PendingModerationConfirm {
+  playerId: string;
+  nickname: string;
+  action: AdminPlayerActionType;
+  restrictMinutes?: number | null;
+  reportId?: string | null;
+  reportStatus?: 'reviewed' | 'action_taken' | 'dismissed' | null;
+  title: string;
+  defaultReason: string;
+  label: string;
+  tone: 'danger' | 'warning' | 'success' | 'neutral';
+}
 
 export const AdminModerationView: React.FC = () => {
   const [subTab, setSubTab] = useState<ModerationSubTab>('reports');
@@ -40,12 +55,16 @@ export const AdminModerationView: React.FC = () => {
   // Admin report note draft per report id
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
 
+  // Mandatory confirmation + reason modal
+  const [pendingConfirm, setPendingConfirm] = useState<PendingModerationConfirm | null>(null);
+  const [confirmReason, setConfirmReason] = useState('');
+
   // Moderation config form state
   const [cfgRadius, setCfgRadius] = useState(110);
   const [cfgTimeoutMins, setCfgTimeoutMins] = useState(10);
-  const [cfgWarnThresh, setCfgWarnThresh] = useState(1);
+  const [cfgWarnThresh, setCfgWarnThresh] = useState(2);
   const [cfgRestrictMins, setCfgRestrictMins] = useState(15);
-  const [cfgSuspendThresh, setCfgSuspendThresh] = useState(5);
+  const [cfgSuspendThresh, setCfgSuspendThresh] = useState(6);
   const [savingConfig, setSavingConfig] = useState(false);
 
   const loadData = async () => {
@@ -93,32 +112,38 @@ export const AdminModerationView: React.FC = () => {
     } catch {}
   };
 
-  const handlePlayerModeration = async (params: {
-    playerId: string;
-    accountStatus: PlayerAccountStatus;
-    restrictMinutes?: number | null;
-    reportId?: string | null;
-    reportStatus?: 'reviewed' | 'action_taken' | 'dismissed' | null;
-    label: string;
-  }) => {
-    const key = params.reportId || params.playerId;
+  const requestModerationConfirmation = (item: PendingModerationConfirm) => {
+    setConfirmReason(item.defaultReason);
+    setPendingConfirm(item);
+  };
+
+  const executeConfirmedModeration = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingConfirm) return;
+    const cleanReason = confirmReason.trim();
+    if (cleanReason.length < 3) {
+      setErrorMsg('An audit reason (at least 3 characters) is required.');
+      return;
+    }
+
+    const key = pendingConfirm.reportId || pendingConfirm.playerId;
     setBusyId(key);
     setActionBanner(null);
     setErrorMsg(null);
     try {
-      const notes = params.reportId ? noteDrafts[params.reportId] || undefined : undefined;
-      const res = await adminUpdatePlayerModerationAction({
-        playerId: params.playerId,
-        accountStatus: params.accountStatus,
-        restrictMinutes: params.restrictMinutes,
-        reportId: params.reportId,
-        reportStatus: params.reportStatus,
-        adminNotes: notes,
+      const res = await adminExecutePlayerAction({
+        playerId: pendingConfirm.playerId,
+        action: pendingConfirm.action,
+        reason: cleanReason,
+        restrictMinutes: pendingConfirm.restrictMinutes ?? null,
+        reportId: pendingConfirm.reportId ?? null,
+        reportStatus: pendingConfirm.reportStatus ?? null,
       });
       if (!res.success) {
         setErrorMsg(res.error || 'Failed to apply moderation action.');
       } else {
-        setActionBanner(params.label);
+        setActionBanner(pendingConfirm.label);
+        setPendingConfirm(null);
         await loadData();
       }
     } finally {
@@ -133,11 +158,11 @@ export const AdminModerationView: React.FC = () => {
     setActionBanner(null);
     try {
       const res = await adminSaveModerationConfig({
-        discoveryRadius: Math.max(20, Math.min(500, cfgRadius)),
-        heartbeatTimeoutMinutes: Math.max(2, Math.min(60, cfgTimeoutMins)),
+        discoveryRadius: Math.max(30, Math.min(200, cfgRadius)),
+        heartbeatTimeoutMinutes: Math.max(2, Math.min(30, cfgTimeoutMins)),
         warningThreshold: Math.max(1, Math.min(10, cfgWarnThresh)),
         tempRestrictionMinutes: Math.max(5, Math.min(1440, cfgRestrictMins)),
-        suspensionThreshold: Math.max(2, Math.min(20, cfgSuspendThresh)),
+        suspensionThreshold: Math.max(3, Math.min(20, cfgSuspendThresh)),
       });
       if (!res.success) {
         setErrorMsg(res.error || 'Failed to update moderation configuration.');
@@ -166,8 +191,8 @@ export const AdminModerationView: React.FC = () => {
               Game World Safety &amp; Chat Moderation
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Review in-world player reports, audit server-blocked chat attempts, enforce chat
-              restrictions or suspensions, and tune discovery rules.
+              Review in-world player reports, audit server-blocked and flagged-for-review chat incidents,
+              enforce separated chat restrictions or account suspensions with mandatory audit reasons, and tune discovery rules.
             </p>
           </div>
         </div>
@@ -196,7 +221,7 @@ export const AdminModerationView: React.FC = () => {
               <p className="text-xs text-amber-800 leading-relaxed">
                 The social &amp; moderation tables (<code>player_profiles</code>,{' '}
                 <code>player_reports</code>, <code>moderation_incidents</code>,{' '}
-                <code>chat_moderation_config</code>) have not yet been applied in Supabase. Run{' '}
+                <code>player_admin_audit_logs</code>, <code>chat_moderation_config</code>) have not yet been applied in Supabase. Run{' '}
                 <code>src/db/game-world-social-migration.sql</code> in your Supabase SQL Editor.
               </p>
             </div>
@@ -240,15 +265,21 @@ export const AdminModerationView: React.FC = () => {
               },
               {
                 id: 'incidents' as const,
-                label: `Blocked Chat Incidents (${overview?.incidents.length || 0})`,
+                label: `Chat Incidents (${overview?.incidents.length || 0})`,
                 badge: 0,
                 icon: AlertTriangle,
               },
               {
                 id: 'flagged' as const,
-                label: `Flagged Players (${overview?.flaggedPlayers.length || 0})`,
+                label: `Restricted / Flagged (${overview?.flaggedPlayers.length || 0})`,
                 badge: 0,
                 icon: Users,
+              },
+              {
+                id: 'auditLogs' as const,
+                label: `Admin Audit Log (${overview?.auditLogs?.length || 0})`,
+                badge: 0,
+                icon: History,
               },
               {
                 id: 'config' as const,
@@ -325,7 +356,7 @@ export const AdminModerationView: React.FC = () => {
                                   by <strong>{rep.reporter_nickname}</strong>
                                 </span>
                                 <span className="text-[11px] font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-700">
-                                  Status: {rep.reported_account_status} ({rep.reported_violation_count} strikes)
+                                  Acct: {rep.reported_account_status} | Chat: {rep.reported_chat_status || 'enabled'} ({rep.reported_violation_count} strikes)
                                 </span>
                               </div>
                               <span className="text-[11px] text-gray-400">
@@ -340,7 +371,7 @@ export const AdminModerationView: React.FC = () => {
                               )}
                               {rep.admin_notes && (
                                 <p className="text-[11px] text-indigo-700 font-semibold pt-1">
-                                  Admin note: {rep.admin_notes}
+                                  Audit note: {rep.admin_notes}
                                 </p>
                               )}
                             </div>
@@ -348,7 +379,7 @@ export const AdminModerationView: React.FC = () => {
                             <div className="flex flex-col md:flex-row gap-2 items-stretch md:items-center">
                               <input
                                 type="text"
-                                placeholder="Add optional review note..."
+                                placeholder="Reason / review note (min 3 chars required for audit)..."
                                 value={noteDrafts[rep.id] ?? rep.admin_notes ?? ''}
                                 onChange={(e) =>
                                   setNoteDrafts((prev) => ({ ...prev, [rep.id]: e.target.value }))
@@ -359,63 +390,87 @@ export const AdminModerationView: React.FC = () => {
                                 <button
                                   disabled={isBusy}
                                   onClick={() =>
-                                    void handlePlayerModeration({
+                                    requestModerationConfirmation({
                                       playerId: rep.reported_player_id,
-                                      accountStatus: 'chat_restricted',
+                                      nickname: rep.reported_nickname,
+                                      action: 'restrict_chat_temp',
                                       restrictMinutes: 60,
                                       reportId: rep.id,
                                       reportStatus: 'action_taken',
-                                      label: `Restricted ${rep.reported_nickname} chat for 60 minutes.`,
+                                      title: 'Restrict Chat (1 Hour)',
+                                      defaultReason:
+                                        noteDrafts[rep.id]?.trim() ||
+                                        `Temporary 1h chat restriction following player report: ${rep.reason}`,
+                                      label: `Restricted ${rep.reported_nickname} chat for 60 minutes (audit logged).`,
+                                      tone: 'warning',
                                     })
                                   }
                                   className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold transition cursor-pointer disabled:opacity-50 flex items-center gap-1"
                                 >
                                   <Clock className="w-3 h-3" />
-                                  <span>Restrict 1h</span>
+                                  <span>Restrict Chat 1h</span>
                                 </button>
                                 <button
                                   disabled={isBusy}
                                   onClick={() =>
-                                    void handlePlayerModeration({
+                                    requestModerationConfirmation({
                                       playerId: rep.reported_player_id,
-                                      accountStatus: 'chat_restricted',
+                                      nickname: rep.reported_nickname,
+                                      action: 'restrict_chat_temp',
                                       restrictMinutes: 1440,
                                       reportId: rep.id,
                                       reportStatus: 'action_taken',
-                                      label: `Restricted ${rep.reported_nickname} chat for 24 hours.`,
+                                      title: 'Restrict Chat (24 Hours)',
+                                      defaultReason:
+                                        noteDrafts[rep.id]?.trim() ||
+                                        `Temporary 24h chat restriction following player report: ${rep.reason}`,
+                                      label: `Restricted ${rep.reported_nickname} chat for 24 hours (audit logged).`,
+                                      tone: 'warning',
                                     })
                                   }
                                   className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-[11px] font-bold transition cursor-pointer disabled:opacity-50"
                                 >
-                                  Restrict 24h
+                                  Restrict Chat 24h
                                 </button>
                                 <button
                                   disabled={isBusy}
                                   onClick={() =>
-                                    void handlePlayerModeration({
+                                    requestModerationConfirmation({
                                       playerId: rep.reported_player_id,
-                                      accountStatus: 'suspended',
+                                      nickname: rep.reported_nickname,
+                                      action: 'suspend_account',
                                       restrictMinutes: null,
                                       reportId: rep.id,
                                       reportStatus: 'action_taken',
-                                      label: `Suspended ${rep.reported_nickname} from MANIFOLD World.`,
+                                      title: 'Suspend Game Account',
+                                      defaultReason:
+                                        noteDrafts[rep.id]?.trim() ||
+                                        `Account suspended due to confirmed report: ${rep.reason}`,
+                                      label: `Suspended ${rep.reported_nickname} from MANIFOLD World (audit logged).`,
+                                      tone: 'danger',
                                     })
                                   }
                                   className="px-3 py-1.5 rounded-lg bg-[#EF233C] hover:bg-red-700 text-white text-[11px] font-bold transition cursor-pointer disabled:opacity-50 flex items-center gap-1"
                                 >
                                   <Ban className="w-3 h-3" />
-                                  <span>Suspend</span>
+                                  <span>Suspend Account</span>
                                 </button>
                                 <button
                                   disabled={isBusy}
                                   onClick={() =>
-                                    void handlePlayerModeration({
+                                    requestModerationConfirmation({
                                       playerId: rep.reported_player_id,
-                                      accountStatus: 'active',
+                                      nickname: rep.reported_nickname,
+                                      action: 'dismiss_report',
                                       restrictMinutes: null,
                                       reportId: rep.id,
                                       reportStatus: 'dismissed',
-                                      label: `Report dismissed and ${rep.reported_nickname} status kept active.`,
+                                      title: 'Dismiss Player Report',
+                                      defaultReason:
+                                        noteDrafts[rep.id]?.trim() ||
+                                        'Reviewed report — no policy violation substantiated.',
+                                      label: `Report dismissed and logged to audit trail.`,
+                                      tone: 'neutral',
                                     })
                                   }
                                   className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 text-[11px] font-bold transition cursor-pointer disabled:opacity-50"
@@ -432,7 +487,7 @@ export const AdminModerationView: React.FC = () => {
                 </div>
               )}
 
-              {/* 2. BLOCKED CHAT INCIDENTS */}
+              {/* 2. CHAT MODERATION INCIDENTS (Blocked + Flagged for Review) */}
               {subTab === 'incidents' && (
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-x-auto">
                   {(!overview?.incidents || overview.incidents.length === 0) ? (
@@ -442,8 +497,7 @@ export const AdminModerationView: React.FC = () => {
                         No automated moderation incidents recorded
                       </p>
                       <p className="text-xs text-gray-500">
-                        Attempted policy violations intercepted by the server chat filter are logged
-                        here for audit review.
+                        Blocked policy violations and conservatively flagged borderline messages appear here.
                       </p>
                     </div>
                   ) : (
@@ -451,6 +505,7 @@ export const AdminModerationView: React.FC = () => {
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-200 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
                           <th className="py-3 px-4">Driver Nickname</th>
+                          <th className="py-3 px-4">Severity</th>
                           <th className="py-3 px-4">Category</th>
                           <th className="py-3 px-4">Action Taken</th>
                           <th className="py-3 px-4">Intercepted Content</th>
@@ -462,7 +517,20 @@ export const AdminModerationView: React.FC = () => {
                           <tr key={inc.id} className="hover:bg-gray-50/70">
                             <td className="py-3 px-4 font-bold text-gray-900">{inc.nickname}</td>
                             <td className="py-3 px-4">
-                              <span className="px-2 py-0.5 rounded bg-red-50 border border-red-200 text-red-700 font-mono text-[10px] font-bold">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                  inc.severity === 'flagged_for_review'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : inc.severity === 'cleared'
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-red-100 text-red-700'
+                                }`}
+                              >
+                                {(inc.severity || 'blocked').replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded bg-gray-100 border border-gray-200 text-gray-800 font-mono text-[10px] font-bold">
                                 {inc.violation_category}
                               </span>
                             </td>
@@ -483,7 +551,7 @@ export const AdminModerationView: React.FC = () => {
                 </div>
               )}
 
-              {/* 3. FLAGGED / RESTRICTED PLAYERS */}
+              {/* 3. RESTRICTED / FLAGGED PLAYERS */}
               {subTab === 'flagged' && (
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-x-auto">
                   {(!overview?.flaggedPlayers || overview.flaggedPlayers.length === 0) ? (
@@ -496,7 +564,8 @@ export const AdminModerationView: React.FC = () => {
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-200 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
                           <th className="py-3 px-4">Nickname</th>
-                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4">Account Status</th>
+                          <th className="py-3 px-4">Chat Status</th>
                           <th className="py-3 px-4">Strikes</th>
                           <th className="py-3 px-4">Restricted Until</th>
                           <th className="py-3 px-4 text-right">Actions</th>
@@ -513,12 +582,23 @@ export const AdminModerationView: React.FC = () => {
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
                                     pl.account_status === 'suspended'
                                       ? 'bg-red-100 text-red-700'
-                                      : pl.account_status === 'chat_restricted'
-                                      ? 'bg-amber-100 text-amber-800'
                                       : 'bg-emerald-100 text-emerald-700'
                                   }`}
                                 >
                                   {pl.account_status}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                    pl.chat_status === 'permanently_restricted'
+                                      ? 'bg-red-100 text-red-700'
+                                      : pl.chat_status === 'temporarily_restricted'
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-emerald-100 text-emerald-700'
+                                  }`}
+                                >
+                                  {(pl.chat_status || 'enabled').replace('_', ' ')}
                                 </span>
                               </td>
                               <td className="py-3 px-4 font-mono font-bold text-gray-800">
@@ -529,37 +609,61 @@ export const AdminModerationView: React.FC = () => {
                                   ? new Date(pl.chat_restricted_until).toLocaleString()
                                   : '—'}
                               </td>
-                              <td className="py-3 px-4 text-right space-x-2">
-                                {pl.account_status !== 'active' && (
+                              <td className="py-3 px-4 text-right space-x-2 whitespace-nowrap">
+                                {pl.chat_status !== 'enabled' && (
                                   <button
                                     disabled={isBusy}
                                     onClick={() =>
-                                      void handlePlayerModeration({
+                                      requestModerationConfirmation({
                                         playerId: pl.id,
-                                        accountStatus: 'active',
-                                        restrictMinutes: null,
-                                        label: `Restored active status for ${pl.nickname}.`,
+                                        nickname: pl.nickname,
+                                        action: 'restore_chat',
+                                        title: 'Restore Chat Access',
+                                        defaultReason: 'Admin restored chat privileges after review.',
+                                        label: `Restored chat access for ${pl.nickname}.`,
+                                        tone: 'success',
+                                      })
+                                    }
+                                    className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold transition cursor-pointer disabled:opacity-50"
+                                  >
+                                    Restore Chat
+                                  </button>
+                                )}
+                                {pl.account_status === 'suspended' ? (
+                                  <button
+                                    disabled={isBusy}
+                                    onClick={() =>
+                                      requestModerationConfirmation({
+                                        playerId: pl.id,
+                                        nickname: pl.nickname,
+                                        action: 'reactivate_account',
+                                        title: 'Reactivate Account',
+                                        defaultReason: 'Admin reactivated game account after review.',
+                                        label: `Reactivated ${pl.nickname}.`,
+                                        tone: 'success',
                                       })
                                     }
                                     className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition cursor-pointer disabled:opacity-50"
                                   >
-                                    Restore Active
+                                    Reactivate Account
                                   </button>
-                                )}
-                                {pl.account_status !== 'suspended' && (
+                                ) : (
                                   <button
                                     disabled={isBusy}
                                     onClick={() =>
-                                      void handlePlayerModeration({
+                                      requestModerationConfirmation({
                                         playerId: pl.id,
-                                        accountStatus: 'suspended',
-                                        restrictMinutes: null,
+                                        nickname: pl.nickname,
+                                        action: 'suspend_account',
+                                        title: 'Suspend Game Account',
+                                        defaultReason: 'Account suspended due to repeated safety violations.',
                                         label: `Suspended ${pl.nickname}.`,
+                                        tone: 'danger',
                                       })
                                     }
                                     className="px-3 py-1.5 rounded-lg bg-[#EF233C] hover:bg-red-700 text-white text-[11px] font-bold transition cursor-pointer disabled:opacity-50"
                                   >
-                                    Suspend
+                                    Suspend Account
                                   </button>
                                 )}
                               </td>
@@ -572,7 +676,51 @@ export const AdminModerationView: React.FC = () => {
                 </div>
               )}
 
-              {/* 4. MODERATION & DISCOVERY CONFIGURATION */}
+              {/* 4. IMMUTABLE ADMIN AUDIT LOGS */}
+              {subTab === 'auditLogs' && (
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-x-auto">
+                  {(!overview?.auditLogs || overview.auditLogs.length === 0) ? (
+                    <div className="p-12 text-center space-y-2">
+                      <History className="w-8 h-8 text-gray-400 mx-auto" />
+                      <p className="text-sm font-bold text-gray-900">No admin audit entries recorded yet</p>
+                      <p className="text-xs text-gray-500">
+                        Every administrative account or chat governance action creates an immutable audit record here.
+                      </p>
+                    </div>
+                  ) : (
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
+                          <th className="py-3 px-4">Timestamp</th>
+                          <th className="py-3 px-4">Administrator</th>
+                          <th className="py-3 px-4">Target Driver</th>
+                          <th className="py-3 px-4">Action</th>
+                          <th className="py-3 px-4">Recorded Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 text-xs">
+                        {overview.auditLogs.map((log) => (
+                          <tr key={log.id} className="hover:bg-gray-50/70">
+                            <td className="py-3 px-4 text-gray-400 whitespace-nowrap">
+                              {new Date(log.created_at).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-gray-700">{log.admin_email}</td>
+                            <td className="py-3 px-4 font-bold text-gray-900">{log.player_nickname}</td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-[#071A2B] font-mono text-[10px] font-bold uppercase">
+                                {log.action.replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-gray-700">{log.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+
+              {/* 5. MODERATION & DISCOVERY CONFIGURATION */}
               {subTab === 'config' && (
                 <form
                   onSubmit={handleSaveConfig}
@@ -583,8 +731,8 @@ export const AdminModerationView: React.FC = () => {
                       Authoritative Multiplayer &amp; Safety Rules
                     </h3>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      These parameters govern proximity discovery distance, inactivity timeout,
-                      and automated moderation thresholds inside Postgres RPCs.
+                      These parameters govern server-side proximity discovery distance, inactivity timeout,
+                      and automated chat moderation thresholds inside Postgres RPCs.
                     </p>
                   </div>
 
@@ -595,8 +743,8 @@ export const AdminModerationView: React.FC = () => {
                       </span>
                       <input
                         type="number"
-                        min={20}
-                        max={500}
+                        min={30}
+                        max={200}
                         value={cfgRadius}
                         onChange={(e) => setCfgRadius(Number(e.target.value))}
                         className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-900 focus:outline-none focus:border-[#EF233C]"
@@ -610,7 +758,7 @@ export const AdminModerationView: React.FC = () => {
                       <input
                         type="number"
                         min={2}
-                        max={60}
+                        max={30}
                         value={cfgTimeoutMins}
                         onChange={(e) => setCfgTimeoutMins(Number(e.target.value))}
                         className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-900 focus:outline-none focus:border-[#EF233C]"
@@ -619,7 +767,7 @@ export const AdminModerationView: React.FC = () => {
 
                     <label className="space-y-1.5 block">
                       <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">
-                        Warning Threshold (Violations)
+                        Temp Chat Restriction Strike Threshold
                       </span>
                       <input
                         type="number"
@@ -647,11 +795,11 @@ export const AdminModerationView: React.FC = () => {
 
                     <label className="space-y-1.5 block sm:col-span-2">
                       <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">
-                        Auto-Suspension Strike Threshold
+                        Extended 24h Chat Restriction Threshold
                       </span>
                       <input
                         type="number"
-                        min={2}
+                        min={3}
                         max={20}
                         value={cfgSuspendThresh}
                         onChange={(e) => setCfgSuspendThresh(Number(e.target.value))}
@@ -675,6 +823,72 @@ export const AdminModerationView: React.FC = () => {
             </>
           )}
         </>
+      )}
+
+      {/* MANDATORY CONFIRMATION + AUDIT REASON MODAL */}
+      {pendingConfirm && (
+        <div className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <form
+            onSubmit={executeConfirmedModeration}
+            className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-gray-200 p-6 space-y-4"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-black text-gray-900">{pendingConfirm.title}</h4>
+                <p className="text-xs text-gray-500 mt-1">
+                  Target driver: <strong>{pendingConfirm.nickname}</strong>. This action will be permanently logged.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingConfirm(null)}
+                className="text-gray-400 hover:text-gray-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-700 mb-1.5">
+                Audit Reason <span className="text-[#EF233C]">*</span>
+              </label>
+              <textarea
+                required
+                minLength={3}
+                rows={3}
+                value={confirmReason}
+                onChange={(e) => setConfirmReason(e.target.value)}
+                className="w-full p-3 rounded-xl border border-gray-300 text-xs text-gray-900 outline-none focus:border-[#071A2B] resize-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setPendingConfirm(null)}
+                className="px-4 py-2 rounded-xl border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={busyId !== null || confirmReason.trim().length < 3}
+                className={`px-4 py-2 rounded-xl text-white text-xs font-black uppercase flex items-center gap-1.5 disabled:opacity-50 cursor-pointer ${
+                  pendingConfirm.tone === 'danger'
+                    ? 'bg-[#EF233C] hover:bg-red-700'
+                    : pendingConfirm.tone === 'warning'
+                    ? 'bg-amber-600 hover:bg-amber-700'
+                    : pendingConfirm.tone === 'success'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-[#071A2B] hover:bg-[#0d2842]'
+                }`}
+              >
+                {busyId !== null && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Confirm &amp; Record Audit</span>
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   );

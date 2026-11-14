@@ -381,8 +381,99 @@ export async function reportDriverById(params: {
 }
 
 // ==============================================================================
-// ADMIN MODERATION APIs (Requires Admin Session + is_active_admin())
+// ADMIN GAME PLAYERS, MODERATION & AUDIT APIs (Requires Admin Session + is_active_admin())
 // ==============================================================================
+export type AdminPlayerActionType =
+  | 'suspend_account'
+  | 'reactivate_account'
+  | 'restrict_chat_temp'
+  | 'restrict_chat_permanent'
+  | 'restore_chat'
+  | 'review_report'
+  | 'dismiss_report';
+
+export interface AdminPlayersDirectorySummary {
+  totalRegistered: number;
+  onlineCount: number;
+  offlineCount: number;
+  completedOnboarding: number;
+  incompleteOnboarding: number;
+  suspendedCount: number;
+  chatRestrictedCount: number;
+  newRegistrations24h: number;
+}
+
+export interface AdminPlayerDirectoryItem {
+  id: string;
+  user_id: string;
+  full_name: string;
+  nickname: string;
+  email: string;
+  phone_number: string;
+  registration_date: string;
+  account_status: PlayerAccountStatus;
+  chat_status: PlayerChatStatus;
+  onboarding_status: PlayerOnboardingStatus;
+  terms_accepted: boolean;
+  terms_version: string | null;
+  selected_vehicle: VehicleModelType | null;
+  selected_vehicle_color: string | null;
+  selected_interior: InteriorTheme | null;
+  selected_music_preference: MusicPreference | null;
+  settings_lock_expires_at: string | null;
+  chat_violation_count: number;
+  chat_restricted_until: string | null;
+  chat_restriction_reason: string | null;
+  suspended_reason: string | null;
+  last_activity_at: string;
+  world_region: string | null;
+  is_online: boolean;
+  last_heartbeat_at: string | null;
+}
+
+export interface AdminPlayersDirectoryResponse {
+  summary: AdminPlayersDirectorySummary;
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  players: AdminPlayerDirectoryItem[];
+}
+
+export interface AdminPlayerDetailResponse {
+  player: AdminPlayerDirectoryItem & {
+    terms_accepted_at: string | null;
+    settings_confirmed_at: string | null;
+    credits_balance: number;
+    suspended_at: string | null;
+  };
+  incidents: {
+    id: string;
+    violation_category: string;
+    severity: 'blocked' | 'flagged_for_review' | 'cleared';
+    action_taken: string;
+    attempted_content: string;
+    created_at: string;
+  }[];
+  reports: {
+    id: string;
+    reason: string;
+    description: string | null;
+    review_status: 'pending' | 'reviewed' | 'action_taken' | 'dismissed';
+    admin_notes: string | null;
+    reporter_nickname: string;
+    created_at: string;
+    reviewed_at: string | null;
+  }[];
+  auditLogs: {
+    id: string;
+    admin_email: string;
+    action: string;
+    reason: string;
+    metadata: Record<string, any>;
+    created_at: string;
+  }[];
+}
+
 export interface AdminModerationOverview {
   reports: {
     id: string;
@@ -397,6 +488,7 @@ export interface AdminModerationOverview {
     reported_player_id: string;
     reported_nickname: string;
     reported_account_status: PlayerAccountStatus;
+    reported_chat_status: PlayerChatStatus;
     reported_violation_count: number;
   }[];
   incidents: {
@@ -404,6 +496,7 @@ export interface AdminModerationOverview {
     player_id: string;
     nickname: string;
     violation_category: string;
+    severity?: 'blocked' | 'flagged_for_review' | 'cleared';
     action_taken: string;
     attempted_content: string;
     created_at: string;
@@ -412,9 +505,19 @@ export interface AdminModerationOverview {
     id: string;
     nickname: string;
     account_status: PlayerAccountStatus;
+    chat_status: PlayerChatStatus;
     chat_violation_count: number;
     chat_restricted_until: string | null;
     last_activity_at: string;
+  }[];
+  auditLogs: {
+    id: string;
+    admin_email: string;
+    player_id: string;
+    player_nickname: string;
+    action: string;
+    reason: string;
+    created_at: string;
   }[];
   config: {
     discovery_radius: number;
@@ -423,6 +526,44 @@ export interface AdminModerationOverview {
     temp_restriction_minutes: number;
     suspension_threshold: number;
   } | null;
+}
+
+export async function adminFetchPlayersDirectory(params: {
+  search?: string;
+  accountStatus?: string;
+  chatStatus?: string;
+  onboardingStatus?: string;
+  onlineFilter?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<{
+  success: boolean;
+  data?: AdminPlayersDirectoryResponse;
+  error?: string;
+}> {
+  const { data, error } = await supabase.rpc('admin_get_players_directory', {
+    p_search: params.search ?? '',
+    p_account_status: params.accountStatus ?? 'all',
+    p_chat_status: params.chatStatus ?? 'all',
+    p_onboarding_status: params.onboardingStatus ?? 'all',
+    p_online_filter: params.onlineFilter ?? 'all',
+    p_page: params.page ?? 1,
+    p_page_size: params.pageSize ?? 20,
+  });
+  if (error) return { success: false, error: mapWorldError(error) };
+  return { success: true, data: data as AdminPlayersDirectoryResponse };
+}
+
+export async function adminFetchPlayerDetail(playerId: string): Promise<{
+  success: boolean;
+  data?: AdminPlayerDetailResponse;
+  error?: string;
+}> {
+  const { data, error } = await supabase.rpc('admin_get_player_detail', {
+    p_player_id: playerId,
+  });
+  if (error) return { success: false, error: mapWorldError(error) };
+  return { success: true, data: data as AdminPlayerDetailResponse };
 }
 
 export async function adminFetchModerationOverview(): Promise<{
@@ -435,21 +576,25 @@ export async function adminFetchModerationOverview(): Promise<{
   return { success: true, data: data as AdminModerationOverview };
 }
 
-export async function adminUpdatePlayerModerationAction(params: {
+export async function adminExecutePlayerAction(params: {
   playerId: string;
-  accountStatus: PlayerAccountStatus;
+  action: AdminPlayerActionType;
+  reason: string;
   restrictMinutes?: number | null;
   reportId?: string | null;
   reportStatus?: 'reviewed' | 'action_taken' | 'dismissed' | null;
-  adminNotes?: string | null;
 }): Promise<{ success: boolean; error?: string }> {
-  const { error } = await supabase.rpc('admin_update_player_moderation', {
+  const cleanReason = params.reason.trim();
+  if (cleanReason.length < 3) {
+    return { success: false, error: 'A clear administrative reason (at least 3 characters) is required.' };
+  }
+  const { error } = await supabase.rpc('admin_execute_player_action', {
     p_player_id: params.playerId,
-    p_account_status: params.accountStatus,
+    p_action: params.action,
+    p_reason: cleanReason,
     p_restrict_minutes: params.restrictMinutes ?? null,
     p_report_id: params.reportId ?? null,
     p_report_status: params.reportStatus ?? null,
-    p_admin_notes: params.adminNotes ?? null,
   });
   if (error) return { success: false, error: mapWorldError(error) };
   return { success: true };

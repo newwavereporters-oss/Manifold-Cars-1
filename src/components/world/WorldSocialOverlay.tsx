@@ -53,6 +53,12 @@ interface WorldSocialOverlayProps {
   onCloseNearbyPanel: () => void;
   isBlockedPanelOpen: boolean;
   onCloseBlockedPanel: () => void;
+  chatRestriction?: {
+    restricted: boolean;
+    permanent: boolean;
+    untilFormatted: string;
+    reason?: string | null;
+  };
 }
 
 const REPORT_REASONS = [
@@ -80,6 +86,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
   onCloseNearbyPanel,
   isBlockedPanelOpen,
   onCloseBlockedPanel,
+  chatRestriction,
 }) => {
   const [selectedPeer, setSelectedPeer] = useState<RemotePlayerPeer | null>(null);
   const [inviteStatusMsg, setInviteStatusMsg] = useState<string | null>(null);
@@ -259,17 +266,26 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
 
           <button
             type="button"
-            disabled={isSendingInvite}
+            disabled={isSendingInvite || Boolean(chatRestriction?.restricted)}
             onClick={() => handleStartChatClick(selectedPeer.playerId)}
-            className="mt-3 w-full h-9 rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-60 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+            className="mt-3 w-full h-9 rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
           >
             {isSendingInvite ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <MessageSquare className="w-3.5 h-3.5" />
             )}
-            <span>START CHAT</span>
+            <span>
+              {chatRestriction?.restricted ? 'CHAT RESTRICTED' : 'START CHAT'}
+            </span>
           </button>
+          {chatRestriction?.restricted && (
+            <p className="mt-2 text-[10px] text-amber-300 leading-snug">
+              {chatRestriction.permanent
+                ? 'Your chat privileges are permanently restricted. Driving remains active.'
+                : `Chat temporarily restricted${chatRestriction.untilFormatted ? ` until ${chatRestriction.untilFormatted}` : ''}.`}
+            </p>
+          )}
         </div>
       )}
 
@@ -460,20 +476,42 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                   </div>
                 )}
 
+                {/* Chat Restricted Banner */}
+                {chatRestriction?.restricted && (
+                  <div className="mx-3 mb-2 p-2.5 rounded-xl bg-amber-500/15 border border-amber-400/50 text-[11px] text-amber-200 space-y-0.5">
+                    <div className="flex items-center gap-1.5 font-black text-amber-300">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {chatRestriction.permanent
+                          ? 'Chat Permanently Restricted'
+                          : `Chat Restricted${chatRestriction.untilFormatted ? ` Until ${chatRestriction.untilFormatted}` : ''}`}
+                      </span>
+                    </div>
+                    {chatRestriction.reason && (
+                      <p className="text-[10px] text-gray-200">{chatRestriction.reason}</p>
+                    )}
+                  </div>
+                )}
+
                 {/* Input Composer */}
                 <form onSubmit={handleSendChat} className="p-2.5 border-t border-white/10 bg-black/25 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
                       maxLength={500}
+                      disabled={Boolean(chatRestriction?.restricted)}
                       value={draftText}
                       onChange={(e) => setDraftText(e.target.value)}
-                      placeholder="Message driver (no phone/socials/links)..."
-                      className="flex-1 h-9 px-3 rounded-xl bg-white/5 border border-white/15 text-xs text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
+                      placeholder={
+                        chatRestriction?.restricted
+                          ? 'Chat access currently restricted...'
+                          : 'Message driver (no phone/socials/links)...'
+                      }
+                      className="flex-1 h-9 px-3 rounded-xl bg-white/5 border border-white/15 text-xs text-white placeholder-gray-500 focus:border-[#EF233C] outline-none disabled:opacity-50"
                     />
                     <button
                       type="submit"
-                      disabled={isSendingMsg || !draftText.trim()}
+                      disabled={isSendingMsg || !draftText.trim() || Boolean(chatRestriction?.restricted)}
                       className="h-9 px-3 rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-45 text-white flex items-center justify-center cursor-pointer shrink-0"
                     >
                       {isSendingMsg ? (
@@ -514,6 +552,19 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
               </button>
             </div>
 
+            {chatRestriction?.restricted && (
+              <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-400/40 text-xs text-amber-200">
+                <strong className="font-black text-amber-300 block">
+                  {chatRestriction.permanent
+                    ? 'Chat Permanently Restricted'
+                    : `Chat Restricted${chatRestriction.untilFormatted ? ` Until ${chatRestriction.untilFormatted}` : ''}`}
+                </strong>
+                <span>
+                  You can continue driving across Lagos normally, but sending chat invitations is disabled.
+                </span>
+              </div>
+            )}
+
             {inviteStatusMsg && (
               <div className="p-2.5 rounded-xl bg-sky-500/15 border border-sky-400/30 text-xs text-sky-200">
                 {inviteStatusMsg}
@@ -542,10 +593,11 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                     </div>
                     <button
                       type="button"
+                      disabled={Boolean(chatRestriction?.restricted)}
                       onClick={() => handleStartChatClick(peer.playerId)}
-                      className="px-3 py-1.5 rounded-xl bg-[#EF233C] hover:bg-[#d90429] text-white text-[11px] font-black uppercase shrink-0 whitespace-nowrap cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-45 text-white text-[11px] font-black uppercase shrink-0 whitespace-nowrap cursor-pointer"
                     >
-                      Start Chat
+                      {chatRestriction?.restricted ? 'Restricted' : 'Start Chat'}
                     </button>
                   </div>
                 ))
