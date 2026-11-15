@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Eye,
   EyeOff,
@@ -56,9 +56,11 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const isSubmittingRef = useRef(false);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current) return;
     setErrorMsg(null);
     setSuccessMsg(null);
 
@@ -67,6 +69,7 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     try {
       const res = await loginPlayerAccount(loginEmail, loginPassword);
@@ -76,12 +79,14 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
       }
       onAuthenticated(res.profile, res.serverClockOffsetMs || 0);
     } finally {
+      isSubmittingRef.current = false;
       setIsLoading(false);
     }
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current) return;
     setErrorMsg(null);
     setSuccessMsg(null);
 
@@ -115,6 +120,7 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     try {
       const res = await registerPlayerAccount({
@@ -139,18 +145,21 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
           : 'Account registered successfully! Sign in with your email and password to enter Lagos.'
       );
     } finally {
+      isSubmittingRef.current = false;
       setIsLoading(false);
     }
   };
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current) return;
     setErrorMsg(null);
     setSuccessMsg(null);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resetEmail.trim())) {
       setErrorMsg('Enter a valid email address to receive a password reset link.');
       return;
     }
+    isSubmittingRef.current = true;
     setIsLoading(true);
     try {
       const res = await requestPlayerPasswordReset(resetEmail);
@@ -160,15 +169,16 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
       }
       setSuccessMsg('Password recovery instructions have been sent to your email address.');
     } finally {
+      isSubmittingRef.current = false;
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="relative z-20 flex items-center justify-center min-h-full w-full px-4 py-8 overflow-y-auto">
-      <div className="w-full max-w-md bg-[#071A2B]/92 backdrop-blur-2xl border border-white/15 rounded-3xl shadow-2xl overflow-hidden">
+    <div className="relative z-20 flex items-start sm:items-center justify-center min-h-full w-full px-3 sm:px-4 pt-3 sm:py-6 pb-[calc(1.75rem+env(safe-area-inset-bottom,0px))]">
+      <div className="w-full max-w-md bg-[#071A2B]/98 border border-white/15 rounded-3xl shadow-2xl overflow-hidden">
         {/* Top Automotive Header */}
-        <div className="px-6 pt-6 pb-4 border-b border-white/10 bg-gradient-to-br from-[#0b233a] to-[#071A2B]">
+        <div className="px-4 sm:px-6 pt-5 pb-3.5 border-b border-white/10 bg-gradient-to-br from-[#0b233a] to-[#071A2B]">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-[#EF233C] flex items-center justify-center shadow-lg shadow-[#EF233C]/30 shrink-0">
@@ -185,13 +195,13 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
             <button
               type="button"
               onClick={onNavigateMarketplace}
-              className="text-[11px] font-bold text-gray-300 hover:text-white px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors whitespace-nowrap"
+              className="min-h-[40px] text-[11px] font-bold text-gray-300 hover:text-white px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors whitespace-nowrap cursor-pointer"
             >
               Marketplace
             </button>
           </div>
 
-          <p className="mt-3 text-xs text-gray-300 leading-relaxed">
+          <p className="mt-2.5 text-xs text-gray-300 leading-relaxed">
             {mode === 'LOGIN'
               ? 'Sign in with your registered MANIFOLD driver account to enter Lagos Mainland, Victoria Island, Ikoyi & Lekki.'
               : mode === 'REGISTER'
@@ -202,7 +212,7 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
 
         {/* Migration Notice if DB schema hasn't been applied */}
         {dbStatus && dbStatus.configured && dbStatus.migrationRequired && (
-          <div className="mx-6 mt-4 p-3 rounded-2xl bg-amber-500/15 border border-amber-400/40 text-amber-200 text-[11px] leading-relaxed">
+          <div className="mx-4 sm:mx-6 mt-4 p-3 rounded-2xl bg-amber-500/15 border border-amber-400/40 text-amber-200 text-[11px] leading-relaxed">
             <strong className="font-bold block text-amber-300 mb-0.5">Supabase World Migration Pending</strong>
             Run <code className="font-mono bg-black/30 px-1 rounded">src/db/game-world-social-migration.sql</code> in your Supabase SQL Editor to activate player profiles and live multiplayer.
           </div>
@@ -210,14 +220,14 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
 
         {/* Mode Switcher Tabs */}
         {mode !== 'FORGOT' && (
-          <div className="grid grid-cols-2 gap-1.5 mx-6 mt-5 p-1 rounded-2xl bg-black/30 border border-white/10">
+          <div className="grid grid-cols-2 gap-1.5 mx-4 sm:mx-6 mt-4 p-1 rounded-2xl bg-black/30 border border-white/10">
             <button
               type="button"
               onClick={() => {
                 setMode('LOGIN');
                 setErrorMsg(null);
               }}
-              className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+              className={`min-h-[44px] py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
                 mode === 'LOGIN'
                   ? 'bg-[#EF233C] text-white shadow'
                   : 'text-gray-400 hover:text-white'
@@ -232,7 +242,7 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                 setErrorMsg(null);
                 setSuccessMsg(null);
               }}
-              className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+              className={`min-h-[44px] py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
                 mode === 'REGISTER'
                   ? 'bg-[#EF233C] text-white shadow'
                   : 'text-gray-400 hover:text-white'
@@ -243,7 +253,7 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
           </div>
         )}
 
-        <div className="p-6 pt-4 space-y-4">
+        <div className="p-4 sm:p-6 pt-4 space-y-4">
           {errorMsg && (
             <div className="p-3 rounded-2xl bg-red-500/15 border border-red-500/40 text-red-200 text-xs flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
@@ -266,15 +276,16 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                   Email Address
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" />
+                  <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="email"
+                    inputMode="email"
                     required
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
                     placeholder="driver@example.com"
                     autoComplete="email"
-                    className="w-full h-10 pl-10 pr-3.5 bg-white/5 border border-white/15 rounded-xl text-sm text-white placeholder-gray-500 focus:border-[#EF233C] focus:bg-white/10 outline-none transition-colors"
+                    className="w-full min-h-[44px] pl-10 pr-3.5 bg-white/5 border border-white/15 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:border-[#EF233C] focus:bg-white/10 outline-none transition-colors"
                   />
                 </div>
               </div>
@@ -292,13 +303,13 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                       setErrorMsg(null);
                       setSuccessMsg(null);
                     }}
-                    className="text-[11px] font-semibold text-sky-400 hover:text-sky-300 transition-colors"
+                    className="text-[11px] font-semibold text-sky-400 hover:text-sky-300 transition-colors py-1"
                   >
                     Forgot password?
                   </button>
                 </div>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" />
+                  <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type={showLoginPassword ? 'text' : 'password'}
                     required
@@ -306,12 +317,12 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="Enter your password"
                     autoComplete="current-password"
-                    className="w-full h-10 pl-10 pr-10 bg-white/5 border border-white/15 rounded-xl text-sm text-white placeholder-gray-500 focus:border-[#EF233C] focus:bg-white/10 outline-none transition-colors"
+                    className="w-full min-h-[44px] pl-10 pr-11 bg-white/5 border border-white/15 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:border-[#EF233C] focus:bg-white/10 outline-none transition-colors"
                   />
                   <button
                     type="button"
                     onClick={() => setShowLoginPassword((p) => !p)}
-                    className="absolute right-3 top-2.5 text-gray-400 hover:text-white"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-gray-400 hover:text-white"
                     aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
                   >
                     {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -322,7 +333,7 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-11 bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-60 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#EF233C]/30 cursor-pointer"
+                className="w-full min-h-[46px] bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-60 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#EF233C]/30 cursor-pointer"
               >
                 {isLoading ? (
                   <>
@@ -346,7 +357,7 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
-                  className="text-white font-bold hover:text-[#EF233C] underline underline-offset-2"
+                  className="text-white font-bold hover:text-[#EF233C] underline underline-offset-2 py-1"
                 >
                   Create Account
                 </button>
@@ -363,14 +374,15 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                     Full Name
                   </label>
                   <div className="relative">
-                    <User className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-3" />
+                    <User className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
                       required
+                      autoComplete="name"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder="Sanni Adeyemi"
-                      className="w-full h-9 pl-9 pr-3 bg-white/5 border border-white/15 rounded-xl text-xs text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
+                      className="w-full min-h-[44px] pl-9 pr-3 bg-white/5 border border-white/15 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
                     />
                   </div>
                 </div>
@@ -383,10 +395,11 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                     type="text"
                     required
                     maxLength={20}
+                    autoComplete="username"
                     value={nickname}
                     onChange={(e) => setNickname(e.target.value)}
                     placeholder="SANNI"
-                    className="w-full h-9 px-3 bg-white/5 border border-white/15 rounded-xl text-xs font-bold text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
+                    className="w-full min-h-[44px] px-3 bg-white/5 border border-white/15 rounded-xl text-base sm:text-sm font-bold text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
                   />
                 </div>
               </div>
@@ -396,14 +409,16 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                   Email Address (Private)
                 </label>
                 <div className="relative">
-                  <Mail className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-3" />
+                  <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="email"
+                    inputMode="email"
+                    autoComplete="email"
                     required
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
                     placeholder="you@example.com"
-                    className="w-full h-9 pl-9 pr-3 bg-white/5 border border-white/15 rounded-xl text-xs text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
+                    className="w-full min-h-[44px] pl-9 pr-3 bg-white/5 border border-white/15 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
                   />
                 </div>
               </div>
@@ -413,14 +428,16 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                   Phone Number (Private)
                 </label>
                 <div className="relative">
-                  <Phone className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-3" />
+                  <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
                     required
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
                     placeholder="+234 803 000 0000"
-                    className="w-full h-9 pl-9 pr-3 bg-white/5 border border-white/15 rounded-xl text-xs text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
+                    className="w-full min-h-[44px] pl-9 pr-3 bg-white/5 border border-white/15 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
                   />
                 </div>
               </div>
@@ -435,18 +452,19 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                       type={showRegPassword ? 'text' : 'password'}
                       required
                       minLength={6}
+                      autoComplete="new-password"
                       value={regPassword}
                       onChange={(e) => setRegPassword(e.target.value)}
                       placeholder="Min 6 chars"
-                      className="w-full h-9 pl-3 pr-8 bg-white/5 border border-white/15 rounded-xl text-xs text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
+                      className="w-full min-h-[44px] pl-3 pr-10 bg-white/5 border border-white/15 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
                     />
                     <button
                       type="button"
                       onClick={() => setShowRegPassword((p) => !p)}
-                      className="absolute right-2.5 top-2.5 text-gray-400 hover:text-white"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-gray-400 hover:text-white"
                       aria-label={showRegPassword ? 'Hide password' : 'Show password'}
                     >
-                      {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
@@ -459,10 +477,11 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                     type={showRegPassword ? 'text' : 'password'}
                     required
                     minLength={6}
+                    autoComplete="new-password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Repeat password"
-                    className="w-full h-9 px-3 bg-white/5 border border-white/15 rounded-xl text-xs text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
+                    className="w-full min-h-[44px] px-3 bg-white/5 border border-white/15 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
                   />
                 </div>
               </div>
@@ -474,23 +493,25 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                 </span>
               </div>
 
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full h-11 bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-60 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#EF233C]/30 cursor-pointer"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Creating Profile...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Register Driver Account</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+              <div className="sticky bottom-0 sm:static bg-[#071A2B] pt-2 pb-1 z-10">
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full min-h-[46px] bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-60 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#EF233C]/30 cursor-pointer"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Creating Profile...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Register Driver Account</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
           )}
 
@@ -502,14 +523,16 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                   Registered Email
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" />
+                  <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="email"
+                    inputMode="email"
+                    autoComplete="email"
                     required
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
                     placeholder="driver@example.com"
-                    className="w-full h-10 pl-10 pr-3.5 bg-white/5 border border-white/15 rounded-xl text-sm text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
+                    className="w-full min-h-[44px] pl-10 pr-3.5 bg-white/5 border border-white/15 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:border-[#EF233C] outline-none"
                   />
                 </div>
               </div>
@@ -517,7 +540,7 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-10 bg-sky-600 hover:bg-sky-500 disabled:opacity-60 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full min-h-[46px] bg-sky-600 hover:bg-sky-500 disabled:opacity-60 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 <span>Send Reset Link</span>
@@ -530,7 +553,7 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
                   setErrorMsg(null);
                   setSuccessMsg(null);
                 }}
-                className="w-full text-center text-xs font-semibold text-gray-400 hover:text-white"
+                className="w-full min-h-[44px] text-center text-xs font-semibold text-gray-400 hover:text-white cursor-pointer"
               >
                 Back to Login
               </button>

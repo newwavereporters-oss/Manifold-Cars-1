@@ -58,6 +58,7 @@ import {
   CITY_LANDMARKS,
   findShortestRoadPathDetailed,
 } from './lagosCityData';
+import type { WebGLQualityMode } from '../../utils/webglPerformance';
 
 const RADIO_STATION_NAMES: Record<number, string> = {
   0: 'Acoustic (Off)',
@@ -130,6 +131,8 @@ interface WorldHUDProps {
   onOpenBlockedDrivers?: () => void;
   onOpenShowroomSample?: () => void;
   onLogout?: () => void;
+  qualityMode?: WebGLQualityMode;
+  onQualityModeChange?: (mode: WebGLQualityMode) => void;
 }
 
 export const WorldHUD: React.FC<WorldHUDProps> = ({
@@ -194,6 +197,8 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   onOpenBlockedDrivers,
   onOpenShowroomSample,
   onLogout,
+  qualityMode = 'AUTO',
+  onQualityModeChange,
 }) => {
   const [isMuted, setIsMuted] = useState(() => engineAudio.getMuted());
   const [masterVolume, setMasterVolume] = useState(() =>
@@ -298,13 +303,13 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   const formatDist = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`);
 
   return (
-    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between pt-[max(0.5rem,env(safe-area-inset-top))] px-[max(0.65rem,env(safe-area-inset-left))] pr-[max(0.65rem,env(safe-area-inset-right))] pb-3 sm:p-5 select-none z-20">
+    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between pt-[max(0.45rem,env(safe-area-inset-top))] px-[max(0.6rem,env(safe-area-inset-left))] pr-[max(0.6rem,env(safe-area-inset-right))] pb-2.5 sm:p-5 select-none z-20">
       {/* 1. COMPACT TOP HUD BAR + FLOATING VEHICLE STATUS PILL */}
-      <div className="flex flex-col gap-2 w-full">
+      <div className="flex flex-col gap-1.5 sm:gap-2 w-full">
         <header className="flex items-center justify-between w-full pointer-events-auto gap-1.5 sm:gap-2">
           {/* Left: Compact Brand + Game Menu */}
           <div className="relative flex items-center gap-1.5 sm:gap-2">
-            <div className="flex items-center gap-1.5 bg-[#071A2B]/88 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg">
+            <div className="flex items-center gap-1.5 bg-[#071A2B]/94 px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg">
               <CarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#EF233C] shrink-0" />
               <span className="text-[11px] sm:text-xs font-black tracking-wider text-white">
                 MANIFOLD
@@ -322,7 +327,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                   setShowPlayerMenu(false);
                   setShowVehiclePanel(false);
                 }}
-                className="flex items-center gap-1.5 bg-[#071A2B]/90 hover:bg-[#0b233a] backdrop-blur-md px-2.5 sm:px-3 py-1.5 rounded-xl border border-white/15 shadow-lg text-[11px] sm:text-xs font-black uppercase tracking-wider text-white transition-colors cursor-pointer whitespace-nowrap"
+                className="min-h-[38px] sm:min-h-[40px] flex items-center gap-1.5 bg-[#071A2B]/96 hover:bg-[#0b233a] px-2.5 sm:px-3 py-1.5 rounded-xl border border-white/15 shadow-lg text-[11px] sm:text-xs font-black uppercase tracking-wider text-white transition-colors cursor-pointer whitespace-nowrap"
               >
                 <Menu className="w-3.5 h-3.5 text-[#EF233C]" />
                 <span>Menu</span>
@@ -334,7 +339,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
               </button>
 
               {showGameMenu && (
-                <div className="absolute top-full left-0 mt-2 w-68 max-w-[calc(100vw-1.5rem)] bg-[#071A2B]/98 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-2 z-50 space-y-1 text-xs">
+                <div className="absolute top-full left-0 mt-2 w-68 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-140px)] overflow-y-auto bg-[#071A2B]/98 border border-white/15 rounded-2xl shadow-2xl p-2 z-50 space-y-1 text-xs">
                   {onOpenNearbyDrivers && (
                     <button
                       type="button"
@@ -491,6 +496,37 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                     </span>
                   </button>
 
+                  {onQualityModeChange && (
+                    <div className="px-3 py-1.5 space-y-1.5 border-t border-white/10 mt-1 pt-2">
+                      <span className="text-[10px] uppercase font-bold text-gray-400 block">
+                        3D Graphics Quality
+                      </span>
+                      <div className="grid grid-cols-4 gap-1">
+                        {(
+                          [
+                            { id: 'AUTO', label: 'Auto' },
+                            { id: 'HIGH', label: 'High' },
+                            { id: 'BALANCED', label: 'Bal' },
+                            { id: 'PERFORMANCE', label: 'Smooth' },
+                          ] as { id: WebGLQualityMode; label: string }[]
+                        ).map((q) => (
+                          <button
+                            key={q.id}
+                            type="button"
+                            onClick={() => onQualityModeChange(q.id)}
+                            className={`py-1 rounded-lg text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                              qualityMode === q.id
+                                ? 'bg-[#EF233C] text-white'
+                                : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                            }`}
+                          >
+                            {q.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {onResetVehicle && (
                     <button
                       type="button"
@@ -562,7 +598,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
 
           {/* Right: Credits (Desktop+) + Player Status + Mute Toggle */}
           <div className="relative flex items-center gap-1.5 sm:gap-2">
-            <div className="hidden md:flex bg-[#071A2B]/88 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/12 shadow-lg items-center gap-1.5 text-xs font-mono font-black text-amber-400">
+            <div className="hidden md:flex bg-[#071A2B]/94 px-3 py-1.5 rounded-xl border border-white/15 shadow-lg items-center gap-1.5 text-xs font-mono font-black text-amber-400">
               <Coins className="w-3.5 h-3.5" />
               <span className="tabular-nums">{playerCredits.toLocaleString()}</span>
               <span className="text-[9px] text-gray-400 font-sans font-bold">MC</span>
@@ -576,7 +612,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                   setShowGameMenu(false);
                   setShowVehiclePanel(false);
                 }}
-                className="flex items-center gap-1.5 bg-[#071A2B]/90 hover:bg-[#0b233a] backdrop-blur-md px-2.5 sm:px-3 py-1.5 rounded-xl border border-white/15 shadow-lg text-[11px] sm:text-xs font-bold text-white cursor-pointer whitespace-nowrap"
+                className="min-h-[38px] sm:min-h-[40px] flex items-center gap-1.5 bg-[#071A2B]/96 hover:bg-[#0b233a] px-2.5 sm:px-3 py-1.5 rounded-xl border border-white/15 shadow-lg text-[11px] sm:text-xs font-bold text-white cursor-pointer whitespace-nowrap"
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
                 <User className="w-3.5 h-3.5 text-sky-400 hidden sm:inline" />
@@ -586,7 +622,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
               </button>
 
               {showPlayerMenu && (
-                <div className="absolute top-full right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] bg-[#071A2B]/98 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-2.5 text-xs">
+                <div className="absolute top-full right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-140px)] overflow-y-auto bg-[#071A2B]/98 border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-2.5 text-xs">
                   <div className="pb-2 border-b border-white/10">
                     <div className="flex items-center justify-between">
                       <span className="font-black text-white">{playerNickname}</span>
@@ -678,7 +714,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             <button
               type="button"
               onClick={toggleSound}
-              className="p-1.5 sm:p-2 bg-[#071A2B]/90 hover:bg-white/10 backdrop-blur-md rounded-xl border border-white/15 shadow-lg text-gray-300 hover:text-white transition-colors cursor-pointer"
+              className="min-w-[38px] min-h-[38px] sm:min-w-[40px] sm:min-h-[40px] p-1.5 sm:p-2 bg-[#071A2B]/96 hover:bg-white/10 rounded-xl border border-white/15 shadow-lg text-gray-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
               title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
               aria-label={isMuted ? 'Unmute Audio' : 'Mute Audio'}
             >
@@ -701,7 +737,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
 
         {/* Drone Mode Subtle Interactive Guide */}
         {cameraMode === 'DRONE' && (
-          <div className="hidden sm:flex self-center items-center gap-2 bg-[#071A2B]/80 backdrop-blur-md px-3 py-1 rounded-xl border border-sky-400/30 text-[10px] font-bold text-sky-200 pointer-events-none">
+          <div className="hidden sm:flex self-center items-center gap-2 bg-[#071A2B]/92 px-3 py-1 rounded-xl border border-sky-400/30 text-[10px] font-bold text-sky-200 pointer-events-none">
             <span>DRONE VIEW — Drag anywhere to orbit · Scroll to zoom</span>
           </div>
         )}
@@ -709,7 +745,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
 
       {/* LEFT-SIDE VERTICAL CONTROL STACK (Clear of top billboard & bottom mobile pedals) */}
       <div
-        className="absolute left-[max(0.65rem,env(safe-area-inset-left))] sm:left-5 top-[134px] sm:top-[152px] z-20 pointer-events-auto flex flex-col items-start gap-1.5"
+        className="absolute left-[max(0.6rem,env(safe-area-inset-left))] sm:left-5 top-[122px] sm:top-[152px] [@media(max-height:480px)]:top-[104px] z-20 pointer-events-auto flex flex-col items-start gap-1 sm:gap-1.5"
         onPointerDown={(e) => e.stopPropagation()}
       >
         {/* Expandable Speed / Gear / Vehicle Systems Trigger */}
@@ -721,7 +757,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
               setShowGameMenu(false);
               setShowPlayerMenu(false);
             }}
-            className="flex items-center gap-2 bg-[#071A2B]/88 hover:bg-[#0b233a] backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg cursor-pointer"
+            className="min-h-[36px] flex items-center gap-2 bg-[#071A2B]/94 hover:bg-[#0b233a] px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg cursor-pointer"
             title="Toggle Vehicle Controls"
           >
             <span
@@ -744,7 +780,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
 
           {/* Expandable Vehicle Systems Drawer */}
           {showVehiclePanel && (
-            <div className="absolute left-0 top-full mt-2 sm:left-full sm:top-0 sm:mt-0 sm:ml-2 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-[#071A2B]/96 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-3 text-xs">
+            <div className="absolute left-0 top-full mt-2 sm:left-full sm:top-0 sm:mt-0 sm:ml-2 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-180px)] overflow-y-auto bg-[#071A2B]/98 border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-3 text-xs">
               <div className="flex items-center justify-between border-b border-white/10 pb-2">
                 <span className="text-[10px] font-black uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
                   <Sliders className="w-3.5 h-3.5 text-[#EF233C]" />
@@ -949,7 +985,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           <button
             type="button"
             onClick={() => onCameraChange('CHASE')}
-            className="flex items-center gap-1.5 bg-[#EF233C] hover:bg-[#d90429] text-white px-2.5 py-1.5 rounded-xl shadow-lg text-[10px] sm:text-xs font-black uppercase tracking-wider cursor-pointer"
+            className="min-h-[34px] flex items-center gap-1.5 bg-[#EF233C] hover:bg-[#d90429] text-white px-2.5 py-1.5 rounded-xl shadow-lg text-[10px] sm:text-xs font-black uppercase tracking-wider cursor-pointer"
           >
             <Camera className="w-3.5 h-3.5" />
             <span>Chase Cam</span>
@@ -958,7 +994,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           <button
             type="button"
             onClick={() => onCameraChange('DRONE')}
-            className="flex items-center gap-1.5 bg-[#071A2B]/84 hover:bg-[#0b233a] backdrop-blur-md text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg text-[10px] sm:text-[11px] font-bold uppercase cursor-pointer"
+            className="min-h-[34px] flex items-center gap-1.5 bg-[#071A2B]/94 hover:bg-[#0b233a] text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg text-[10px] sm:text-[11px] font-bold uppercase cursor-pointer"
             title="Switch to Drone Aerial Camera"
           >
             <Camera className="w-3.5 h-3.5 text-sky-400" />
@@ -967,12 +1003,12 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         )}
 
         {/* Quick Left-Side Navigation Stack: Map, Missions, Music */}
-        <div className="flex flex-col items-start gap-1.5">
+        <div className="flex flex-col items-start gap-1 sm:gap-1.5 [@media(max-height:480px)]:flex-row [@media(max-height:480px)]:flex-wrap">
           {onOpenCityMap && (
             <button
               type="button"
               onClick={onOpenCityMap}
-              className="flex items-center gap-1.5 bg-[#071A2B]/84 hover:bg-[#0b233a] backdrop-blur-md text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
+              className="min-h-[34px] flex items-center gap-1.5 bg-[#071A2B]/94 hover:bg-[#0b233a] text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
               title="Lagos City GPS Map [M]"
             >
               <MapIcon className="w-3.5 h-3.5 text-sky-400" />
@@ -983,7 +1019,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             <button
               type="button"
               onClick={onOpenMissions}
-              className="flex items-center gap-1.5 bg-[#071A2B]/84 hover:bg-[#0b233a] backdrop-blur-md text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
+              className="min-h-[34px] flex items-center gap-1.5 bg-[#071A2B]/94 hover:bg-[#0b233a] text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
               title="Open Missions & Street Races"
             >
               <Flag className="w-3.5 h-3.5 text-amber-400" />
@@ -994,7 +1030,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             <button
               type="button"
               onClick={onOpenMusicLibrary}
-              className="flex items-center gap-1.5 bg-[#071A2B]/84 hover:bg-[#0b233a] backdrop-blur-md text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/12 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
+              className="min-h-[34px] flex items-center gap-1.5 bg-[#071A2B]/94 hover:bg-[#0b233a] text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
               title="Open Manifold Music Library"
             >
               <Music className="w-3.5 h-3.5 text-cyan-400" />
@@ -1007,7 +1043,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         {/* Desktop Compact Transmission Strip (When touch pedals are off) */}
         {!touchControlsEnabled && (
           <div
-            className="hidden sm:flex items-center gap-1 bg-[#071A2B]/88 backdrop-blur-md p-1 rounded-xl border border-white/15 shadow-xl"
+            className="hidden sm:flex items-center gap-1 bg-[#071A2B]/94 p-1 rounded-xl border border-white/15 shadow-xl"
             role="group"
             aria-label="Transmission Gear Selector"
           >
@@ -1040,7 +1076,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
 
       {/* 2. CONTROLS GUIDE MODAL OVERLAY */}
       {showControlsHelp && (
-        <div className="pointer-events-auto self-center max-w-lg w-full bg-[#071A2B]/96 backdrop-blur-2xl border border-white/15 p-5 sm:p-6 rounded-3xl shadow-2xl my-auto z-50">
+        <div className="pointer-events-auto self-center max-w-lg w-full max-h-[84dvh] overflow-y-auto bg-[#071A2B]/98 border border-white/15 p-5 sm:p-6 rounded-3xl shadow-2xl my-auto z-50">
           <div className="flex items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2">
               <Navigation className="w-5 h-5 text-[#EF233C]" />
@@ -1051,7 +1087,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             <button
               type="button"
               onClick={() => setShowControlsHelp(false)}
-              className="text-gray-400 hover:text-white text-xs font-bold cursor-pointer"
+              className="min-h-[40px] px-3 text-gray-300 hover:text-white text-xs font-bold cursor-pointer rounded-xl hover:bg-white/10"
             >
               Close
             </button>
@@ -1090,7 +1126,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
       {/* 3. CENTER NOTIFICATION & LIVE GPS GUIDANCE BANNERS */}
       <div className="self-center flex flex-col items-center gap-2 max-w-md w-full px-2">
         {activeDestination && gpsRouteInfo && (
-          <div className="pointer-events-auto bg-[#071A2B]/90 backdrop-blur-xl border border-emerald-500/50 px-3.5 py-2 rounded-2xl shadow-2xl flex items-center gap-3 w-full">
+          <div className="pointer-events-auto bg-[#071A2B]/96 border border-emerald-500/50 px-3.5 py-2 rounded-2xl shadow-2xl flex items-center gap-3 w-full">
             <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
               <Navigation className="w-4 h-4" />
             </div>
@@ -1119,7 +1155,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         )}
 
         {speedTrapRecord && (
-          <div className="bg-[#10b981]/95 backdrop-blur-md border border-[#10b981] px-5 py-2 rounded-2xl shadow-2xl">
+          <div className="bg-[#10b981] border border-emerald-300 px-5 py-2 rounded-2xl shadow-2xl">
             <p className="text-xs font-extrabold uppercase tracking-widest text-black flex items-center gap-2">
               <span>⚡ SPEED TRAP:</span>
               <span className="text-base font-black font-mono tabular-nums">
@@ -1138,7 +1174,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         )}
 
         {activeZone && (
-          <div className="pointer-events-auto bg-[#071A2B]/92 backdrop-blur-xl border border-[#EF233C] px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 w-full">
+          <div className="pointer-events-auto bg-[#071A2B]/96 border border-[#EF233C] px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 w-full">
             <div className="w-8 h-8 rounded-xl bg-[#EF233C]/20 border border-[#EF233C]/40 flex items-center justify-center text-[#EF233C] font-black text-xs shrink-0">
               E
             </div>
@@ -1200,7 +1236,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
       >
         {/* Left: Simplified 2-Mode Camera Selector (Chase / Drone) */}
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-1 bg-[#071A2B]/85 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shadow-lg">
+          <div className="flex items-center gap-1 bg-[#071A2B]/94 p-1.5 rounded-xl border border-white/10 shadow-lg">
             <div className="px-2 py-1 text-gray-400 text-xs font-bold uppercase flex items-center gap-1.5">
               <Camera className="w-3.5 h-3.5" />
               <span>Cam</span>
@@ -1221,7 +1257,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             ))}
           </div>
 
-          <div className="flex items-center gap-2 bg-[#071A2B]/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-gray-300 font-mono">
+          <div className="flex items-center gap-2 bg-[#071A2B]/92 px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-gray-300 font-mono">
             <span className="text-amber-300 font-bold">
               GEAR: {selectedGear} ({TRANSMISSION_GEAR_PROFILES[selectedGear].label}) [1-5]
             </span>
@@ -1233,7 +1269,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         </div>
 
         {/* Center: Live Centered Vector Road & GPS Minimap Radar */}
-        <div className="hidden lg:flex flex-col items-center bg-[#071A2B]/88 backdrop-blur-md p-2 rounded-2xl border border-white/15 shadow-2xl">
+        <div className="hidden lg:flex flex-col items-center bg-[#071A2B]/94 p-2 rounded-2xl border border-white/15 shadow-2xl">
           <div
             onClick={onOpenCityMap}
             className="w-36 h-36 relative rounded-xl bg-[#04101d] overflow-hidden border border-white/15 cursor-pointer group"
@@ -1310,7 +1346,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         </div>
 
         {/* Right: Racing Telemetry Cluster (Speedometer & RPM) */}
-        <div className="bg-[#071A2B]/90 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-6">
+        <div className="bg-[#071A2B]/94 px-5 py-3 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-6">
           <div className="flex flex-col items-center">
             <span className="text-[10px] text-gray-400 uppercase font-semibold">Gear</span>
             <span className="text-2xl font-black text-[#EF233C] font-mono">{selectedGear}</span>

@@ -293,7 +293,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                     proj.screenY
                   )}px) translate(-50%, -100%)`,
                 }}
-                className="pointer-events-auto absolute top-0 left-0 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-xl bg-[#071A2B]/86 hover:bg-[#EF233C] backdrop-blur-md border border-white/25 text-white shadow-lg transition-colors flex items-center gap-1.5 cursor-pointer group min-h-[26px]"
+                className="pointer-events-auto absolute top-0 left-0 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-xl bg-[#071A2B]/92 hover:bg-[#EF233C] border border-white/25 text-white shadow-lg transition-colors flex items-center gap-1.5 cursor-pointer group min-h-[30px]"
                 title={`Tap to interact with ${proj.nickname}`}
               >
                 <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 shrink-0" />
@@ -310,7 +310,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
 
       {/* 2. INTERACTIVE PLAYER CARD ("REQUEST CHAT") */}
       {selectedPeer && (
-        <div className="absolute top-[138px] sm:top-[156px] left-1/2 -translate-x-1/2 z-40 w-[calc(100vw-2rem)] max-w-xs bg-[#071A2B]/96 backdrop-blur-2xl border border-white/20 rounded-2xl p-4 shadow-2xl pointer-events-auto">
+        <div className="absolute top-[134px] sm:top-[156px] [@media(max-height:480px)]:top-[96px] left-1/2 -translate-x-1/2 z-40 w-[calc(100vw-1.5rem)] max-w-xs max-h-[calc(100dvh-120px)] overflow-y-auto bg-[#071A2B]/98 border border-white/20 rounded-2xl p-4 shadow-2xl pointer-events-auto">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
@@ -339,7 +339,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                 setSelectedPeer(null);
                 setConfirmBlockPeerId(null);
               }}
-              className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 shrink-0 cursor-pointer"
+              className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-gray-400 hover:text-white hover:bg-white/10 shrink-0 cursor-pointer"
               aria-label="Close Player Card"
             >
               <X className="w-4 h-4" />
@@ -359,14 +359,14 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                 if (isChatMinimized) onToggleMinimizeChat();
                 setSelectedPeer(null);
               }}
-              className="mt-3 w-full h-9 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+              className="mt-3 w-full min-h-[44px] rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <MessageSquare className="w-3.5 h-3.5" />
               <span>Open Active Chat</span>
             </button>
           ) : isPendingInviteToSelected && outgoingInvite ? (
             <div className="mt-3 flex items-center gap-2">
-              <div className="flex-1 h-9 px-3 rounded-xl bg-white/10 border border-sky-400/30 text-[11px] font-bold text-sky-200 flex items-center justify-between">
+              <div className="flex-1 min-h-[44px] px-3 rounded-xl bg-white/10 border border-sky-400/30 text-[11px] font-bold text-sky-200 flex items-center justify-between">
                 <span>Request Sent</span>
                 <span className="font-mono text-amber-300">{outgoingSecondsLeft}s</span>
               </div>
@@ -374,7 +374,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                 <button
                   type="button"
                   onClick={() => void onCancelInvite(outgoingInvite.invitationId)}
-                  className="h-9 px-3 rounded-xl bg-white/10 hover:bg-red-500/25 text-gray-200 hover:text-white text-[10px] font-black uppercase cursor-pointer"
+                  className="min-h-[44px] px-3.5 rounded-xl bg-white/10 hover:bg-red-500/25 text-gray-200 hover:text-white text-[10px] font-black uppercase cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -385,7 +385,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
               type="button"
               disabled={isSendingInvite || Boolean(chatRestriction?.restricted)}
               onClick={() => void handleRequestChatClick(selectedPeer.playerId)}
-              className="mt-3 w-full h-9 rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+              className="mt-3 w-full min-h-[44px] rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
             >
               {isSendingInvite ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -448,7 +448,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
 
       {/* 3. INCOMING CHAT INVITATION CARD (Two-Way Acceptance Prompt) */}
       {incomingInvite && inviteSecondsLeft > 0 && (
-        <div className="absolute top-[138px] sm:top-[156px] left-3 sm:left-6 z-40 w-[calc(100vw-1.5rem)] max-w-xs bg-[#071A2B]/96 backdrop-blur-2xl border border-emerald-400/55 rounded-2xl p-3.5 shadow-2xl pointer-events-auto">
+        <div className="absolute top-[134px] sm:top-[156px] [@media(max-height:480px)]:top-[96px] left-3 sm:left-6 z-40 w-[calc(100vw-1.5rem)] max-w-xs bg-[#071A2B]/98 border border-emerald-400/55 rounded-2xl p-3.5 shadow-2xl pointer-events-auto">
           <div className="flex items-center justify-between gap-2 mb-1">
             <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
               PLAYER WANTS TO CHAT
@@ -473,7 +473,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                   setIsRespondingInvite(false);
                 }
               }}
-              className="h-8.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 text-xs font-black uppercase flex items-center justify-center gap-1 cursor-pointer"
+              className="min-h-[42px] rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 text-xs font-black uppercase flex items-center justify-center gap-1 cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Accept</span>
@@ -489,7 +489,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                   setIsRespondingInvite(false);
                 }
               }}
-              className="h-8.5 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-50 text-gray-200 text-xs font-bold uppercase flex items-center justify-center gap-1 cursor-pointer"
+              className="min-h-[42px] rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-50 text-gray-200 text-xs font-bold uppercase flex items-center justify-center gap-1 cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
               <span>Decline</span>
@@ -501,11 +501,11 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
       {/* 4. COMPACT FLOATING PRIVATE TWO-WAY CHAT CARD (Above Mobile Pedals Safe Zone) */}
       {activeConversation && (
         <div
-          className={`absolute right-3 sm:right-6 top-[138px] sm:top-[156px] lg:top-auto lg:bottom-28 z-40 pointer-events-auto transition-all ${
+          className={`absolute right-3 sm:right-6 top-[134px] sm:top-[156px] [@media(max-height:480px)]:top-[96px] lg:top-auto lg:bottom-28 z-40 pointer-events-auto transition-all ${
             isChatMinimized ? 'w-56' : 'w-[calc(100vw-1.5rem)] sm:w-88'
           }`}
         >
-          <div className="bg-[#071A2B]/96 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+          <div className="bg-[#071A2B]/98 border border-white/20 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-160px)] [@media(max-height:480px)]:max-h-[calc(100dvh-112px)]">
             <div className="px-3.5 py-2.5 bg-[#0b233a] border-b border-white/10 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <span
@@ -598,7 +598,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                   </div>
                 )}
 
-                <div className="h-44 sm:h-52 overflow-y-auto p-3 space-y-2 text-xs">
+                <div className="h-36 sm:h-52 max-h-[32dvh] overflow-y-auto p-3 space-y-2 text-xs">
                   {activeConversation.messages.length === 0 ? (
                     <p className="text-center text-gray-400 text-[11px] py-6">
                       Say hello to {activeConversation.peerNickname}. Keep chat friendly and about
@@ -688,7 +688,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                           ? 'Chat access currently restricted...'
                           : 'Message driver (no phone/socials/links)...'
                       }
-                      className="flex-1 h-9 px-3 rounded-xl bg-white/5 border border-white/15 text-xs text-white placeholder-gray-500 focus:border-[#EF233C] outline-none disabled:opacity-50"
+                      className="flex-1 min-h-[42px] px-3 rounded-xl bg-white/5 border border-white/15 text-base sm:text-xs text-white placeholder-gray-500 focus:border-[#EF233C] outline-none disabled:opacity-50"
                     />
                     <button
                       type="submit"
@@ -697,7 +697,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                         !draftText.trim() ||
                         Boolean(chatRestriction?.restricted)
                       }
-                      className="h-9 px-3 rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-45 text-white flex items-center justify-center cursor-pointer shrink-0"
+                      className="min-w-[44px] min-h-[42px] px-3 rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-45 text-white flex items-center justify-center cursor-pointer shrink-0"
                     >
                       {isSendingMsg ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -719,9 +719,9 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
 
       {/* 5. NEARBY DRIVERS MODAL (From Game Menu) */}
       {isNearbyPanelOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
-          <div className="w-full max-w-md bg-[#071A2B] border border-white/15 rounded-3xl p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-3 sm:p-4 pointer-events-auto">
+          <div className="w-full max-w-md max-h-[90dvh] flex flex-col bg-[#071A2B] border border-white/15 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 shrink-0">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-emerald-400" />
                 <h3 className="text-sm font-black uppercase text-white">
@@ -731,7 +731,8 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
               <button
                 type="button"
                 onClick={onCloseNearbyPanel}
-                className="p-1 text-gray-400 hover:text-white cursor-pointer"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer"
+                aria-label="Close Nearby Drivers"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -761,7 +762,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
               </div>
             )}
 
-            <div className="max-h-72 overflow-y-auto space-y-2">
+            <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
               {remotePlayers.length === 0 ? (
                 <div className="p-6 text-center text-xs text-gray-400">
                   No other active drivers within proximity range right now. Cruise Lagos Island,
@@ -792,7 +793,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                         type="button"
                         disabled={Boolean(chatRestriction?.restricted) || isPending}
                         onClick={() => void handleRequestChatClick(peer.playerId)}
-                        className="px-3 py-1.5 rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-45 text-white text-[11px] font-black uppercase shrink-0 whitespace-nowrap cursor-pointer"
+                        className="min-h-[40px] px-3 py-1.5 rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-45 text-white text-[11px] font-black uppercase shrink-0 whitespace-nowrap cursor-pointer"
                       >
                         {chatRestriction?.restricted
                           ? 'Restricted'
@@ -811,9 +812,9 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
 
       {/* 6. BLOCKED PLAYERS MODAL (From Player Menu) */}
       {isBlockedPanelOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
-          <div className="w-full max-w-md bg-[#071A2B] border border-white/15 rounded-3xl p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-3 sm:p-4 pointer-events-auto">
+          <div className="w-full max-w-md max-h-[90dvh] flex flex-col bg-[#071A2B] border border-white/15 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 shrink-0">
               <div className="flex items-center gap-2">
                 <Ban className="w-4 h-4 text-red-400" />
                 <h3 className="text-sm font-black uppercase text-white">Blocked Drivers</h3>
@@ -821,12 +822,13 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
               <button
                 type="button"
                 onClick={onCloseBlockedPanel}
-                className="p-1 text-gray-400 hover:text-white cursor-pointer"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer"
+                aria-label="Close Blocked Drivers"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="max-h-64 overflow-y-auto space-y-2">
+            <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
               {blockedList.length === 0 ? (
                 <p className="text-center text-xs text-gray-400 py-6">
                   You have not blocked any drivers.
@@ -860,10 +862,10 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
 
       {/* 7. REPORT DRIVER MODAL */}
       {showReportModal && activeConversation && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-3 sm:p-4 pointer-events-auto">
           <form
             onSubmit={handleSubmitReport}
-            className="w-full max-w-md bg-[#071A2B] border border-white/15 rounded-3xl p-5 shadow-2xl space-y-4"
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto bg-[#071A2B] border border-white/15 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2">
@@ -875,7 +877,8 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
               <button
                 type="button"
                 onClick={() => setShowReportModal(false)}
-                className="p-1 text-gray-400 hover:text-white cursor-pointer"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer"
+                aria-label="Close Report Modal"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -894,7 +897,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                   <select
                     value={reportReason}
                     onChange={(e) => setReportReason(e.target.value)}
-                    className="w-full h-10 px-3 rounded-xl bg-white/5 border border-white/15 text-xs text-white outline-none"
+                    className="w-full min-h-[42px] px-3 rounded-xl bg-white/5 border border-white/15 text-base sm:text-xs text-white outline-none"
                   >
                     {REPORT_REASONS.map((r) => (
                       <option key={r} value={r} className="bg-[#071A2B] text-white">
@@ -914,7 +917,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                     value={reportDesc}
                     onChange={(e) => setReportDesc(e.target.value)}
                     placeholder="Describe what happened..."
-                    className="w-full p-3 rounded-xl bg-white/5 border border-white/15 text-xs text-white outline-none resize-none"
+                    className="w-full p-3 rounded-xl bg-white/5 border border-white/15 text-base sm:text-xs text-white outline-none resize-none"
                   />
                 </div>
 
@@ -922,13 +925,13 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowReportModal(false)}
-                    className="px-4 py-2 rounded-xl bg-white/10 text-xs font-bold text-gray-300 cursor-pointer"
+                    className="min-h-[42px] px-4 py-2 rounded-xl bg-white/10 text-xs font-bold text-gray-300 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl bg-[#EF233C] text-white text-xs font-black uppercase cursor-pointer"
+                    className="min-h-[42px] px-4 py-2 rounded-xl bg-[#EF233C] text-white text-xs font-black uppercase cursor-pointer"
                   >
                     Submit Report
                   </button>

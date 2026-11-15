@@ -1,5 +1,6 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { createAsyncMutex, withTimeout } from '../utils/networkReliability';
 import type { VehicleModelType } from '../components/world/worldModels';
 import type { PlayerProfile } from './playerService';
 
@@ -99,6 +100,8 @@ export class WorldMultiplayerSession {
   private activeConversationId: string | null = null;
   private activeConversationPeerId: string | null = null;
   private currentIncomingInviteId: string | null = null;
+  private heartbeatMutex = createAsyncMutex();
+  private nearbyPollMutex = createAsyncMutex();
 
   constructor(
     profile: PlayerProfile,
@@ -361,11 +364,13 @@ export class WorldMultiplayerSession {
     this.channel = ch;
 
     this.heartbeatTimer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       void this.sendHeartbeat();
       this.pruneStalePeers();
     }, HEARTBEAT_INTERVAL_MS);
 
     this.nearbyPollTimer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       void this.refreshNearbyPlayers();
       this.pruneStalePeers();
     }, NEARBY_POLL_INTERVAL_MS);
@@ -382,6 +387,9 @@ export class WorldMultiplayerSession {
       this.nearbyPollTimer = null;
     }
     if (this.channel) {
+      try {
+        void this.channel.unsubscribe();
+      } catch {}
       supabase.removeChannel(this.channel);
       this.channel = null;
     }
@@ -433,59 +441,71 @@ export class WorldMultiplayerSession {
 
   private async sendHeartbeat() {
     if (this.isStopped) return;
-    try {
-      const { data } = await supabase.rpc('heartbeat_player_presence', {
-        p_x: this.lastKnownPos.x,
-        p_y: this.lastKnownPos.y,
-        p_z: this.lastKnownPos.z,
-        p_heading: this.lastKnownPos.heading,
-        p_speed: this.lastKnownPos.speed,
-        p_region: inferLagosRegion(this.lastKnownPos.x, this.lastKnownPos.z),
-      });
-      if (data && typeof data.discoveryRadius === 'number') {
-        this.discoveryRadius = data.discoveryRadius;
-      }
-    } catch {}
+    await this.heartbeatMutex.runIfIdle(async () => {
+      try {
+        const { data } = await withTimeout(
+          supabase.rpc('heartbeat_player_presence', {
+            p_x: this.lastKnownPos.x,
+            p_y: this.lastKnownPos.y,
+            p_z: this.lastKnownPos.z,
+            p_heading: this.lastKnownPos.heading,
+            p_speed: this.lastKnownPos.speed,
+            p_region: inferLagosRegion(this.lastKnownPos.x, this.lastKnownPos.z),
+          }),
+          7000,
+          'Presence heartbeat'
+        );
+        if (data && typeof data.discoveryRadius === 'number') {
+          this.discoveryRadius = data.discoveryRadius;
+        }
+      } catch {}
+    });
   }
 
   public async refreshNearbyPlayers(): Promise<void> {
     if (this.isStopped) return;
-    try {
-      const { data, error } = await supabase.rpc('get_nearby_active_players');
-      if (this.isStopped || error || !Array.isArray(data)) return;
+    await this.nearbyPollMutex.runIfIdle(async () => {
+      try {
+        const { data, error } = await withTimeout(
+          supabase.rpc('get_nearby_active_players'),
+          7000,
+          'Nearby players sync'
+        );
+        if (this.isStopped || error || !Array.isArray(data)) return;
 
-      const freshIds = new Set<string>();
-      for (const row of data) {
-        freshIds.add(row.player_id);
-        this.nicknameCache.set(row.player_id, row.nickname);
-        const existing = this.remotePeers.get(row.player_id);
-        const keepBroadcast = existing && Date.now() - existing.lastUpdatedAtMs < 3000;
-        this.remotePeers.set(row.player_id, {
-          playerId: row.player_id,
-          nickname: row.nickname,
-          vehicleModel: row.vehicle_model || 'SPORTS_COUPE',
-          paintColor: row.paint_color || '#DC2626',
-          worldRegion: row.world_region || 'Lagos Island',
-          x: keepBroadcast ? existing.x : row.pos_x,
-          y: keepBroadcast ? existing.y : row.pos_y,
-          z: keepBroadcast ? existing.z : row.pos_z,
-          heading: keepBroadcast ? existing.heading : row.heading,
-          speed: keepBroadcast ? existing.speed : row.speed,
-          distance: Math.round(row.distance),
-          isOnline: true,
-          lastUpdatedAtMs: keepBroadcast
-            ? existing.lastUpdatedAtMs
-            : Date.parse(row.last_heartbeat_at) || Date.now(),
-        });
-      }
-
-      for (const id of Array.from(this.remotePeers.keys())) {
-        if (!freshIds.has(id)) {
-          this.remotePeers.delete(id);
+        const freshIds = new Set<string>();
+        for (const row of data) {
+          freshIds.add(row.player_id);
+          this.nicknameCache.set(row.player_id, row.nickname);
+          const existing = this.remotePeers.get(row.player_id);
+          const keepBroadcast = existing && Date.now() - existing.lastUpdatedAtMs < 3000;
+          this.remotePeers.set(row.player_id, {
+            playerId: row.player_id,
+            nickname: row.nickname,
+            vehicleModel: row.vehicle_model || 'SPORTS_COUPE',
+            paintColor: row.paint_color || '#DC2626',
+            worldRegion: row.world_region || 'Lagos Island',
+            x: keepBroadcast ? existing.x : row.pos_x,
+            y: keepBroadcast ? existing.y : row.pos_y,
+            z: keepBroadcast ? existing.z : row.pos_z,
+            heading: keepBroadcast ? existing.heading : row.heading,
+            speed: keepBroadcast ? existing.speed : row.speed,
+            distance: Math.round(row.distance),
+            isOnline: true,
+            lastUpdatedAtMs: keepBroadcast
+              ? existing.lastUpdatedAtMs
+              : Date.parse(row.last_heartbeat_at) || Date.now(),
+          });
         }
-      }
-      this.emitPeers();
-    } catch {}
+
+        for (const id of Array.from(this.remotePeers.keys())) {
+          if (!freshIds.has(id)) {
+            this.remotePeers.delete(id);
+          }
+        }
+        this.emitPeers();
+      } catch {}
+    });
   }
 
   private pruneStalePeers() {
@@ -673,6 +693,7 @@ export class WorldMultiplayerSession {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: trimmed }),
+        signal: AbortSignal.timeout(4000),
       });
       if (modRes.ok) {
         const modData = await modRes.json();
@@ -689,10 +710,22 @@ export class WorldMultiplayerSession {
       }
     } catch {}
 
-    const { data, error } = await supabase.rpc('send_moderated_chat_message', {
-      p_conversation_id: conversationId,
-      p_content: trimmed,
-    });
+    let data: any;
+    let error: any;
+    try {
+      const res = await withTimeout(
+        supabase.rpc('send_moderated_chat_message', {
+          p_conversation_id: conversationId,
+          p_content: trimmed,
+        }),
+        8000,
+        'Send chat message'
+      );
+      data = res.data;
+      error = res.error;
+    } catch (err: any) {
+      return { delivered: false, error: err?.message || 'Unable to send message right now.' };
+    }
 
     if (error) {
       return { delivered: false, error: error.message };

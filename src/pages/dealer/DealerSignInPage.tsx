@@ -51,15 +51,15 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
   };
 
   return (
-    <div className="min-h-screen bg-[#071A2B] flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-[#111827] relative overflow-hidden">
+    <div className="min-h-dvh bg-[#071A2B] flex flex-col justify-start sm:justify-center pt-16 sm:py-12 pb-10 sm:px-6 lg:px-8 text-[#111827] relative overflow-y-auto">
       {/* Background Ambience */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-transparent to-transparent pointer-events-none" />
 
       {/* Back to Public Marketplace Link */}
-      <div className="absolute top-6 left-6 z-20">
+      <div className="absolute top-4 left-4 sm:top-6 sm:left-6 z-20">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-white transition px-3 py-1.5 rounded-lg hover:bg-white/5"
+          className="min-h-[44px] flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-white transition px-3 py-2 rounded-lg hover:bg-white/5"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to MANIFOLD Marketplace</span>
@@ -93,7 +93,7 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
       </div>
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4">
-        <div className="bg-[#0B2239] py-8 px-6 sm:px-8 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-sm">
+        <div className="bg-[#0B2239] py-6 sm:py-8 px-5 sm:px-8 border border-white/10 rounded-2xl shadow-2xl">
           {error && (
             <div className="mb-5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3 animate-in fade-in">
               <AlertCircle className="w-4 h-4 text-[#EF233C] shrink-0 mt-0.5" />
@@ -119,12 +119,13 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
                 </div>
                 <input
                   type="email"
+                  inputMode="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="dealer@dealership.com"
                   autoComplete="email"
                   required
-                  className="w-full pl-10 pr-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white text-xs placeholder-gray-500 focus:outline-none focus:border-[#EF233C] focus:ring-1 focus:ring-[#EF233C] transition"
+                  className="w-full min-h-[44px] pl-10 pr-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white text-base sm:text-sm placeholder-gray-500 focus:outline-none focus:border-[#EF233C] focus:ring-1 focus:ring-[#EF233C] transition"
                 />
               </div>
             </div>
@@ -137,7 +138,7 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
                 <button
                   type="button"
                   onClick={handleForgotPassword}
-                  className="text-[11px] font-medium text-gray-400 hover:text-white transition"
+                  className="text-[11px] font-medium text-gray-400 hover:text-white transition py-1"
                 >
                   Forgot Password?
                 </button>
@@ -153,12 +154,13 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
                   placeholder="••••••••••••"
                   autoComplete="current-password"
                   required
-                  className="w-full pl-10 pr-10 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white text-xs placeholder-gray-500 focus:outline-none focus:border-[#EF233C] focus:ring-1 focus:ring-[#EF233C] transition"
+                  className="w-full min-h-[44px] pl-10 pr-11 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white text-base sm:text-sm placeholder-gray-500 focus:outline-none focus:border-[#EF233C] focus:ring-1 focus:ring-[#EF233C] transition"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-500 hover:text-gray-300"
+                  className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 hover:text-gray-300"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                   tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -169,7 +171,7 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 py-3 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed group"
+              className="w-full min-h-[46px] mt-2 py-3 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed group cursor-pointer"
             >
               {loading ? (
                 <>

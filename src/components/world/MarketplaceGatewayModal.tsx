@@ -21,10 +21,10 @@ export const MarketplaceGatewayModal: React.FC<MarketplaceGatewayModalProps> = (
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl bg-[#071A2B] border border-white/15 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 animate-in fade-in duration-200">
+      <div className="relative w-full max-w-4xl bg-[#071A2B] border border-white/15 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92dvh]">
         {/* Banner with generated pavilion asset */}
-        <div className="relative h-48 sm:h-64 w-full overflow-hidden shrink-0">
+        <div className="relative h-44 sm:h-64 [@media(max-height:480px)]:h-32 w-full overflow-hidden shrink-0">
           <img
             src={pavilionImage}
             alt="MANIFOLD Automotive Pavilion"
@@ -36,27 +36,28 @@ export const MarketplaceGatewayModal: React.FC<MarketplaceGatewayModalProps> = (
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 bg-[#071A2B]/80 hover:bg-[#071A2B] text-white rounded-full border border-white/20 transition-colors"
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 min-w-[44px] min-h-[44px] flex items-center justify-center bg-[#071A2B]/90 hover:bg-[#071A2B] text-white rounded-full border border-white/20 transition-colors cursor-pointer"
+            aria-label="Close Marketplace Modal"
           >
             <X className="w-5 h-5" />
           </button>
 
           {/* Title Overlay */}
-          <div className="absolute bottom-4 left-6 right-6 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div className="absolute bottom-3 sm:bottom-4 left-4 sm:left-6 right-4 sm:right-6 flex flex-col sm:flex-row sm:items-end justify-between gap-2.5 sm:gap-3">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] uppercase font-bold tracking-widest text-[#EF233C] bg-[#EF233C]/20 border border-[#EF233C]/40 px-2.5 py-0.5 rounded-full">
                   Real Commercial Layer
                 </span>
-                <span className="text-xs text-gray-300 font-medium">Lagos & Abuja Inventory</span>
+                <span className="text-xs text-gray-300 font-medium hidden sm:inline">Lagos & Abuja Inventory</span>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-display">
+              <h2 className="text-xl sm:text-3xl font-extrabold text-white tracking-tight font-display">
                 MANIFOLD Car Marketplace
               </h2>
             </div>
             <button
               onClick={onNavigateToMarketplace}
-              className="flex items-center gap-2 px-5 py-2.5 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-lg shrink-0"
+              className="flex items-center justify-center gap-2 min-h-[42px] px-4 sm:px-5 py-2 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-lg shrink-0 cursor-pointer"
             >
               <span>Enter Full Marketplace</span>
               <ArrowRight className="w-4 h-4" />
@@ -122,7 +123,7 @@ export const MarketplaceGatewayModal: React.FC<MarketplaceGatewayModalProps> = (
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
-                  <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
+                  <div className="absolute top-2 left-2 bg-black/80 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
                     {car.condition}
                   </div>
                 </div>
@@ -150,20 +151,20 @@ export const MarketplaceGatewayModal: React.FC<MarketplaceGatewayModalProps> = (
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 bg-[#05111d] border-t border-white/10 flex items-center justify-between">
+        <div className="p-3.5 sm:p-4 bg-[#05111d] border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shrink-0">
           <span className="text-xs text-gray-400">
             Route: <code className="text-gray-300">/car-marketplace</code>
           </span>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase rounded-xl transition-colors"
+              className="flex-1 sm:flex-none min-h-[42px] px-4 py-2 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase rounded-xl transition-colors cursor-pointer"
             >
               Resume 3D World
             </button>
             <button
               onClick={onNavigateToMarketplace}
-              className="px-5 py-2 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-bold uppercase rounded-xl transition-colors"
+              className="flex-1 sm:flex-none min-h-[42px] px-5 py-2 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-bold uppercase rounded-xl transition-colors cursor-pointer"
             >
               Proceed to Marketplace
             </button>

@@ -61,23 +61,23 @@ export const MusicLibraryModal: React.FC<MusicLibraryModalProps> = ({ isOpen, on
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85"
       onClick={onClose}
       onKeyDown={(e) => e.stopPropagation()}
     >
       <div
-        className="w-full max-w-2xl bg-[#071A2B] border border-white/20 rounded-3xl p-5 sm:p-6 shadow-2xl text-white max-h-[88vh] flex flex-col"
+        className="w-full max-w-2xl bg-[#071A2B] border border-white/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl text-white max-h-[92dvh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300">
+        <div className="flex items-center justify-between pb-3.5 border-b border-white/10 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shrink-0">
               <Music className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="text-lg font-black tracking-tight">Manifold Music Library</h3>
-              <p className="text-xs text-slate-400">
+            <div className="min-w-0">
+              <h3 className="text-base sm:text-lg font-black tracking-tight truncate">Manifold Music Library</h3>
+              <p className="text-xs text-slate-400 truncate">
                 Plays persistently across camera & HUD switches while driving
               </p>
             </div>
@@ -85,7 +85,7 @@ export const MusicLibraryModal: React.FC<MusicLibraryModalProps> = ({ isOpen, on
           <button
             type="button"
             onClick={onClose}
-            className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 flex items-center justify-center transition-colors"
+            className="min-w-[44px] min-h-[44px] rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 flex items-center justify-center transition-colors shrink-0 cursor-pointer"
             aria-label="Close Music Library"
           >
             <X className="w-5 h-5" />
@@ -126,7 +126,7 @@ export const MusicLibraryModal: React.FC<MusicLibraryModalProps> = ({ isOpen, on
               <button
                 type="button"
                 onClick={() => musicLibrary.prevTrack()}
-                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                className="min-w-[42px] min-h-[42px] rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer"
                 aria-label="Previous track"
               >
                 <SkipBack className="w-4 h-4" />
@@ -134,7 +134,7 @@ export const MusicLibraryModal: React.FC<MusicLibraryModalProps> = ({ isOpen, on
               <button
                 type="button"
                 onClick={() => musicLibrary.togglePlayPause()}
-                className="w-11 h-11 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 flex items-center justify-center shadow-lg transition-colors"
+                className="min-w-[44px] min-h-[44px] rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 flex items-center justify-center shadow-lg transition-colors cursor-pointer"
                 aria-label={snap.isPlaying ? 'Pause music' : 'Play music'}
               >
                 {snap.isPlaying ? (
@@ -146,7 +146,7 @@ export const MusicLibraryModal: React.FC<MusicLibraryModalProps> = ({ isOpen, on
               <button
                 type="button"
                 onClick={() => musicLibrary.nextTrack()}
-                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                className="min-w-[42px] min-h-[42px] rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer"
                 aria-label="Next track"
               >
                 <SkipForward className="w-4 h-4" />
@@ -157,7 +157,7 @@ export const MusicLibraryModal: React.FC<MusicLibraryModalProps> = ({ isOpen, on
               <button
                 type="button"
                 onClick={() => musicLibrary.toggleMute()}
-                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-200 transition-colors"
+                className="min-w-[42px] min-h-[42px] rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-200 transition-colors cursor-pointer"
                 aria-label={snap.isMuted ? 'Unmute music' : 'Mute music'}
               >
                 {snap.isMuted ? (
@@ -286,7 +286,7 @@ export const MusicLibraryModal: React.FC<MusicLibraryModalProps> = ({ isOpen, on
             <select
               value={uploadCategory}
               onChange={(e) => setUploadCategory(e.target.value as MusicCategory)}
-              className="bg-slate-900 border border-white/15 rounded-lg px-2 py-1.5 text-xs text-white"
+              className="bg-slate-900 border border-white/15 rounded-lg px-2.5 min-h-[40px] text-base sm:text-xs text-white"
               aria-label="Category for uploaded track"
             >
               {MUSIC_CATEGORIES.map((c) => (
@@ -295,7 +295,7 @@ export const MusicLibraryModal: React.FC<MusicLibraryModalProps> = ({ isOpen, on
                 </option>
               ))}
             </select>
-            <label className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white cursor-pointer flex items-center gap-1.5 whitespace-nowrap">
+            <label className="min-h-[40px] px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white cursor-pointer flex items-center gap-1.5 whitespace-nowrap">
               <Upload className="w-3.5 h-3.5" />
               <span>Load Audio</span>
               <input

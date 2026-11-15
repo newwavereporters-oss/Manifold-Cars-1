@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { retryWithBackoff, withTimeout } from '../utils/networkReliability';
 import type {
   InteriorTheme,
   MusicPreference,
@@ -107,6 +108,9 @@ function mapWorldError(err: any): string {
   if (msg.toLowerCase().includes('database error saving new user')) {
     return 'Unable to save player profile during signup. Ensure the latest src/db/game-world-social-migration.sql has been applied and the nickname is unique.';
   }
+  if (err?.isTimeout || msg.toLowerCase().includes('timed out')) {
+    return 'Connection timed out. Please check your internet connection and try again.';
+  }
   if (msg.toLowerCase().includes('email not confirmed')) {
     return 'Please verify your email address using the confirmation link in your inbox before signing in.';
   }
@@ -182,9 +186,13 @@ export async function registerPlayerAccount(params: {
 
   // Check email & nickname uniqueness before signUp
   try {
-    const { data: avail, error: availErr } = await supabase.rpc(
-      'check_player_registration_available',
-      { p_email: email, p_nickname: nickname }
+    const { data: avail, error: availErr } = await withTimeout(
+      supabase.rpc('check_player_registration_available', {
+        p_email: email,
+        p_nickname: nickname,
+      }),
+      10000,
+      'Registration availability check'
     );
     if (availErr) {
       return { success: false, error: mapWorldError(availErr) };
@@ -199,17 +207,29 @@ export async function registerPlayerAccount(params: {
     return { success: false, error: mapWorldError(err) };
   }
 
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password: params.password,
-    options: {
-      data: {
-        full_name: fullName,
-        nickname,
-        phone_number: phoneNumber,
-      },
-    },
-  });
+  let data: any;
+  let error: any;
+  try {
+    const res = await withTimeout(
+      supabase.auth.signUp({
+        email,
+        password: params.password,
+        options: {
+          data: {
+            full_name: fullName,
+            nickname,
+            phone_number: phoneNumber,
+          },
+        },
+      }),
+      12000,
+      'Create account'
+    );
+    data = res.data;
+    error = res.error;
+  } catch (err) {
+    return { success: false, error: mapWorldError(err) };
+  }
 
   if (error) {
     return { success: false, error: mapWorldError(error) };
@@ -217,16 +237,25 @@ export async function registerPlayerAccount(params: {
 
   // Ensure profile row exists if session was returned immediately, then signOut so user MUST login explicitly
   if (data.session) {
-    const { error: profileErr } = await supabase.rpc('get_or_create_my_player_profile', {
-      p_full_name: fullName,
-      p_nickname: nickname,
-      p_phone_number: phoneNumber,
-    });
-    await supabase.auth.signOut();
-    if (profileErr) {
-      return { success: false, error: mapWorldError(profileErr) };
+    try {
+      const { error: profileErr } = await withTimeout(
+        supabase.rpc('get_or_create_my_player_profile', {
+          p_full_name: fullName,
+          p_nickname: nickname,
+          p_phone_number: phoneNumber,
+        }),
+        10000,
+        'Save player profile'
+      );
+      await withTimeout(supabase.auth.signOut(), 6000, 'Reset post-signup session').catch(() => {});
+      if (profileErr) {
+        return { success: false, error: mapWorldError(profileErr) };
+      }
+      return { success: true, needsEmailVerification: false };
+    } catch (err) {
+      await supabase.auth.signOut().catch(() => {});
+      return { success: false, error: mapWorldError(err) };
     }
-    return { success: true, needsEmailVerification: false };
   }
 
   return {
@@ -248,27 +277,43 @@ export async function loginPlayerAccount(
     return { success: false, error: 'Supabase authentication is not configured.' };
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
-    password,
-  });
+  try {
+    const { data, error } = await withTimeout(
+      supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      }),
+      12000,
+      'Sign in'
+    );
 
-  if (error || !data.user) {
-    return { success: false, error: error ? mapWorldError(error) : 'Invalid email or password.' };
+    if (error || !data.user) {
+      return { success: false, error: error ? mapWorldError(error) : 'Invalid email or password.' };
+    }
+
+    return await fetchMyPlayerProfile();
+  } catch (err) {
+    return { success: false, error: mapWorldError(err) };
   }
-
-  return await fetchMyPlayerProfile();
 }
 
 export async function requestPlayerPasswordReset(email: string): Promise<{ success: boolean; error?: string }> {
   if (!isSupabaseConfigured) {
     return { success: false, error: 'Supabase authentication is not configured.' };
   }
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-    redirectTo: `${window.location.origin}/`,
-  });
-  if (error) return { success: false, error: error.message };
-  return { success: true };
+  try {
+    const { error } = await withTimeout(
+      supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+        redirectTo: `${window.location.origin}/`,
+      }),
+      10000,
+      'Password reset'
+    );
+    if (error) return { success: false, error: mapWorldError(error) };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: mapWorldError(err) };
+  }
 }
 
 export async function logoutPlayerAccount(): Promise<void> {
@@ -291,24 +336,40 @@ export async function fetchMyPlayerProfile(): Promise<{
     return { success: false, error: 'Supabase not configured.' };
   }
 
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData.session) {
-    return { success: false, error: 'No active session.' };
+  try {
+    const { data: sessionData } = await withTimeout(
+      supabase.auth.getSession(),
+      8000,
+      'Session verification'
+    );
+    if (!sessionData.session) {
+      return { success: false, error: 'No active session.' };
+    }
+
+    const { data, error } = await retryWithBackoff(
+      () =>
+        withTimeout(
+          supabase.rpc('get_or_create_my_player_profile', {}),
+          10000,
+          'Fetch player profile'
+        ),
+      { maxAttempts: 2 }
+    );
+    if (error || !data?.profile) {
+      return { success: false, error: mapWorldError(error) };
+    }
+
+    const serverNowMs = data.serverNow ? Date.parse(data.serverNow) : Date.now();
+    const serverClockOffsetMs = Number.isNaN(serverNowMs) ? 0 : serverNowMs - Date.now();
+
+    return {
+      success: true,
+      profile: data.profile as PlayerProfile,
+      serverClockOffsetMs,
+    };
+  } catch (err) {
+    return { success: false, error: mapWorldError(err) };
   }
-
-  const { data, error } = await supabase.rpc('get_or_create_my_player_profile', {});
-  if (error || !data?.profile) {
-    return { success: false, error: mapWorldError(error) };
-  }
-
-  const serverNowMs = data.serverNow ? Date.parse(data.serverNow) : Date.now();
-  const serverClockOffsetMs = Number.isNaN(serverNowMs) ? 0 : serverNowMs - Date.now();
-
-  return {
-    success: true,
-    profile: data.profile as PlayerProfile,
-    serverClockOffsetMs,
-  };
 }
 
 export async function acceptGameBriefing(): Promise<{
@@ -317,18 +378,26 @@ export async function acceptGameBriefing(): Promise<{
   serverClockOffsetMs?: number;
   error?: string;
 }> {
-  const { data, error } = await supabase.rpc('accept_game_briefing', {
-    p_terms_version: TERMS_VERSION,
-  });
-  if (error || !data?.profile) {
-    return { success: false, error: mapWorldError(error) };
+  try {
+    const { data, error } = await withTimeout(
+      supabase.rpc('accept_game_briefing', {
+        p_terms_version: TERMS_VERSION,
+      }),
+      10000,
+      'Accept driver briefing'
+    );
+    if (error || !data?.profile) {
+      return { success: false, error: mapWorldError(error) };
+    }
+    const serverNowMs = data.serverNow ? Date.parse(data.serverNow) : Date.now();
+    return {
+      success: true,
+      profile: data.profile as PlayerProfile,
+      serverClockOffsetMs: Number.isNaN(serverNowMs) ? 0 : serverNowMs - Date.now(),
+    };
+  } catch (err) {
+    return { success: false, error: mapWorldError(err) };
   }
-  const serverNowMs = data.serverNow ? Date.parse(data.serverNow) : Date.now();
-  return {
-    success: true,
-    profile: data.profile as PlayerProfile,
-    serverClockOffsetMs: Number.isNaN(serverNowMs) ? 0 : serverNowMs - Date.now(),
-  };
 }
 
 export async function confirmVehicleConfiguration(params: {
@@ -342,23 +411,31 @@ export async function confirmVehicleConfiguration(params: {
   serverClockOffsetMs?: number;
   error?: string;
 }> {
-  const { data, error } = await supabase.rpc('confirm_vehicle_configuration', {
-    p_vehicle: params.vehicle,
-    p_color: params.color,
-    p_interior: params.interior,
-    p_music: params.music,
-  });
+  try {
+    const { data, error } = await withTimeout(
+      supabase.rpc('confirm_vehicle_configuration', {
+        p_vehicle: params.vehicle,
+        p_color: params.color,
+        p_interior: params.interior,
+        p_music: params.music,
+      }),
+      10000,
+      'Save vehicle configuration'
+    );
 
-  if (error || !data?.profile) {
-    return { success: false, error: mapWorldError(error) };
+    if (error || !data?.profile) {
+      return { success: false, error: mapWorldError(error) };
+    }
+
+    const serverNowMs = data.serverNow ? Date.parse(data.serverNow) : Date.now();
+    return {
+      success: true,
+      profile: data.profile as PlayerProfile,
+      serverClockOffsetMs: Number.isNaN(serverNowMs) ? 0 : serverNowMs - Date.now(),
+    };
+  } catch (err) {
+    return { success: false, error: mapWorldError(err) };
   }
-
-  const serverNowMs = data.serverNow ? Date.parse(data.serverNow) : Date.now();
-  return {
-    success: true,
-    profile: data.profile as PlayerProfile,
-    serverClockOffsetMs: Number.isNaN(serverNowMs) ? 0 : serverNowMs - Date.now(),
-  };
 }
 
 export async function fetchMyBlockedPlayers(): Promise<BlockedPlayerEntry[]> {

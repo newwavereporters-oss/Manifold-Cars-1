@@ -17,18 +17,19 @@ export const DealerLoungeModal: React.FC<DealerLoungeModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-3xl bg-[#071A2B] border border-white/15 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 animate-in fade-in duration-200">
+      <div className="relative w-full max-w-3xl bg-[#071A2B] border border-white/15 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92dvh]">
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-10 p-2 bg-[#071A2B]/80 hover:bg-[#071A2B] text-white rounded-full border border-white/20 transition-colors"
+          className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 min-w-[44px] min-h-[44px] flex items-center justify-center bg-[#071A2B]/90 hover:bg-[#071A2B] text-white rounded-full border border-white/20 transition-colors cursor-pointer"
+          aria-label="Close Dealer Lounge"
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Hero image banner */}
-        <div className="relative h-52 sm:h-64 w-full overflow-hidden shrink-0">
+        <div className="relative h-40 sm:h-60 [@media(max-height:480px)]:h-28 w-full overflow-hidden shrink-0">
           <img
             src={loungeImage}
             alt="MANIFOLD VIP Dealer Concierge Lounge"
@@ -37,11 +38,11 @@ export const DealerLoungeModal: React.FC<DealerLoungeModalProps> = ({
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#071A2B] via-[#071A2B]/60 to-transparent" />
 
-          <div className="absolute bottom-4 left-6 right-6">
+          <div className="absolute bottom-3 sm:bottom-4 left-4 sm:left-6 right-4 sm:right-6">
             <span className="text-[10px] uppercase font-bold tracking-widest text-[#EF233C] bg-[#EF233C]/20 border border-[#EF233C]/40 px-2.5 py-0.5 rounded-full">
               Automotive Commercial Suite
             </span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-1.5 font-display">
+            <h2 className="text-xl sm:text-3xl font-extrabold text-white mt-1.5 font-display">
               VIP Concierge & Dealer Lounge
             </h2>
           </div>
@@ -84,7 +85,7 @@ export const DealerLoungeModal: React.FC<DealerLoungeModalProps> = ({
                     onClose();
                     onNavigate('/dealer/sign-in');
                   }}
-                  className="flex-1 py-2.5 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-bold uppercase rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                  className="flex-1 min-h-[44px] py-2.5 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-bold uppercase rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   <span>Dealer Sign In</span>
@@ -94,7 +95,7 @@ export const DealerLoungeModal: React.FC<DealerLoungeModalProps> = ({
                     onClose();
                     onNavigate('/dealer/register');
                   }}
-                  className="flex-1 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                  className="flex-1 min-h-[44px] py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                   <span>Register</span>
@@ -119,7 +120,7 @@ export const DealerLoungeModal: React.FC<DealerLoungeModalProps> = ({
                     onClose();
                     onNavigate('/car-hunt');
                   }}
-                  className="w-full py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                  className="w-full min-h-[44px] py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <span>Commission Car Hunt</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -130,13 +131,13 @@ export const DealerLoungeModal: React.FC<DealerLoungeModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-[#05111d] border-t border-white/10 flex items-center justify-between">
+        <div className="p-3.5 sm:p-4 bg-[#05111d] border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shrink-0">
           <span className="text-xs text-gray-400">
             Escrow verified · Anti-tamper inspection guarantees
           </span>
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase rounded-xl transition-colors"
+            className="min-h-[42px] px-4 py-2 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase rounded-xl transition-colors cursor-pointer"
           >
             Return to World
           </button>

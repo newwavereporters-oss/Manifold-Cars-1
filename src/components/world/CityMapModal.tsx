@@ -213,36 +213,37 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
     meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${meters} m`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-5 bg-black/85 backdrop-blur-xl animate-in fade-in duration-200">
-      <div className="relative w-full max-w-6xl h-[90vh] bg-[#071A2B] border border-white/20 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-5 bg-black/85 animate-in fade-in duration-200">
+      <div className="relative w-full max-w-6xl h-[92dvh] sm:h-[90dvh] bg-[#071A2B] border border-white/20 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-white">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-[#071A2B]/95">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#EF233C]/20 border border-[#EF233C]/40 flex items-center justify-center text-[#EF233C]">
+        <div className="flex items-center justify-between gap-2 px-3.5 sm:px-5 py-3 border-b border-white/10 bg-[#071A2B] shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#EF233C]/20 border border-[#EF233C]/40 flex items-center justify-center text-[#EF233C] shrink-0">
               <Compass className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black tracking-wider uppercase">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-lg font-black tracking-wider uppercase truncate">
                 MANIFOLD Lagos Metro GPS Map
               </h2>
-              <p className="text-[11px] text-gray-400">
+              <p className="text-[10px] sm:text-[11px] text-gray-400 truncate">
                 Lagos Island · TMB · Adekunle · Obalende · Ikoyi · Ikoyi Link Bridge · Lekki · Ikate · Eleganza · VGC · Ajah · Epe · LASU
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {activeDestination && (
               <button
                 onClick={onClearDestination}
-                className="px-3 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-xs font-bold text-red-300 transition-colors"
+                className="min-h-[40px] px-3 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-xs font-bold text-red-300 transition-colors cursor-pointer"
               >
                 Clear GPS
               </button>
             )}
             <button
               onClick={onClose}
-              className="p-2 rounded-2xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-colors"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-colors cursor-pointer"
+              aria-label="Close City Map"
             >
               <X className="w-5 h-5" />
             </button>
@@ -261,32 +262,36 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
             onWheel={handleWheel}
           >
             {/* Map Zoom Controls */}
-            <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5 bg-[#071A2B]/90 backdrop-blur-md p-1.5 rounded-2xl border border-white/15 shadow-xl">
+            <div className="absolute top-3 right-3 z-20 flex flex-col gap-1 bg-[#071A2B]/95 p-1.5 rounded-2xl border border-white/15 shadow-xl">
               <button
                 onClick={() => setZoom((z) => Math.min(4.2, Number((z * 1.25).toFixed(2))))}
-                className="p-2 rounded-xl hover:bg-white/10 text-gray-200"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl hover:bg-white/10 text-gray-200 cursor-pointer"
                 title="Zoom In"
+                aria-label="Zoom In"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setZoom((z) => Math.max(0.85, Number((z * 0.8).toFixed(2))))}
-                className="p-2 rounded-xl hover:bg-white/10 text-gray-200"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl hover:bg-white/10 text-gray-200 cursor-pointer"
                 title="Zoom Out"
+                aria-label="Zoom Out"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
               <button
                 onClick={centerOnPlayer}
-                className="p-2 rounded-xl hover:bg-white/10 text-amber-400"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl hover:bg-white/10 text-amber-400 cursor-pointer"
                 title="Center on Vehicle"
+                aria-label="Center on Vehicle"
               >
                 <Crosshair className="w-4 h-4" />
               </button>
               <button
                 onClick={resetView}
-                className="p-2 rounded-xl hover:bg-white/10 text-gray-300"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl hover:bg-white/10 text-gray-300 cursor-pointer"
                 title="Fit Full World"
+                aria-label="Fit Full World"
               >
                 <Maximize2 className="w-4 h-4" />
               </button>
@@ -576,7 +581,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
 
             {/* Bottom-Left Turn-by-Turn GPS Guidance Card */}
             {activeDestination && routeInfo && (
-              <div className="absolute bottom-3 left-3 right-3 sm:right-auto sm:max-w-md bg-[#071A2B]/95 backdrop-blur-md p-3.5 rounded-2xl border border-emerald-500/50 shadow-2xl flex items-center gap-3 z-20">
+              <div className="absolute bottom-3 left-3 right-3 sm:right-auto sm:max-w-md bg-[#071A2B]/96 p-3.5 rounded-2xl border border-emerald-500/50 shadow-2xl flex items-center gap-3 z-20">
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
                   <Navigation className="w-5 h-5 animate-pulse" />
                 </div>
@@ -602,7 +607,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
           </div>
 
           {/* Right Sidebar: Filterable Destinations Directory */}
-          <div className="w-full lg:w-88 border-t lg:border-t-0 lg:border-l border-white/10 bg-[#071A2B]/95 p-4 flex flex-col overflow-hidden max-h-[38vh] lg:max-h-none">
+          <div className="w-full lg:w-88 border-t lg:border-t-0 lg:border-l border-white/10 bg-[#071A2B]/98 p-3.5 sm:p-4 flex flex-col overflow-hidden max-h-[36dvh] lg:max-h-none">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-black uppercase text-gray-300 tracking-wider">
                 Destinations ({filteredLandmarks.length})
@@ -613,7 +618,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
             </div>
 
             {/* Region Filter Tabs */}
-            <div className="flex flex-wrap gap-1 mb-3">
+            <div className="flex overflow-x-auto lg:flex-wrap gap-1.5 mb-2.5 pb-1 shrink-0">
               {(
                 [
                   { id: 'ALL', label: 'All' },
@@ -627,7 +632,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 <button
                   key={tab.id}
                   onClick={() => setRegionFilter(tab.id)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                  className={`min-h-[34px] px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                     regionFilter === tab.id
                       ? 'bg-[#EF233C] text-white'
                       : 'bg-white/5 hover:bg-white/10 text-gray-300'

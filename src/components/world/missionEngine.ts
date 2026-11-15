@@ -7,6 +7,7 @@
 //   - 10-checkpoint Mainland Grand Prix street race (STREET_RACE)
 
 import { TransmissionGear } from './worldModels';
+import { RIVAL_RACE_CHECKPOINTS } from './lagosCityData';
 
 export type MissionDistanceTier = 'NEAR' | 'FAR' | 'VERY_FAR';
 export type MissionCategory =
@@ -19,7 +20,19 @@ export type MissionCategory =
   | 'ENDURANCE';
 export type MissionDifficulty = 'Easy' | 'Medium' | 'Hard' | 'Expert' | 'Master';
 export type MissionId = string;
-export type MissionState = 'IDLE' | 'BRIEFING' | 'COUNTDOWN' | 'ACTIVE' | 'COMPLETED' | 'FAILED';
+export type MissionState =
+  | 'IDLE'
+  | 'BRIEFING'
+  | 'COUNTDOWN'
+  | 'ACTIVE'
+  | 'VERIFYING'
+  | 'COMPLETED'
+  | 'FAILING'
+  | 'FAILED'
+  | 'FAILURE_SYNC_FAILED'
+  | 'VERIFICATION_FAILED'
+  | 'ABANDONING'
+  | 'ABANDON_FAILED';
 
 export interface MissionCheckpoint {
   x: number;
@@ -53,6 +66,7 @@ export interface MissionDef {
   cooldownSec: number;
   requiresNoCollision?: boolean;
   requireParkGear?: boolean;
+  is_active?: boolean;
 }
 
 export const MISSIONS_CATALOG_LIST: MissionDef[] = [
@@ -152,7 +166,6 @@ export const MISSIONS_CATALOG_LIST: MissionDef[] = [
     timeLimitSec: 70,
     baseRewardCredits: 420,
     reputationXP: 140,
-    rewardBadge: 'Precision Parker',
     difficulty: 'Easy',
     cooldownSec: 60,
     requireParkGear: true,
@@ -172,13 +185,18 @@ export const MISSIONS_CATALOG_LIST: MissionDef[] = [
     destX: -50,
     destZ: -130,
     destRadius: 12,
-    checkpoints: [],
+    checkpoints: RIVAL_RACE_CHECKPOINTS.map((cp) => ({
+      x: cp.x,
+      z: cp.z,
+      radius: cp.radius,
+      name: cp.name,
+    })),
     distanceMeters: 780,
     estimatedMinutes: 2,
     timeLimitSec: 180,
     baseRewardCredits: 1000,
     reputationXP: 300,
-    rewardBadge: 'Mainland Street Champion',
+    rewardBadge: 'Mainland Circuit Participant',
     difficulty: 'Medium',
     cooldownSec: 90,
   },
@@ -193,7 +211,7 @@ export const MISSIONS_CATALOG_LIST: MissionDef[] = [
     distanceCategory: 'FAR',
     subTitle: 'Zero-Collision Executive Run',
     briefing:
-      'Transport diplomatic guests via Adekunle Interchange straight to Bourdillon Towers in Ikoyi. Any heavy collision fails the mission immediately.',
+      'Transport diplomatic guests via Adekunle Interchange straight to Bourdillon Towers in Ikoyi. Fixed participation credits/XP apply.',
     startLocationName: 'Showroom Esplanade',
     destinationName: 'Ikoyi Bourdillon Towers',
     startX: 0,
@@ -207,7 +225,6 @@ export const MISSIONS_CATALOG_LIST: MissionDef[] = [
     timeLimitSec: 135,
     baseRewardCredits: 1200,
     reputationXP: 340,
-    rewardBadge: 'Zero-Impact Chauffeur',
     difficulty: 'Medium',
     cooldownSec: 120,
     requiresNoCollision: true,
@@ -396,21 +413,67 @@ export const MISSIONS_CATALOG: Record<MissionId, MissionDef> = Object.fromEntrie
   MISSIONS_CATALOG_LIST.map((m) => [m.id, m])
 );
 
+export interface MissionCompletionTelemetry {
+  finalX: number;
+  finalZ: number;
+  gear: TransmissionGear;
+  collisionCount: number;
+  finishRank?: number | null;
+  cargoIntegrityPercent?: number;
+}
+
+export type CheckpointFailureType = 'NETWORK' | 'PERMANENT';
+
+export interface PendingCheckpointSync {
+  index: number;
+  x: number;
+  z: number;
+  name: string;
+  status: 'PENDING' | 'FAILED';
+  failureType?: CheckpointFailureType;
+  retryable?: boolean;
+  attempts: number;
+  errorMessage?: string;
+}
+
 export interface ActiveMissionSession {
   missionId: MissionId;
   state: MissionState;
   timeRemainingSec: number;
   cargoIntegrityPercent: number;
+  collisionCount: number;
   countdownVal: number;
-  currentCheckpointIdx: number; // 0 .. def.checkpoints.length (when === checkpoints.length, target is final dest)
+  currentCheckpointIdx: number; // local reached count: 0 .. def.checkpoints.length
+  acknowledgedCheckpointIdx: number; // server-acknowledged count: 0 .. totalCheckpointsRequired
+  totalCheckpointsRequired: number;
+  pendingCheckpoint: PendingCheckpointSync | null;
+  bufferedCheckpoints: Array<{ index: number; x: number; z: number; name: string }>;
   currentRaceCheckpointIdx: number;
   playerRaceRank: number;
   totalRaceCheckpoints: number;
   runToken?: string;
+  completionSubmitted?: boolean;
   rewardClaimed?: boolean;
   insideDestAwaitingPark?: boolean;
+  pendingCompletion?: {
+    provisionalReason: string;
+    telemetry: MissionCompletionTelemetry;
+    finishPosition?: number;
+  };
+  pendingFailure?: {
+    failureReason: string;
+    telemetry: MissionCompletionTelemetry;
+  };
+  provisionalRewardPreview: {
+    credits: number;
+    xp: number;
+    badge: string | null;
+  };
   resultSummary?: {
     success: boolean;
+    persisted?: boolean;
+    checkpointReportsAccepted?: boolean;
+    serverVerified?: boolean;
     creditsEarned: number;
     xpEarned: number;
     rewardBadge?: string | null;
@@ -419,47 +482,50 @@ export interface ActiveMissionSession {
   };
 }
 
+export type MissionCompletedCallback = (
+  missionId: MissionId,
+  success: boolean,
+  credits: number,
+  xp: number,
+  reason: string,
+  runToken: string | undefined,
+  telemetry: MissionCompletionTelemetry,
+  rewardBadge?: string | null
+) => void;
+
+export type MissionCheckpointCallback = (
+  missionId: MissionId,
+  checkpointIdx: number,
+  x: number,
+  z: number,
+  runToken?: string
+) => void;
+
+export type MissionAbandonCallback = (
+  missionId: MissionId,
+  runToken: string
+) => void;
+
 export class MissionManager {
   public session: ActiveMissionSession | null = null;
-  private onMissionCompletedCallback?: (
-    missionId: MissionId,
-    success: boolean,
-    credits: number,
-    xp: number,
-    reason: string,
-    runToken?: string,
-    runData?: Record<string, unknown>,
-    rewardBadge?: string | null
-  ) => void;
+  private onMissionCompletedCallback?: MissionCompletedCallback;
+  private onCheckpointReachedCallback?: MissionCheckpointCallback;
+  private onAbandonMissionCallback?: MissionAbandonCallback;
 
-  constructor(
-    onMissionCompleted?: (
-      missionId: MissionId,
-      success: boolean,
-      credits: number,
-      xp: number,
-      reason: string,
-      runToken?: string,
-      runData?: Record<string, unknown>,
-      rewardBadge?: string | null
-    ) => void
-  ) {
+  constructor(onMissionCompleted?: MissionCompletedCallback) {
     this.onMissionCompletedCallback = onMissionCompleted;
   }
 
-  public setCompletionCallback(
-    cb: (
-      missionId: MissionId,
-      success: boolean,
-      credits: number,
-      xp: number,
-      reason: string,
-      runToken?: string,
-      runData?: Record<string, unknown>,
-      rewardBadge?: string | null
-    ) => void
-  ) {
+  public setCompletionCallback(cb: MissionCompletedCallback) {
     this.onMissionCompletedCallback = cb;
+  }
+
+  public setCheckpointCallback(cb: MissionCheckpointCallback) {
+    this.onCheckpointReachedCallback = cb;
+  }
+
+  public setAbandonCallback(cb: MissionAbandonCallback) {
+    this.onAbandonMissionCallback = cb;
   }
 
   public getMissionDef(missionId: MissionId, overrides?: Record<string, Partial<MissionDef>>): MissionDef {
@@ -468,33 +534,93 @@ export class MissionManager {
     return { ...base, ...overrides[missionId] };
   }
 
+  public hasUnfinalizedServerRun(): boolean {
+    if (!this.session || !this.session.runToken) return false;
+    return (
+      this.session.state !== 'IDLE' &&
+      this.session.state !== 'BRIEFING' &&
+      this.session.state !== 'COMPLETED' &&
+      this.session.state !== 'FAILED'
+    );
+  }
+
   public openBriefing(missionId: MissionId, overrides?: Record<string, Partial<MissionDef>>): ActiveMissionSession {
     const def = this.getMissionDef(missionId, overrides);
+    const totalRaceCheckpoints =
+      def.category === 'STREET_RACE' && def.checkpoints.length > 0
+        ? def.checkpoints.length
+        : RIVAL_RACE_CHECKPOINTS.length;
+    const totalCheckpointsRequired =
+      def.category === 'STREET_RACE' ? totalRaceCheckpoints : def.checkpoints.length;
+
     this.session = {
       missionId,
       state: 'BRIEFING',
       timeRemainingSec: def.timeLimitSec,
       cargoIntegrityPercent: 100,
+      collisionCount: 0,
       countdownVal: 3,
       currentCheckpointIdx: 0,
+      acknowledgedCheckpointIdx: 0,
+      totalCheckpointsRequired,
+      pendingCheckpoint: null,
+      bufferedCheckpoints: [],
       currentRaceCheckpointIdx: 0,
       playerRaceRank: 1,
-      totalRaceCheckpoints: 10,
+      totalRaceCheckpoints,
+      completionSubmitted: false,
       rewardClaimed: false,
       insideDestAwaitingPark: false,
+      provisionalRewardPreview: {
+        credits: def.baseRewardCredits,
+        xp: def.reputationXP,
+        badge:
+          def.id === 'MISSION_B_RACE'
+            ? 'Mainland Circuit Participant'
+            : def.requiresNoCollision || def.requireParkGear
+            ? null
+            : def.rewardBadge || null,
+      },
     };
     return this.session;
   }
 
-  public startMission(runToken?: string): ActiveMissionSession | null {
-    if (!this.session) return null;
-    this.session.runToken = runToken;
-    this.session.rewardClaimed = false;
+  public startMission(
+    runToken: string,
+    timeLimitOverrideSec?: number,
+    overrides?: Record<string, Partial<MissionDef>>
+  ): ActiveMissionSession | null {
+    if (!this.session || !runToken) return null;
+    const def = this.getMissionDef(this.session.missionId, overrides);
+    const totalRaceCheckpoints =
+      def.category === 'STREET_RACE' && def.checkpoints.length > 0
+        ? def.checkpoints.length
+        : RIVAL_RACE_CHECKPOINTS.length;
+    const totalCheckpointsRequired =
+      def.category === 'STREET_RACE' ? totalRaceCheckpoints : def.checkpoints.length;
 
-    const def = MISSIONS_CATALOG[this.session.missionId];
-    if (def?.category === 'STREET_RACE') {
+    this.session.runToken = runToken;
+    this.session.completionSubmitted = false;
+    this.session.rewardClaimed = false;
+    this.session.collisionCount = 0;
+    this.session.currentCheckpointIdx = 0;
+    this.session.acknowledgedCheckpointIdx = 0;
+    this.session.totalCheckpointsRequired = totalCheckpointsRequired;
+    this.session.pendingCheckpoint = null;
+    this.session.bufferedCheckpoints = [];
+    this.session.pendingCompletion = undefined;
+    this.session.pendingFailure = undefined;
+    this.session.resultSummary = undefined;
+    this.session.timeRemainingSec =
+      typeof timeLimitOverrideSec === 'number' && timeLimitOverrideSec > 0
+        ? timeLimitOverrideSec
+        : def.timeLimitSec;
+
+    if (def.category === 'STREET_RACE') {
       this.session.state = 'COUNTDOWN';
       this.session.countdownVal = 3;
+      this.session.currentRaceCheckpointIdx = 0;
+      this.session.totalRaceCheckpoints = totalRaceCheckpoints;
     } else {
       this.session.state = 'ACTIVE';
     }
@@ -534,14 +660,306 @@ export class MissionManager {
     };
   }
 
-  private finalizeFailure(def: MissionDef, message: string, runData?: Record<string, unknown>) {
-    if (!this.session || this.session.rewardClaimed) return;
-    this.session.rewardClaimed = true;
-    this.session.state = 'FAILED';
+  private enqueueCheckpoint(index: number, x: number, z: number, name: string) {
+    if (!this.session || !this.session.runToken) return;
+    if (index < this.session.acknowledgedCheckpointIdx) return;
+    if (this.session.pendingCheckpoint?.index === index) return;
+    if (this.session.bufferedCheckpoints.some((b) => b.index === index)) return;
+
+    this.session.bufferedCheckpoints.push({ index, x, z, name });
+    this.session.bufferedCheckpoints.sort((a, b) => a.index - b.index);
+    this.dispatchNextCheckpoint();
+  }
+
+  private dispatchNextCheckpoint() {
+    if (!this.session || !this.session.runToken) return;
+    if (
+      this.session.state === 'FAILING' ||
+      this.session.state === 'FAILED' ||
+      this.session.state === 'FAILURE_SYNC_FAILED' ||
+      this.session.state === 'COMPLETED' ||
+      this.session.state === 'ABANDONING' ||
+      this.session.state === 'ABANDON_FAILED'
+    ) {
+      return;
+    }
+
+    // Do not submit next checkpoint while an earlier checkpoint is still PENDING or FAILED
+    if (this.session.pendingCheckpoint) return;
+
+    // Discard any already-acknowledged entries from queue head
+    while (
+      this.session.bufferedCheckpoints.length > 0 &&
+      this.session.bufferedCheckpoints[0].index < this.session.acknowledgedCheckpointIdx
+    ) {
+      this.session.bufferedCheckpoints.shift();
+    }
+
+    const next = this.session.bufferedCheckpoints[0];
+    if (!next || next.index !== this.session.acknowledgedCheckpointIdx) {
+      return;
+    }
+
+    this.session.bufferedCheckpoints.shift();
+    this.session.pendingCheckpoint = {
+      index: next.index,
+      x: next.x,
+      z: next.z,
+      name: next.name,
+      status: 'PENDING',
+      attempts: 1,
+    };
+
+    this.onCheckpointReachedCallback?.(
+      this.session.missionId,
+      next.index,
+      next.x,
+      next.z,
+      this.session.runToken
+    );
+  }
+
+  public applyCheckpointSyncResult(
+    missionId: MissionId,
+    runToken: string | undefined,
+    checkpointIndex: number,
+    result: {
+      recorded: boolean;
+      alreadyRecorded?: boolean;
+      expired?: boolean;
+      rejected?: boolean;
+      networkError?: boolean;
+      message?: string;
+    }
+  ): ActiveMissionSession | null {
+    if (!this.session || this.session.missionId !== missionId || this.session.runToken !== runToken) {
+      return this.session;
+    }
+
+    if (result.recorded || result.alreadyRecorded) {
+      const nextAck = Math.min(
+        this.session.totalCheckpointsRequired,
+        Math.max(this.session.acknowledgedCheckpointIdx, checkpointIndex + 1)
+      );
+      this.session.acknowledgedCheckpointIdx = nextAck;
+      this.session.bufferedCheckpoints = this.session.bufferedCheckpoints.filter(
+        (b) => b.index >= nextAck
+      );
+      if (
+        this.session.pendingCheckpoint &&
+        this.session.pendingCheckpoint.index <= checkpointIndex
+      ) {
+        this.session.pendingCheckpoint = null;
+      }
+
+      if (this.session.state === 'ACTIVE' || this.session.state === 'VERIFYING') {
+        this.dispatchNextCheckpoint();
+      }
+
+      if (
+        this.session.state === 'VERIFYING' &&
+        this.session.pendingCompletion &&
+        !this.session.pendingCheckpoint &&
+        this.session.acknowledgedCheckpointIdx >= this.session.totalCheckpointsRequired
+      ) {
+        this.dispatchCompletionSubmission();
+      }
+
+      return this.session;
+    }
+
+    if (result.expired) {
+      // Server checkpoint RPC already marked the DB row as 'failed' due to expiration.
+      // Expired runs are terminal and must never resume.
+      this.session.pendingCheckpoint = null;
+      this.session.bufferedCheckpoints = [];
+      this.session.pendingCompletion = undefined;
+      this.session.completionSubmitted = true;
+      this.session.rewardClaimed = false;
+      this.session.state = 'FAILED';
+      this.session.resultSummary = {
+        success: false,
+        persisted: true,
+        checkpointReportsAccepted: false,
+        serverVerified: false,
+        creditsEarned: 0,
+        xpEarned: 0,
+        rewardBadge: null,
+        message: result.message || 'Server time limit exceeded before checkpoint.',
+      };
+      return this.session;
+    }
+
+    const rawMsg = result.message || '';
+    const lowerMsg = rawMsg.toLowerCase();
+    const isPermanent = !result.networkError && Boolean(result.rejected);
+    const isTerminalInactive =
+      isPermanent &&
+      (lowerMsg.includes('no longer active') ||
+        lowerMsg.includes('run record not found') ||
+        lowerMsg.includes('mission not found or inactive'));
+
+    if (isTerminalInactive) {
+      this.session.pendingCheckpoint = null;
+      this.session.bufferedCheckpoints = [];
+      this.session.pendingCompletion = undefined;
+      this.session.completionSubmitted = true;
+      this.session.rewardClaimed = false;
+      this.session.state = 'FAILED';
+      this.session.resultSummary = {
+        success: false,
+        persisted: true,
+        checkpointReportsAccepted: false,
+        serverVerified: false,
+        creditsEarned: 0,
+        xpEarned: 0,
+        rewardBadge: null,
+        message: rawMsg || 'Mission run is no longer active on the server.',
+      };
+      return this.session;
+    }
+
+    if (this.session.pendingCheckpoint && this.session.pendingCheckpoint.index === checkpointIndex) {
+      this.session.pendingCheckpoint = {
+        ...this.session.pendingCheckpoint,
+        status: 'FAILED',
+        failureType: isPermanent ? 'PERMANENT' : 'NETWORK',
+        retryable: !isPermanent,
+        errorMessage:
+          rawMsg ||
+          (isPermanent
+            ? 'Checkpoint rejected by server. Re-drive through the checkpoint or abandon the run.'
+            : 'Checkpoint sync failed. Check connection and retry.'),
+      };
+    }
+
+    return this.session;
+  }
+
+  public retryPendingCheckpoint(): ActiveMissionSession | null {
+    if (!this.session || !this.session.runToken || !this.session.pendingCheckpoint) {
+      return this.session;
+    }
+    if (this.session.state !== 'ACTIVE' && this.session.state !== 'VERIFYING') {
+      return this.session;
+    }
+    const cp = this.session.pendingCheckpoint;
+    if (cp.status !== 'FAILED') {
+      return this.session;
+    }
+    // Only transient network failures may retry the exact same checkpoint coordinates.
+    // Permanent rejections must use recoverPermanentCheckpoint() (fresh drive-through) or abandon.
+    if (cp.failureType !== 'NETWORK' || !cp.retryable) {
+      return this.session;
+    }
+
+    this.session.pendingCheckpoint = {
+      ...cp,
+      status: 'PENDING',
+      failureType: undefined,
+      retryable: undefined,
+      attempts: cp.attempts + 1,
+      errorMessage: undefined,
+    };
+
+    this.onCheckpointReachedCallback?.(
+      this.session.missionId,
+      cp.index,
+      cp.x,
+      cp.z,
+      this.session.runToken
+    );
+
+    return this.session;
+  }
+
+  /**
+   * Safe recovery path after a permanent checkpoint rejection (e.g., outside zone,
+   * implausible travel speed, out-of-order). Rewinds local waypoint progress back to the
+   * last server-acknowledged checkpoint so the player must physically re-drive through
+   * the checkpoint to emit fresh coordinates. Never allowed on expired/FAILED runs.
+   */
+  public recoverPermanentCheckpoint(): ActiveMissionSession | null {
+    if (!this.session || !this.session.runToken) {
+      return this.session;
+    }
+    if (
+      this.session.state === 'FAILED' ||
+      this.session.state === 'FAILING' ||
+      this.session.state === 'FAILURE_SYNC_FAILED' ||
+      this.session.state === 'COMPLETED' ||
+      this.session.state === 'ABANDONING' ||
+      this.session.state === 'ABANDON_FAILED'
+    ) {
+      return this.session;
+    }
+    if (this.session.timeRemainingSec <= 0) {
+      return this.session;
+    }
+    const cp = this.session.pendingCheckpoint;
+    if (!cp || cp.status !== 'FAILED' || cp.failureType !== 'PERMANENT') {
+      return this.session;
+    }
+
+    const ackIdx = this.session.acknowledgedCheckpointIdx;
+    this.session.pendingCheckpoint = null;
+    this.session.bufferedCheckpoints = this.session.bufferedCheckpoints.filter(
+      (b) => b.index < ackIdx
+    );
+    this.session.currentCheckpointIdx = ackIdx;
+    this.session.currentRaceCheckpointIdx = ackIdx;
+    this.session.insideDestAwaitingPark = false;
+
+    if (this.session.state === 'VERIFYING') {
+      this.session.state = 'ACTIVE';
+      this.session.completionSubmitted = false;
+      this.session.pendingCompletion = undefined;
+      this.session.resultSummary = undefined;
+    }
+
+    return this.session;
+  }
+
+  private finalizeFailure(def: MissionDef, message: string, telemetry: MissionCompletionTelemetry) {
+    if (
+      !this.session ||
+      this.session.completionSubmitted ||
+      this.session.state === 'FAILING' ||
+      this.session.state === 'FAILED' ||
+      this.session.state === 'FAILURE_SYNC_FAILED' ||
+      this.session.state === 'COMPLETED' ||
+      this.session.state === 'ABANDONING'
+    ) {
+      return;
+    }
+    this.session.completionSubmitted = true;
+    this.session.rewardClaimed = false;
+    this.session.pendingCompletion = undefined;
+    this.session.pendingFailure = {
+      failureReason: message,
+      telemetry,
+    };
+
+    if (!this.session.runToken) {
+      this.session.state = 'FAILED';
+      this.session.resultSummary = {
+        success: false,
+        persisted: false,
+        creditsEarned: 0,
+        xpEarned: 0,
+        rewardBadge: null,
+        message,
+      };
+      return;
+    }
+
+    this.session.state = 'FAILING';
     this.session.resultSummary = {
       success: false,
+      persisted: false,
       creditsEarned: 0,
       xpEarned: 0,
+      rewardBadge: null,
       message,
     };
     this.onMissionCompletedCallback?.(
@@ -549,41 +967,354 @@ export class MissionManager {
       false,
       0,
       0,
-      `Mission Failed: ${def.title}`,
+      message || `Mission Failed: ${def.title}`,
       this.session.runToken,
-      runData
+      telemetry,
+      null
     );
   }
 
-  private finalizeSuccess(
-    def: MissionDef,
-    credits: number,
-    xp: number,
-    message: string,
-    runData?: Record<string, unknown>,
-    finishPosition?: number
-  ) {
-    if (!this.session || this.session.rewardClaimed) return;
-    this.session.rewardClaimed = true;
-    this.session.state = 'COMPLETED';
+  public applyServerFailureResult(
+    missionId: MissionId,
+    runToken: string | undefined,
+    result: {
+      persisted: boolean;
+      alreadyFinalized?: boolean;
+      status?: string;
+      failureReason?: string;
+      creditsAwarded?: number;
+      xpAwarded?: number;
+      rewardBadge?: string | null;
+      message?: string;
+    }
+  ): ActiveMissionSession | null {
+    if (!this.session || this.session.missionId !== missionId || this.session.runToken !== runToken) {
+      return this.session;
+    }
+
+    const fallbackReason =
+      this.session.pendingFailure?.failureReason ||
+      this.session.resultSummary?.message ||
+      'Mission failed.';
+    const normalizedStatus =
+      typeof result.status === 'string' ? result.status.trim().toLowerCase() : '';
+
+    if (result.alreadyFinalized) {
+      if (normalizedStatus === 'failed') {
+        this.session.rewardClaimed = false;
+        this.session.pendingFailure = undefined;
+        this.session.pendingCompletion = undefined;
+        this.session.pendingCheckpoint = null;
+        this.session.state = 'FAILED';
+        this.session.resultSummary = {
+          success: false,
+          persisted: true,
+          checkpointReportsAccepted: false,
+          serverVerified: false,
+          creditsEarned: 0,
+          xpEarned: 0,
+          rewardBadge: null,
+          message: result.failureReason || result.message || fallbackReason,
+        };
+        return this.session;
+      }
+
+      if (normalizedStatus === 'completed') {
+        // Run already completed on server: reconcile locally as COMPLETED without submitting another reward.
+        this.session.completionSubmitted = true;
+        this.session.rewardClaimed = true;
+        this.session.pendingFailure = undefined;
+        this.session.pendingCompletion = undefined;
+        this.session.pendingCheckpoint = null;
+        this.session.state = 'COMPLETED';
+        this.session.resultSummary = {
+          success: true,
+          persisted: true,
+          checkpointReportsAccepted: true,
+          serverVerified: false,
+          creditsEarned: result.creditsAwarded ?? 0,
+          xpEarned: result.xpAwarded ?? 0,
+          rewardBadge: result.rewardBadge ?? null,
+          message:
+            result.message ||
+            'Mission run was already completed and saved on the server.',
+        };
+        return this.session;
+      }
+
+      if (normalizedStatus === 'abandoned') {
+        this.session = null;
+        return null;
+      }
+
+      // Unknown or inconsistent status: preserve session and surface reconciliation error.
+      this.session.rewardClaimed = false;
+      this.session.state = 'FAILURE_SYNC_FAILED';
+      this.session.resultSummary = {
+        success: false,
+        persisted: false,
+        checkpointReportsAccepted: false,
+        serverVerified: false,
+        creditsEarned: 0,
+        xpEarned: 0,
+        rewardBadge: null,
+        message: normalizedStatus
+          ? `Reconciliation error: server reported unexpected finalized status "${result.status}" while recording failure.`
+          : result.message ||
+            'Reconciliation error: server reported run already finalized without a valid status.',
+      };
+      return this.session;
+    }
+
+    if (result.persisted && (!normalizedStatus || normalizedStatus === 'failed')) {
+      this.session.rewardClaimed = false;
+      this.session.pendingFailure = undefined;
+      this.session.pendingCompletion = undefined;
+      this.session.pendingCheckpoint = null;
+      this.session.state = 'FAILED';
+      this.session.resultSummary = {
+        success: false,
+        persisted: true,
+        checkpointReportsAccepted: false,
+        serverVerified: false,
+        creditsEarned: 0,
+        xpEarned: 0,
+        rewardBadge: null,
+        message: result.failureReason || result.message || fallbackReason,
+      };
+    } else if (result.persisted && normalizedStatus !== 'failed') {
+      this.session.rewardClaimed = false;
+      this.session.state = 'FAILURE_SYNC_FAILED';
+      this.session.resultSummary = {
+        success: false,
+        persisted: false,
+        checkpointReportsAccepted: false,
+        serverVerified: false,
+        creditsEarned: 0,
+        xpEarned: 0,
+        rewardBadge: null,
+        message: `Reconciliation error: server returned inconsistent status "${result.status}" while persisting failure.`,
+      };
+    } else {
+      this.session.rewardClaimed = false;
+      this.session.state = 'FAILURE_SYNC_FAILED';
+      this.session.resultSummary = {
+        success: false,
+        persisted: false,
+        checkpointReportsAccepted: false,
+        serverVerified: false,
+        creditsEarned: 0,
+        xpEarned: 0,
+        rewardBadge: null,
+        message:
+          result.message ||
+          `Unable to record mission failure on server (${fallbackReason}). Retry or abandon.`,
+      };
+    }
+
+    return this.session;
+  }
+
+  public retryFailureSubmission(): ActiveMissionSession | null {
+    if (
+      !this.session ||
+      this.session.state !== 'FAILURE_SYNC_FAILED' ||
+      !this.session.pendingFailure ||
+      !this.session.runToken
+    ) {
+      return this.session;
+    }
+
+    const pending = this.session.pendingFailure;
+    this.session.state = 'FAILING';
     this.session.resultSummary = {
-      success: true,
-      creditsEarned: credits,
-      xpEarned: xp,
-      rewardBadge: def.rewardBadge || null,
-      message,
-      finishPosition,
+      success: false,
+      persisted: false,
+      creditsEarned: 0,
+      xpEarned: 0,
+      rewardBadge: null,
+      message: pending.failureReason,
     };
+
+    this.onMissionCompletedCallback?.(
+      this.session.missionId,
+      false,
+      0,
+      0,
+      pending.failureReason,
+      this.session.runToken,
+      pending.telemetry,
+      null
+    );
+
+    return this.session;
+  }
+
+  private dispatchCompletionSubmission() {
+    if (!this.session || !this.session.pendingCompletion) return;
+    if (this.session.pendingCheckpoint) return;
+    if (this.session.acknowledgedCheckpointIdx < this.session.totalCheckpointsRequired) return;
+
+    const def = this.getMissionDef(this.session.missionId);
+    const pending = this.session.pendingCompletion;
+
+    // Never pass local provisional credits/XP/badges into completion callback;
+    // rewards come exclusively from the server's persisted response.
     this.onMissionCompletedCallback?.(
       this.session.missionId,
       true,
-      credits,
-      xp,
-      `Mission: ${def.title} Completed`,
+      0,
+      0,
+      `Mission: ${def.title}`,
       this.session.runToken,
-      runData,
-      def.rewardBadge || null
+      pending.telemetry,
+      null
     );
+  }
+
+  private submitForServerVerification(
+    def: MissionDef,
+    provisionalReason: string,
+    telemetry: MissionCompletionTelemetry,
+    finishPosition?: number
+  ) {
+    if (!this.session || this.session.completionSubmitted) return;
+    this.session.completionSubmitted = true;
+    this.session.rewardClaimed = false;
+    this.session.state = 'VERIFYING';
+    this.session.pendingCompletion = {
+      provisionalReason,
+      telemetry,
+      finishPosition,
+    };
+    this.session.resultSummary = {
+      success: false,
+      persisted: false,
+      creditsEarned: 0,
+      xpEarned: 0,
+      rewardBadge: null,
+      message: provisionalReason,
+      finishPosition,
+    };
+
+    if (!this.session.runToken) {
+      this.onMissionCompletedCallback?.(
+        this.session.missionId,
+        true,
+        0,
+        0,
+        `Mission: ${def.title}`,
+        undefined,
+        telemetry,
+        null
+      );
+      return;
+    }
+
+    if (
+      !this.session.pendingCheckpoint &&
+      this.session.acknowledgedCheckpointIdx >= this.session.totalCheckpointsRequired
+    ) {
+      this.dispatchCompletionSubmission();
+    } else {
+      this.dispatchNextCheckpoint();
+    }
+  }
+
+  public retryCompletionSubmission(): ActiveMissionSession | null {
+    if (
+      !this.session ||
+      this.session.state !== 'VERIFICATION_FAILED' ||
+      !this.session.pendingCompletion ||
+      !this.session.runToken
+    ) {
+      return this.session;
+    }
+
+    this.session.state = 'VERIFYING';
+    if (
+      !this.session.pendingCheckpoint &&
+      this.session.acknowledgedCheckpointIdx >= this.session.totalCheckpointsRequired
+    ) {
+      this.dispatchCompletionSubmission();
+    } else {
+      this.dispatchNextCheckpoint();
+    }
+    return this.session;
+  }
+
+  public applyServerVerificationResult(
+    missionId: MissionId,
+    runToken: string | undefined,
+    result: {
+      persisted: boolean;
+      rejected?: boolean;
+      reason?: string;
+      creditsAwarded?: number;
+      xpAwarded?: number;
+      rewardBadge?: string | null;
+      checkpointReportsAccepted?: boolean;
+      serverVerified?: boolean;
+    }
+  ): ActiveMissionSession | null {
+    if (!this.session || this.session.missionId !== missionId || this.session.runToken !== runToken) {
+      return this.session;
+    }
+
+    const prevFinishPos = this.session.resultSummary?.finishPosition;
+    const prevMsg = this.session.resultSummary?.message;
+
+    if (result.persisted && !result.rejected) {
+      this.session.rewardClaimed = true;
+      this.session.pendingCompletion = undefined;
+      this.session.state = 'COMPLETED';
+      this.session.resultSummary = {
+        success: true,
+        persisted: true,
+        checkpointReportsAccepted: Boolean(result.checkpointReportsAccepted),
+        serverVerified: Boolean(result.serverVerified),
+        creditsEarned: result.creditsAwarded ?? 0,
+        xpEarned: result.xpAwarded ?? 0,
+        rewardBadge: result.rewardBadge ?? null,
+        finishPosition: prevFinishPos,
+        message:
+          prevMsg ||
+          'Run accepted by server (run token, deadline & checkpoint reports logged; driving physics simulated client-side).',
+      };
+    } else if (result.rejected) {
+      this.session.rewardClaimed = false;
+      this.session.pendingCompletion = undefined;
+      this.session.state = 'FAILED';
+      this.session.resultSummary = {
+        success: false,
+        persisted: result.persisted,
+        checkpointReportsAccepted: false,
+        serverVerified: false,
+        creditsEarned: 0,
+        xpEarned: 0,
+        rewardBadge: null,
+        finishPosition: prevFinishPos,
+        message: result.reason || 'Mission run failed server validation.',
+      };
+    } else {
+      this.session.rewardClaimed = false;
+      this.session.state = 'VERIFICATION_FAILED';
+      this.session.resultSummary = {
+        success: false,
+        persisted: false,
+        checkpointReportsAccepted: false,
+        serverVerified: false,
+        creditsEarned: 0,
+        xpEarned: 0,
+        rewardBadge: null,
+        finishPosition: prevFinishPos,
+        message:
+          result.reason ||
+          'Unable to persist mission run with the server. No rewards were credited.',
+      };
+    }
+
+    return this.session;
   }
 
   public update(
@@ -598,6 +1329,14 @@ export class MissionManager {
       this.session.countdownVal -= delta;
       if (this.session.countdownVal <= 0) {
         this.session.state = 'ACTIVE';
+        const def = this.getMissionDef(this.session.missionId, overrides);
+        if (def.category === 'STREET_RACE' && this.session.currentRaceCheckpointIdx === 0) {
+          this.onPlayerReachRaceCheckpoint(1, this.session.playerRaceRank, overrides, {
+            x: playerPos.x,
+            z: playerPos.z,
+            gear: playerPos.gear,
+          });
+        }
       }
       return this.session;
     }
@@ -605,17 +1344,34 @@ export class MissionManager {
     if (this.session.state !== 'ACTIVE') return this.session;
 
     const def = this.getMissionDef(this.session.missionId, overrides);
+    const gear = playerPos.gear || 'D1';
+
+    if (onCollisionImpact) {
+      this.session.collisionCount += 1;
+    }
+
+    const baseTelemetry: MissionCompletionTelemetry = {
+      finalX: playerPos.x,
+      finalZ: playerPos.z,
+      gear,
+      collisionCount: this.session.collisionCount,
+      cargoIntegrityPercent: this.session.cargoIntegrityPercent,
+    };
 
     // Decrement timer
     this.session.timeRemainingSec = Math.max(0, this.session.timeRemainingSec - delta);
     if (this.session.timeRemainingSec <= 0) {
-      this.finalizeFailure(def, 'Time expired before completing the objective.');
+      this.finalizeFailure(def, 'Time expired before completing the objective.', baseTelemetry);
       return this.session;
     }
 
     // Zero-collision rule check
     if (onCollisionImpact && def.requiresNoCollision) {
-      this.finalizeFailure(def, 'Heavy collision violated the zero-impact VIP escort requirement.');
+      this.finalizeFailure(
+        def,
+        'Heavy collision violated the zero-impact VIP escort requirement.',
+        baseTelemetry
+      );
       return this.session;
     }
 
@@ -624,6 +1380,7 @@ export class MissionManager {
       this.session.cargoIntegrityPercent = Math.max(0, this.session.cargoIntegrityPercent - 14);
       if (this.session.cargoIntegrityPercent <= 0) {
         this.finalizeFailure(def, 'Cargo was destroyed due to excessive vehicle collisions.', {
+          ...baseTelemetry,
           cargoIntegrityPercent: 0,
         });
         return this.session;
@@ -636,10 +1393,12 @@ export class MissionManager {
 
     // Sequential intermediate checkpoints
     if (this.session.currentCheckpointIdx < def.checkpoints.length) {
-      const cp = def.checkpoints[this.session.currentCheckpointIdx];
+      const cpIdx = this.session.currentCheckpointIdx;
+      const cp = def.checkpoints[cpIdx];
       const distToCp = Math.hypot(playerPos.x - cp.x, playerPos.z - cp.z);
       if (distToCp <= cp.radius) {
         this.session.currentCheckpointIdx += 1;
+        this.enqueueCheckpoint(cpIdx, playerPos.x, playerPos.z, cp.name);
       }
       return this.session;
     }
@@ -650,27 +1409,18 @@ export class MissionManager {
 
     if (def.requireParkGear) {
       this.session.insideDestAwaitingPark = distToDest <= def.destRadius;
-      if (distToDest <= def.destRadius && absSpeed < 2.2 && playerPos.gear === 'P') {
-        this.finalizeSuccess(
+      if (distToDest <= def.destRadius && absSpeed < 2.2 && gear === 'P') {
+        this.submitForServerVerification(
           def,
-          def.baseRewardCredits,
-          def.reputationXP,
           `Precision arrival locked in Park (P) gear at ${def.destinationName}!`,
-          { parkedInP: true }
+          baseTelemetry
         );
       }
     } else if (distToDest <= def.destRadius && absSpeed < 16) {
-      const integrityRatio =
-        def.category === 'DELIVERY' ? Math.max(0.1, this.session.cargoIntegrityPercent / 100) : 1;
-      const earned = Math.round(def.baseRewardCredits * integrityRatio);
-      this.finalizeSuccess(
+      this.submitForServerVerification(
         def,
-        earned,
-        def.reputationXP,
-        def.category === 'DELIVERY'
-          ? `Delivery completed with ${this.session.cargoIntegrityPercent}% cargo integrity!`
-          : `Arrived safely at ${def.destinationName}!`,
-        { cargoIntegrityPercent: this.session.cargoIntegrityPercent }
+        `Arrived safely at ${def.destinationName}!`,
+        baseTelemetry
       );
     }
 
@@ -678,62 +1428,191 @@ export class MissionManager {
   }
 
   public onPlayerReachRaceCheckpoint(
-    checkpointIdx: number,
+    checkpointIdx1Based: number,
     rank: number,
-    overrides?: Record<string, Partial<MissionDef>>
+    overrides?: Record<string, Partial<MissionDef>>,
+    playerCoords?: { x: number; z: number; gear?: TransmissionGear }
   ): ActiveMissionSession | null {
     if (!this.session || this.session.state !== 'ACTIVE') return this.session;
     const def = this.getMissionDef(this.session.missionId, overrides);
     if (def.category !== 'STREET_RACE') return this.session;
+    if (checkpointIdx1Based <= this.session.currentRaceCheckpointIdx) return this.session;
 
-    this.session.currentRaceCheckpointIdx = checkpointIdx;
+    const cpZeroIdx = Math.max(0, checkpointIdx1Based - 1);
+    const cpDef = def.checkpoints[cpZeroIdx] || RIVAL_RACE_CHECKPOINTS[cpZeroIdx];
+    const rx = playerCoords?.x ?? cpDef?.x ?? def.destX;
+    const rz = playerCoords?.z ?? cpDef?.z ?? def.destZ;
+
+    this.session.currentRaceCheckpointIdx = checkpointIdx1Based;
     this.session.playerRaceRank = rank;
 
-    if (checkpointIdx >= this.session.totalRaceCheckpoints) {
-      let reward = def.baseRewardCredits;
-      let xp = def.reputationXP;
-      if (rank === 2) {
-        reward = Math.round(def.baseRewardCredits * 0.6);
-        xp = Math.round(def.reputationXP * 0.6);
-      } else if (rank === 3) {
-        reward = Math.round(def.baseRewardCredits * 0.3);
-        xp = Math.round(def.reputationXP * 0.35);
-      } else if (rank >= 4) {
-        reward = Math.round(def.baseRewardCredits * 0.1);
-        xp = Math.round(def.reputationXP * 0.15);
-      }
+    this.enqueueCheckpoint(
+      cpZeroIdx,
+      rx,
+      rz,
+      cpDef?.name || `Checkpoint ${checkpointIdx1Based}`
+    );
 
-      if (!this.session.rewardClaimed) {
-        this.session.rewardClaimed = true;
-        this.session.state = 'COMPLETED';
-        this.session.resultSummary = {
-          success: rank <= 3,
-          creditsEarned: reward,
-          xpEarned: xp,
-          rewardBadge: rank === 1 ? def.rewardBadge || null : null,
-          finishPosition: rank,
-          message:
-            rank === 1
-              ? 'Victory! You took 1st Place in the Mainland Grand Prix!'
-              : `Race Finished! You crossed the finish line in P${rank}.`,
-        };
-        this.onMissionCompletedCallback?.(
-          this.session.missionId,
-          true,
-          reward,
-          xp,
-          `Race Result: P${rank}`,
-          this.session.runToken,
-          { rank },
-          rank === 1 ? def.rewardBadge || null : null
-        );
-      }
+    if (checkpointIdx1Based >= this.session.totalRaceCheckpoints) {
+      this.submitForServerVerification(
+        def,
+        `Race finished (local HUD P${rank}). Fixed circuit participation rewards apply.`,
+        {
+          finalX: rx,
+          finalZ: rz,
+          gear: playerCoords?.gear || 'D1',
+          collisionCount: this.session.collisionCount,
+          finishRank: rank,
+        },
+        rank
+      );
     }
 
     return this.session;
   }
 
-  public abandonMission() {
+  public abandonMission(): { cleared: boolean; pendingServer: boolean } {
+    if (!this.session) {
+      return { cleared: true, pendingServer: false };
+    }
+
+    const { state, missionId, runToken, pendingCheckpoint } = this.session;
+
+    // Non-server states (briefing, missing token) or already-finalized server results clear immediately
+    if (state === 'BRIEFING' || !runToken || state === 'COMPLETED' || state === 'FAILED') {
+      this.session = null;
+      return { cleared: true, pendingServer: false };
+    }
+
+    // Do not abandon concurrently while complete_game_mission RPC is actively in-flight
+    if (state === 'VERIFYING' && !pendingCheckpoint) {
+      return { cleared: false, pendingServer: false };
+    }
+
+    // Deduplicate in-flight abandonment
+    if (state === 'ABANDONING') {
+      return { cleared: false, pendingServer: true };
+    }
+
+    this.session.state = 'ABANDONING';
+    this.onAbandonMissionCallback?.(missionId, runToken);
+    return { cleared: false, pendingServer: true };
+  }
+
+  public applyServerAbandonResult(
+    missionId: MissionId,
+    runToken: string,
+    result: {
+      abandoned?: boolean;
+      alreadyFinalized?: boolean;
+      status?: string;
+      failureReason?: string | null;
+      creditsAwarded?: number;
+      xpAwarded?: number;
+      rewardBadge?: string | null;
+      message?: string;
+    }
+  ): ActiveMissionSession | null {
+    if (!this.session || this.session.missionId !== missionId || this.session.runToken !== runToken) {
+      return this.session;
+    }
+
+    if (result.alreadyFinalized) {
+      const normalizedStatus =
+        typeof result.status === 'string' ? result.status.trim().toLowerCase() : '';
+
+      if (normalizedStatus === 'abandoned') {
+        this.session = null;
+        return null;
+      }
+
+      if (normalizedStatus === 'completed') {
+        this.session.completionSubmitted = true;
+        this.session.rewardClaimed = true;
+        this.session.pendingFailure = undefined;
+        this.session.pendingCompletion = undefined;
+        this.session.pendingCheckpoint = null;
+        this.session.state = 'COMPLETED';
+        this.session.resultSummary = {
+          success: true,
+          persisted: true,
+          checkpointReportsAccepted: true,
+          serverVerified: false,
+          creditsEarned: result.creditsAwarded ?? 0,
+          xpEarned: result.xpAwarded ?? 0,
+          rewardBadge: result.rewardBadge ?? null,
+          message:
+            result.message ||
+            'Mission run was already completed on the server.',
+        };
+        return this.session;
+      }
+
+      if (normalizedStatus === 'failed') {
+        this.session.completionSubmitted = true;
+        this.session.rewardClaimed = false;
+        this.session.pendingFailure = undefined;
+        this.session.pendingCompletion = undefined;
+        this.session.pendingCheckpoint = null;
+        this.session.state = 'FAILED';
+        this.session.resultSummary = {
+          success: false,
+          persisted: true,
+          checkpointReportsAccepted: false,
+          serverVerified: false,
+          creditsEarned: 0,
+          xpEarned: 0,
+          rewardBadge: null,
+          message:
+            result.failureReason ||
+            result.message ||
+            'Mission run had already failed on the server.',
+        };
+        return this.session;
+      }
+
+      this.session.state = 'ABANDON_FAILED';
+      this.session.resultSummary = {
+        success: false,
+        persisted: false,
+        creditsEarned: 0,
+        xpEarned: 0,
+        rewardBadge: null,
+        message: normalizedStatus
+          ? `Reconciliation error: server reported unexpected finalized status "${result.status}" during abandonment.`
+          : result.message ||
+            'Reconciliation error: server reported run already finalized without a valid status.',
+      };
+      return this.session;
+    }
+
+    if (result.abandoned) {
+      this.session = null;
+      return null;
+    }
+
+    this.session.state = 'ABANDON_FAILED';
+    this.session.resultSummary = {
+      success: false,
+      persisted: false,
+      creditsEarned: 0,
+      xpEarned: 0,
+      rewardBadge: null,
+      message:
+        result.message ||
+        'Unable to confirm mission abandonment with the server. Please retry.',
+    };
+    return this.session;
+  }
+
+  public retryAbandonment(): { cleared: boolean; pendingServer: boolean } {
+    if (!this.session || this.session.state !== 'ABANDON_FAILED') {
+      return { cleared: false, pendingServer: false };
+    }
+    return this.abandonMission();
+  }
+
+  public forceClearSession() {
     this.session = null;
   }
 }

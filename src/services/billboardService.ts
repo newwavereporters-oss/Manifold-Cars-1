@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { retryWithBackoff, withTimeout } from '../utils/networkReliability';
 
 export const ADMIN_BILLBOARD_WHATSAPP_NUMBER = '08169664607';
 export const ADMIN_BILLBOARD_WHATSAPP_E164 = '2348169664607';
@@ -111,7 +112,15 @@ export const billboardService = {
   async getActiveBillboards(): Promise<GameBillboardItem[]> {
     if (!isSupabaseConfigured) return [];
     try {
-      const { data, error } = await supabase.rpc('get_active_game_billboards');
+      const { data, error } = await retryWithBackoff(
+        () =>
+          withTimeout(
+            supabase.rpc('get_active_game_billboards'),
+            7500,
+            'Load game billboards'
+          ),
+        { maxAttempts: 2 }
+      );
       if (error) {
         if (isMissingBillboardSchemaError(error)) return [];
         console.warn('get_active_game_billboards failed:', error.message);

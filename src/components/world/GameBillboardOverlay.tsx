@@ -51,7 +51,7 @@ export const GameBillboardOverlay: React.FC<GameBillboardOverlayProps> = ({
         <button
           type="button"
           onClick={() => onBrowseMarketplace?.()}
-          className="w-full h-[54px] sm:h-[60px] px-3.5 rounded-2xl bg-[#071A2B]/85 hover:bg-[#0B2339]/90 backdrop-blur-md border border-white/15 shadow-2xl flex items-center justify-between gap-3 text-left transition-colors"
+          className="w-full h-[48px] sm:h-[60px] px-3 rounded-2xl bg-[#071A2B]/94 hover:bg-[#0B2339] border border-white/15 shadow-2xl flex items-center justify-between gap-2.5 text-left transition-colors cursor-pointer"
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center text-amber-300 shrink-0">
@@ -125,15 +125,15 @@ export const GameBillboardOverlay: React.FC<GameBillboardOverlayProps> = ({
             onOpenListing(current.slug);
           }
         }}
-        className="group relative rounded-2xl bg-[#061523]/92 hover:bg-[#081D30]/95 backdrop-blur-md border border-amber-400/35 shadow-[0_14px_34px_rgba(0,0,0,0.55)] overflow-hidden cursor-pointer transition-colors"
+        className="group relative rounded-2xl bg-[#061523]/96 hover:bg-[#081D30] border border-amber-400/35 shadow-[0_14px_34px_rgba(0,0,0,0.55)] overflow-hidden cursor-pointer transition-colors"
       >
-        <div className="flex items-center gap-2.5 sm:gap-3.5 p-2 sm:p-2.5">
+        <div className="flex items-center gap-2 sm:gap-3.5 p-1.5 sm:p-2.5">
           {/* Prev Slide Arrow */}
           {items.length > 1 && (
             <button
               type="button"
               onClick={handlePrev}
-              className="w-7 h-10 sm:w-8 sm:h-12 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white flex items-center justify-center shrink-0 transition-colors"
+              className="w-8 h-10 sm:w-9 sm:h-12 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white flex items-center justify-center shrink-0 transition-colors cursor-pointer"
               aria-label="Previous featured vehicle"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -141,7 +141,7 @@ export const GameBillboardOverlay: React.FC<GameBillboardOverlayProps> = ({
           )}
 
           {/* Vehicle Thumbnail */}
-          <div className="relative w-16 h-12 sm:w-24 sm:h-14 rounded-xl overflow-hidden bg-slate-900 border border-white/10 shrink-0">
+          <div className="relative w-14 h-10 sm:w-24 sm:h-14 [@media(max-height:480px)]:h-9 rounded-xl overflow-hidden bg-slate-900 border border-white/10 shrink-0">
             {!imgBroken && current.image_url ? (
               <img
                 src={current.image_url}
@@ -201,8 +201,9 @@ export const GameBillboardOverlay: React.FC<GameBillboardOverlayProps> = ({
               </span>
             </div>
 
-            <span className="px-2.5 py-1 rounded-lg bg-[#EF233C] group-hover:bg-[#d90429] text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider flex items-center gap-1 whitespace-nowrap shadow-md">
-              <span>See Discounted Price</span>
+            <span className="px-2 sm:px-2.5 py-1 rounded-lg bg-[#EF233C] group-hover:bg-[#d90429] text-white text-[9px] sm:text-[10px] font-black uppercase tracking-wider flex items-center gap-1 whitespace-nowrap shadow-md">
+              <span className="sm:hidden">View Deal</span>
+              <span className="hidden sm:inline">See Discounted Price</span>
               <ExternalLink className="w-2.5 h-2.5 hidden sm:inline" />
             </span>
           </div>
@@ -212,7 +213,7 @@ export const GameBillboardOverlay: React.FC<GameBillboardOverlayProps> = ({
             <button
               type="button"
               onClick={handleNext}
-              className="w-7 h-10 sm:w-8 sm:h-12 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white flex items-center justify-center shrink-0 transition-colors"
+              className="w-8 h-10 sm:w-9 sm:h-12 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white flex items-center justify-center shrink-0 transition-colors cursor-pointer"
               aria-label="Next featured vehicle"
             >
               <ChevronRight className="w-4 h-4" />

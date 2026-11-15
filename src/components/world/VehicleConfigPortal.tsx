@@ -35,6 +35,7 @@ import {
   confirmVehicleConfiguration,
   type PlayerProfile,
 } from '../../services/playerService';
+import { disposeObject3D, resolveWebGLProfile } from '../../utils/webglPerformance';
 
 interface VehicleConfigPortalProps {
   profile: PlayerProfile;
@@ -98,9 +99,13 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
     const container = mountRef.current;
     if (!container) return;
 
+    const perfProfile = resolveWebGLProfile('AUTO');
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer = new THREE.WebGLRenderer({
+        antialias: perfProfile.antialias,
+        powerPreference: 'high-performance',
+      });
     } catch {
       setWebglUnavailable(true);
       return;
@@ -119,25 +124,29 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
     );
 
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, perfProfile.maxDpr));
+    renderer.shadowMap.enabled = perfProfile.shadowsEnabled;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.25;
     container.appendChild(renderer.domElement);
 
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    const roomEnv = new RoomEnvironment();
-    const envRT = pmrem.fromScene(roomEnv, 0.04);
-    scene.environment = envRT.texture;
-    scene.environmentIntensity = 1.05;
-    roomEnv.dispose();
+    let pmrem: THREE.PMREMGenerator | null = null;
+    let envRT: THREE.WebGLRenderTarget | null = null;
+    if (perfProfile.useEnvMap) {
+      pmrem = new THREE.PMREMGenerator(renderer);
+      const roomEnv = new RoomEnvironment();
+      envRT = pmrem.fromScene(roomEnv, 0.04);
+      scene.environment = envRT.texture;
+      scene.environmentIntensity = 1.05;
+      roomEnv.dispose();
+    }
 
     // Lighting
     const hemi = new THREE.HemisphereLight(0xe0f2fe, 0x1e293b, 1.3);
     scene.add(hemi);
     const keyLight = new THREE.DirectionalLight(0xfffbeb, 2.4);
     keyLight.position.set(7, 11, 8);
-    keyLight.castShadow = true;
+    keyLight.castShadow = perfProfile.shadowsEnabled;
     scene.add(keyLight);
     const rimLight = new THREE.DirectionalLight(0x38bdf8, 1.1);
     rimLight.position.set(-8, 6, -7);
@@ -145,26 +154,23 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
 
     // Showroom Turntable Platform
     const stageGroup = new THREE.Group();
-    const disc = new THREE.Mesh(
-      new THREE.CylinderGeometry(3.8, 4.1, 0.28, 48),
-      new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.25, metalness: 0.78 })
-    );
+    const discGeo = new THREE.CylinderGeometry(3.8, 4.1, 0.28, 48);
+    const discMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.25, metalness: 0.78 });
+    const disc = new THREE.Mesh(discGeo, discMat);
     disc.position.y = -0.14;
     disc.receiveShadow = true;
     stageGroup.add(disc);
 
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(3.68, 3.82, 48),
-      new THREE.MeshBasicMaterial({ color: 0xef233c, side: THREE.DoubleSide })
-    );
+    const ringGeo = new THREE.RingGeometry(3.68, 3.82, 48);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xef233c, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.01;
     stageGroup.add(ring);
 
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(30, 32),
-      new THREE.MeshStandardMaterial({ color: 0x07121e, roughness: 0.6, metalness: 0.35 })
-    );
+    const floorGeo = new THREE.CircleGeometry(30, 32);
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x07121e, roughness: 0.6, metalness: 0.35 });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.28;
     floor.receiveShadow = true;
@@ -175,10 +181,18 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
     scene.add(holder);
     carHolderRef.current = holder;
 
+    const tmpEyePos = new THREE.Vector3();
+    const tmpTargetPos = new THREE.Vector3();
     let rafId = 0;
     let lastMs = performance.now();
+    let contextLost = false;
+
     const animate = (nowMs: number) => {
       rafId = requestAnimationFrame(animate);
+      if (document.hidden || contextLost) {
+        lastMs = nowMs;
+        return;
+      }
       const dt = Math.min((nowMs - lastMs) / 1000, 0.08);
       lastMs = nowMs;
 
@@ -188,12 +202,8 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
 
       if (cameraFocusRef.current === 'INTERIOR') {
         const spec = VEHICLE_SPEC_PROFILES[vehicleTypeRef.current];
-        const eyePos = new THREE.Vector3(
-          0.36,
-          spec.cockpitOffset.y + 0.08,
-          spec.cockpitOffset.z - 0.14
-        );
-        camera.position.lerp(eyePos, Math.min(1, dt * 5));
+        tmpEyePos.set(0.36, spec.cockpitOffset.y + 0.08, spec.cockpitOffset.z - 0.14);
+        camera.position.lerp(tmpEyePos, Math.min(1, dt * 5));
         camera.lookAt(
           spec.cockpitOffset.x * 0.6,
           spec.cockpitOffset.y - 0.16,
@@ -201,12 +211,12 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
         );
       } else {
         const radius = 5.9;
-        const targetPos = new THREE.Vector3(
+        tmpTargetPos.set(
           Math.sin(orbitYawRef.current) * radius,
           2.05,
           Math.cos(orbitYawRef.current) * radius
         );
-        camera.position.lerp(targetPos, Math.min(1, dt * 6));
+        camera.position.lerp(tmpTargetPos, Math.min(1, dt * 6));
         camera.lookAt(0, 0.78, 0);
       }
 
@@ -214,6 +224,19 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
     };
     rafId = requestAnimationFrame(animate);
 
+    const onVisibilityChange = () => {
+      if (!document.hidden) {
+        lastMs = performance.now();
+      }
+    };
+    const onContextLost = (e: Event) => {
+      e.preventDefault();
+      contextLost = true;
+    };
+    const onContextRestored = () => {
+      contextLost = false;
+      lastMs = performance.now();
+    };
     const onResize = () => {
       if (!container) return;
       const w = container.clientWidth;
@@ -223,13 +246,31 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    renderer.domElement.addEventListener('webglcontextlost', onContextLost);
+    renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);
     window.addEventListener('resize', onResize);
 
     return () => {
       window.removeEventListener('resize', onResize);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored);
       cancelAnimationFrame(rafId);
-      envRT.dispose();
-      pmrem.dispose();
+      while (holder.children.length > 0) {
+        const child = holder.children[0];
+        holder.remove(child);
+        disposeObject3D(child);
+      }
+      discGeo.dispose();
+      discMat.dispose();
+      ringGeo.dispose();
+      ringMat.dispose();
+      floorGeo.dispose();
+      floorMat.dispose();
+      envRT?.dispose();
+      pmrem?.dispose();
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
@@ -242,7 +283,9 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
     const holder = carHolderRef.current;
     if (!holder) return;
     while (holder.children.length > 0) {
-      holder.remove(holder.children[0]);
+      const child = holder.children[0];
+      holder.remove(child);
+      disposeObject3D(child);
     }
 
     const custom: CarCustomization = {
@@ -305,9 +348,9 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
     MUSIC_PREFERENCE_OPTIONS.find((m) => m.id === musicPref) || MUSIC_PREFERENCE_OPTIONS[0];
 
   return (
-    <div className="relative z-20 flex flex-col lg:flex-row h-full w-full bg-[#061524] overflow-hidden">
+    <div className="relative z-20 flex flex-col lg:flex-row min-h-full lg:h-full w-full bg-[#061524] overflow-y-auto lg:overflow-hidden">
       {/* LEFT / TOP: Interactive 3D Vehicle Turntable Showcase */}
-      <div className="relative flex-1 min-h-[300px] lg:min-h-0 flex flex-col justify-between overflow-hidden">
+      <div className="relative h-[250px] sm:h-[320px] lg:h-auto lg:flex-1 shrink-0 flex flex-col justify-between overflow-hidden">
         {!webglUnavailable ? (
           <div
             ref={mountRef}
@@ -326,7 +369,7 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
             onPointerLeave={() => {
               draggingRef.current.active = false;
             }}
-            className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"
+            className="absolute inset-0 w-full h-full touch-pan-y cursor-grab active:cursor-grabbing"
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-[#071A2B] text-gray-300 text-sm p-6 text-center">
@@ -335,30 +378,30 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
         )}
 
         {/* Top Showroom Overlay Bar */}
-        <div className="relative z-10 p-4 sm:p-6 flex flex-wrap items-center justify-between gap-3 pointer-events-none">
-          <div className="pointer-events-auto bg-[#071A2B]/85 backdrop-blur-xl px-4 py-2.5 rounded-2xl border border-white/15 shadow-xl">
+        <div className="relative z-10 p-3 sm:p-5 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+          <div className="pointer-events-auto bg-[#071A2B]/94 px-3.5 py-2 rounded-2xl border border-white/15 shadow-xl">
             <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 block">
-              Driver Garage • {profile.nickname}
+              Garage • {profile.nickname}
             </span>
-            <h1 className="text-base sm:text-lg font-black text-white tracking-tight">
+            <h1 className="text-sm sm:text-lg font-black text-white tracking-tight">
               {activeSpec.name}
             </h1>
           </div>
 
-          <div className="pointer-events-auto flex items-center gap-2">
+          <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() =>
                 setCameraFocus((prev) => (prev === 'EXTERIOR' ? 'INTERIOR' : 'EXTERIOR'))
               }
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+              className={`min-h-[44px] flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 cameraFocus === 'INTERIOR'
                   ? 'bg-[#EF233C] border-[#EF233C] text-white'
-                  : 'bg-[#071A2B]/85 border-white/15 text-white hover:bg-white/10'
+                  : 'bg-[#071A2B]/94 border-white/15 text-white hover:bg-white/10'
               }`}
             >
               <Eye className="w-3.5 h-3.5" />
-              <span>{cameraFocus === 'INTERIOR' ? 'Exterior 360°' : 'Inspect Interior'}</span>
+              <span>{cameraFocus === 'INTERIOR' ? 'Exterior' : 'Interior'}</span>
             </button>
 
             <button
@@ -371,20 +414,20 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
                   handleToggleMusicPreview(musicPref);
                 }
               }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#071A2B]/85 border border-white/15 text-xs font-bold text-gray-200 hover:text-white cursor-pointer whitespace-nowrap"
+              className="min-h-[44px] flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#071A2B]/94 border border-white/15 text-xs font-bold text-gray-200 hover:text-white cursor-pointer whitespace-nowrap"
             >
               {isAudioPreviewing ? (
                 <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
               ) : (
                 <VolumeX className="w-3.5 h-3.5 text-gray-400" />
               )}
-              <span>{isAudioPreviewing ? 'Audio On' : 'Preview Audio'}</span>
+              <span className="hidden sm:inline">{isAudioPreviewing ? 'Audio On' : 'Preview Audio'}</span>
             </button>
 
             <button
               type="button"
               onClick={onLogout}
-              className="p-2 rounded-xl bg-[#071A2B]/85 border border-white/15 text-gray-300 hover:text-white cursor-pointer"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-[#071A2B]/94 border border-white/15 text-gray-300 hover:text-white cursor-pointer"
               title="Sign Out"
             >
               <LogOut className="w-4 h-4" />
@@ -393,23 +436,23 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
         </div>
 
         {/* Bottom 3D Spec Strip */}
-        <div className="relative z-10 p-4 sm:p-6 pointer-events-none flex flex-wrap items-end justify-between gap-3">
-          <div className="bg-[#071A2B]/85 backdrop-blur-xl px-4 py-2.5 rounded-2xl border border-white/15 flex items-center gap-4 text-xs font-mono">
+        <div className="relative z-10 p-3 sm:p-5 pointer-events-none flex flex-wrap items-end justify-between gap-2">
+          <div className="bg-[#071A2B]/94 px-3.5 py-2 rounded-2xl border border-white/15 flex items-center gap-3.5 text-xs font-mono">
             <div>
               <span className="text-[9px] text-gray-400 uppercase block">Power</span>
               <span className="font-black text-white">{activeSpec.horsepower} HP</span>
             </div>
             <div>
-              <span className="text-[9px] text-gray-400 uppercase block">0–100 km/h</span>
+              <span className="text-[9px] text-gray-400 uppercase block">0–100</span>
               <span className="font-black text-emerald-400">{activeSpec.acceleration0To100}s</span>
             </div>
             <div>
-              <span className="text-[9px] text-gray-400 uppercase block">Drivetrain</span>
+              <span className="text-[9px] text-gray-400 uppercase block">Drive</span>
               <span className="font-black text-amber-300">{activeSpec.drivenWheels}</span>
             </div>
           </div>
 
-          <div className="hidden sm:flex items-center gap-1.5 bg-[#071A2B]/80 px-3 py-1.5 rounded-xl border border-white/10 text-[11px] text-gray-300">
+          <div className="hidden sm:flex items-center gap-1.5 bg-[#071A2B]/90 px-3 py-1.5 rounded-xl border border-white/10 text-[11px] text-gray-300">
             <RotateCw className="w-3.5 h-3.5 text-sky-400" />
             <span>Drag vehicle to rotate 360°</span>
           </div>
@@ -417,8 +460,8 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
       </div>
 
       {/* RIGHT: Configuration Controls & 24-Hour Lock Gate */}
-      <div className="w-full lg:w-[460px] bg-[#071A2B]/98 border-t lg:border-t-0 lg:border-l border-white/10 flex flex-col max-h-[60vh] lg:max-h-full">
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+      <div className="w-full lg:w-[460px] bg-[#071A2B] border-t lg:border-t-0 lg:border-l border-white/10 flex flex-col flex-1 lg:flex-none lg:h-full">
+        <div className="lg:flex-1 lg:overflow-y-auto p-4 sm:p-5 space-y-4">
           {/* 24-Hour Lock Banner when active */}
           {lockStatus.isLocked ? (
             <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-400/50 space-y-2.5">
@@ -623,7 +666,7 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
         </div>
 
         {/* Sticky Confirm CTA */}
-        <div className="p-4 border-t border-white/10 bg-[#05121f] space-y-2">
+        <div className="sticky bottom-0 z-20 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] border-t border-white/10 bg-[#05121f] space-y-2">
           {errorMsg && (
             <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/40 text-red-200 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
@@ -635,7 +678,7 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
             <button
               type="button"
               onClick={onCancelToGame}
-              className="w-full h-11 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full min-h-[46px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
             >
               <span>Return to Lagos World</span>
               <ArrowRight className="w-4 h-4" />
@@ -645,7 +688,7 @@ export const VehicleConfigPortal: React.FC<VehicleConfigPortalProps> = ({
               type="button"
               disabled={isSubmitting}
               onClick={handleConfirm}
-              className="w-full h-11 rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-60 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-[#EF233C]/30 cursor-pointer"
+              className="w-full min-h-[46px] rounded-xl bg-[#EF233C] hover:bg-[#d90429] disabled:opacity-60 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-[#EF233C]/30 cursor-pointer"
             >
               {isSubmitting ? (
                 <>

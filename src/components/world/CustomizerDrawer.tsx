@@ -95,24 +95,25 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
   );
 
   return (
-    <div className="fixed inset-y-0 right-0 w-full sm:w-[460px] bg-[#071A2B]/98 backdrop-blur-2xl border-l border-white/10 z-50 p-5 sm:p-6 flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-200 overflow-y-auto">
-      <div className="space-y-5">
+    <div className="fixed inset-y-0 right-0 h-dvh w-full sm:w-[460px] bg-[#071A2B]/98 border-l border-white/10 z-50 flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-white/10">
-          <div className="flex items-center gap-2.5">
-            <Sparkles className="w-5 h-5 text-[#EF233C]" />
-            <div>
-              <h2 className="text-base font-black text-white uppercase tracking-wider">
+        <div className="flex items-center justify-between pb-3.5 border-b border-white/10">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Sparkles className="w-5 h-5 text-[#EF233C] shrink-0" />
+            <div className="min-w-0">
+              <h2 className="text-base font-black text-white uppercase tracking-wider truncate">
                 MANIFOLD Tuning & Garage
               </h2>
-              <span className="text-[10px] text-gray-400 block font-mono">
+              <span className="text-[10px] text-gray-400 block font-mono truncate">
                 Interactive Vehicle Workshop & Upgrades
               </span>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-white rounded-xl hover:bg-white/5 transition-colors shrink-0 cursor-pointer"
+            aria-label="Close Tuning Drawer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -152,7 +153,7 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
         <div className="grid grid-cols-3 gap-1 bg-white/5 p-1 rounded-xl border border-white/5 text-xs font-bold uppercase">
           <button
             onClick={() => setActiveTab('GARAGE')}
-            className={`py-2 rounded-lg transition-all ${
+            className={`min-h-[40px] py-2 rounded-lg transition-all cursor-pointer ${
               activeTab === 'GARAGE' ? 'bg-[#EF233C] text-white shadow' : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -160,7 +161,7 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('AESTHETICS')}
-            className={`py-2 rounded-lg transition-all ${
+            className={`min-h-[40px] py-2 rounded-lg transition-all cursor-pointer ${
               activeTab === 'AESTHETICS' ? 'bg-[#EF233C] text-white shadow' : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -168,7 +169,7 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('PERFORMANCE')}
-            className={`py-2 rounded-lg transition-all ${
+            className={`min-h-[40px] py-2 rounded-lg transition-all cursor-pointer ${
               activeTab === 'PERFORMANCE' ? 'bg-[#EF233C] text-white shadow' : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -356,7 +357,7 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
                   <button
                     key={spoiler.id}
                     onClick={() => onChange({ ...customization, spoiler: spoiler.id })}
-                    className={`p-2 rounded-xl border text-left transition-all ${
+                    className={`p-2 rounded-xl border text-left whitespace-normal transition-all cursor-pointer ${
                       (customization.spoiler || 'NONE') === spoiler.id
                         ? 'border-[#EF233C] bg-white/10 shadow'
                         : 'border-white/10 bg-white/5 text-gray-400 hover:text-white'
@@ -519,7 +520,7 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
                         onPurchaseUpgrade(item.cost, { ...customization, ecuStage: item.stage });
                       }
                     }}
-                    className={`p-2 rounded-xl border text-left transition-all ${
+                    className={`p-2 rounded-xl border text-left whitespace-normal transition-all cursor-pointer ${
                       ecuStage === item.stage
                         ? 'border-[#EF233C] bg-white/10 text-white'
                         : 'border-white/10 bg-white/5 hover:border-white/20 text-gray-300'
@@ -559,7 +560,7 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
                         onPurchaseUpgrade(item.cost, { ...customization, suspension: item.id });
                       }
                     }}
-                    className={`p-2 rounded-xl border text-left transition-all ${
+                    className={`p-2 rounded-xl border text-left whitespace-normal transition-all cursor-pointer ${
                       (customization.suspension || 'STOCK') === item.id
                         ? 'border-[#EF233C] bg-white/10 text-white'
                         : 'border-white/10 bg-white/5 hover:border-white/20 text-gray-300'
@@ -634,10 +635,10 @@ export const CustomizerDrawer: React.FC<CustomizerDrawerProps> = ({
       </div>
 
       {/* Confirmation Button */}
-      <div className="pt-4 mt-4 border-t border-white/10">
+      <div className="p-4 sm:p-5 border-t border-white/10 bg-[#05111d] shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <button
           onClick={onClose}
-          className="w-full py-3 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-xl hover:shadow-[#EF233C]/30"
+          className="w-full min-h-[46px] py-3 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-xl hover:shadow-[#EF233C]/30 cursor-pointer"
         >
           Confirm Setup & Drive
         </button>

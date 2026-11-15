@@ -62,7 +62,7 @@ export const DealerBillboardPanel: React.FC<DealerBillboardPanelProps> = ({
 
   const activeAssignments = (state?.assignments || []).filter((a) => a.status === 'active');
   const activeVehicleIds = new Set(activeAssignments.map((a) => a.vehicle_id));
-  const publishedCars = cars.filter((c) => c.status === 'PUBLISHED');
+  const publishedCars = cars.filter((c) => String(c.status || '').toLowerCase() === 'published');
 
   const handleAssign = async (car: DealerCarRecord, replaceExisting = false) => {
     setBusyCarId(car.id);

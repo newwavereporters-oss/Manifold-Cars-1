@@ -216,27 +216,27 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-30 pointer-events-none select-none touch-none pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]"
+      className="fixed inset-x-0 bottom-0 z-30 pointer-events-none select-none touch-none pb-[max(0.6rem,env(safe-area-inset-bottom))] [@media(max-height:480px)]:pb-2 pl-[max(0.65rem,env(safe-area-inset-left))] pr-[max(0.65rem,env(safe-area-inset-right))]"
       aria-label="Mobile Driving Controls"
     >
       <div className="flex items-end justify-between w-full max-w-5xl mx-auto gap-2">
         {/* LEFT THUMB ZONE: STEERING */}
         <div
-          className="pointer-events-auto flex items-center gap-2.5 sm:gap-3"
+          className="pointer-events-auto flex items-center gap-2 sm:gap-3"
           onPointerDown={(e) => e.stopPropagation()}
         >
           <button
             type="button"
             {...bindPointerControl('left')}
-            className={`w-[66px] h-[66px] sm:w-20 sm:h-20 rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
+            className={`w-[64px] h-[64px] sm:w-20 sm:h-20 [@media(max-height:480px)]:w-[58px] [@media(max-height:480px)]:h-[58px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
               isLeftActive
                 ? 'bg-[#EF233C] border-red-300 text-white scale-95 ring-4 ring-[#EF233C]/30'
-                : 'bg-[#071A2B]/85 backdrop-blur-md border-white/25 text-white'
+                : 'bg-[#071A2B]/94 border-white/25 text-white'
             }`}
             aria-label="Steer Left"
           >
             <span className="text-xl sm:text-2xl leading-none font-black">◀</span>
-            <span className="text-[9px] font-mono opacity-75 mt-1 tracking-wider font-bold">
+            <span className="text-[9px] font-mono opacity-80 mt-0.5 tracking-wider font-bold">
               LEFT
             </span>
           </button>
@@ -244,15 +244,15 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
           <button
             type="button"
             {...bindPointerControl('right')}
-            className={`w-[66px] h-[66px] sm:w-20 sm:h-20 rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
+            className={`w-[64px] h-[64px] sm:w-20 sm:h-20 [@media(max-height:480px)]:w-[58px] [@media(max-height:480px)]:h-[58px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
               isRightActive
                 ? 'bg-[#EF233C] border-red-300 text-white scale-95 ring-4 ring-[#EF233C]/30'
-                : 'bg-[#071A2B]/85 backdrop-blur-md border-white/25 text-white'
+                : 'bg-[#071A2B]/94 border-white/25 text-white'
             }`}
             aria-label="Steer Right"
           >
             <span className="text-xl sm:text-2xl leading-none font-black">▶</span>
-            <span className="text-[9px] font-mono opacity-75 mt-1 tracking-wider font-bold">
+            <span className="text-[9px] font-mono opacity-80 mt-0.5 tracking-wider font-bold">
               RIGHT
             </span>
           </button>
@@ -260,12 +260,12 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
 
         {/* RIGHT THUMB ZONE: COMPACT GEAR STRIP + PEDALS */}
         <div
-          className="pointer-events-auto flex flex-col items-end gap-2"
+          className="pointer-events-auto flex flex-col items-end gap-1.5 sm:gap-2"
           onPointerDown={(e) => e.stopPropagation()}
         >
           {/* Compact Transmission Selector Strip (P / D0 / D2 / D1 / R) */}
           <div
-            className="flex items-center gap-1 p-1 rounded-xl bg-[#071A2B]/90 backdrop-blur-md border border-white/20 shadow-xl"
+            className="flex items-center gap-1 p-1 rounded-xl bg-[#071A2B]/96 border border-white/20 shadow-xl"
             role="group"
             aria-label="Transmission Gear Selector"
           >
@@ -291,7 +291,7 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
                   onClick={(e) => {
                     e.stopPropagation();
                   }}
-                  className={`min-w-[34px] h-[34px] sm:min-w-[38px] sm:h-[36px] px-1.5 rounded-lg font-mono text-[11px] font-black tracking-tight transition-colors whitespace-nowrap shrink-0 flex items-center justify-center ${
+                  className={`min-w-[38px] h-[42px] sm:min-w-[42px] sm:h-[44px] [@media(max-height:480px)]:h-[36px] px-1.5 rounded-lg font-mono text-[11px] font-black tracking-tight transition-colors whitespace-nowrap shrink-0 flex items-center justify-center ${
                     active ? activeStyle : 'text-slate-300 hover:bg-white/10'
                   }`}
                   aria-pressed={active}
@@ -308,10 +308,10 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
               <button
                 type="button"
                 {...bindPointerControl('handbrake')}
-                className={`w-13 h-15 sm:w-16 sm:h-18 rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
+                className={`w-[52px] h-[60px] sm:w-16 sm:h-18 [@media(max-height:480px)]:h-[54px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
                   isHandbrakeActive
                     ? 'bg-amber-400 border-amber-200 text-slate-950 scale-95 ring-4 ring-amber-400/35'
-                    : 'bg-[#071A2B]/85 backdrop-blur-md border-amber-400/45 text-amber-300'
+                    : 'bg-[#071A2B]/94 border-amber-400/50 text-amber-300'
                 }`}
                 aria-label="Drift Handbrake"
               >
@@ -322,36 +322,36 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
             <button
               type="button"
               {...bindPointerControl('backward')}
-              className={`w-[64px] h-[74px] sm:w-18 sm:h-24 rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
+              className={`w-[62px] h-[72px] sm:w-18 sm:h-24 [@media(max-height:480px)]:h-[62px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
                 isBackwardActive
                   ? 'bg-red-600 border-red-300 text-white scale-95 ring-4 ring-red-500/35'
-                  : 'bg-[#071A2B]/88 backdrop-blur-md border-white/25 text-red-400'
+                  : 'bg-[#071A2B]/94 border-white/25 text-red-400'
               }`}
               aria-label="Brake"
             >
               <span className="text-lg sm:text-xl leading-none font-black">▼</span>
-              <span className="text-[10px] sm:text-[11px] font-mono mt-1 font-black tracking-wider">
+              <span className="text-[10px] sm:text-[11px] font-mono mt-0.5 font-black tracking-wider">
                 BRAKE
               </span>
-              <span className="text-[8px] font-mono opacity-65">STOP</span>
+              <span className="text-[8px] font-mono opacity-65 [@media(max-height:480px)]:hidden">STOP</span>
             </button>
 
             <button
               type="button"
               {...bindPointerControl('forward')}
-              className={`w-[74px] h-[88px] sm:w-20 sm:h-28 rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
+              className={`w-[72px] h-[84px] sm:w-20 sm:h-28 [@media(max-height:480px)]:h-[72px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
                 selectedGear === 'P'
-                  ? 'bg-slate-800/80 border-slate-500/50 text-slate-400 opacity-75'
+                  ? 'bg-slate-800/94 border-slate-500/50 text-slate-400 opacity-80'
                   : isForwardActive
                   ? 'bg-emerald-500 border-emerald-200 text-slate-950 scale-95 ring-4 ring-emerald-400/40'
-                  : 'bg-gradient-to-t from-[#071A2B]/92 via-slate-800/88 to-slate-700/80 backdrop-blur-md border-emerald-400/65 text-emerald-300'
+                  : 'bg-gradient-to-t from-[#071A2B] via-[#0d2a44] to-[#133859] border-emerald-400/70 text-emerald-300'
               }`}
               aria-label={selectedGear === 'R' ? 'Reverse Throttle' : 'Gas Throttle'}
             >
               <span className="text-xl sm:text-2xl leading-none font-black">
                 {selectedGear === 'R' ? '▼' : '▲'}
               </span>
-              <span className="text-xs sm:text-sm font-mono mt-1 font-black tracking-widest text-white">
+              <span className="text-xs sm:text-sm font-mono mt-0.5 font-black tracking-widest text-white">
                 {selectedGear === 'P' ? 'PARK' : selectedGear === 'R' ? 'REV' : 'GAS'}
               </span>
               <span className="text-[8px] font-mono text-emerald-300 font-bold">

@@ -503,9 +503,16 @@ export class TrafficEngine {
     };
   }
 
-  public update(delta: number, playerX: number, playerZ: number, _playerSpeed: number) {
+  public update(
+    delta: number,
+    playerX: number,
+    playerZ: number,
+    _playerSpeed: number,
+    cullDistance = 320
+  ) {
     const dt = Math.min(delta, 0.06);
     this.elapsedSec += dt;
+    const cullDistSq = cullDistance * cullDistance;
 
     for (let index = 0; index < this.vehicles.length; index++) {
       const car = this.vehicles[index];
@@ -641,9 +648,16 @@ export class TrafficEngine {
       car.y = currentY;
       car.z = currentZ;
 
-      car.group.position.set(currentX, currentY, currentZ);
-      car.group.rotation.y = car.rotation;
-      car.group.rotation.x = getBridgePitchAt(currentX, currentZ, car.rotation, currentY);
+      const distSqToFocus = (currentX - playerX) * (currentX - playerX) + (currentZ - playerZ) * (currentZ - playerZ);
+      const isVisible = distSqToFocus <= cullDistSq;
+      if (car.group.visible !== isVisible) {
+        car.group.visible = isVisible;
+      }
+      if (isVisible) {
+        car.group.position.set(currentX, currentY, currentZ);
+        car.group.rotation.y = car.rotation;
+        car.group.rotation.x = getBridgePitchAt(currentX, currentZ, car.rotation, currentY);
+      }
     }
   }
 

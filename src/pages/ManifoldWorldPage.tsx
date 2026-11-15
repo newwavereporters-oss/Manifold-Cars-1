@@ -36,7 +36,11 @@ import {
 import { AudioDriveMode, engineAudio } from '../utils/engineAudio';
 import { musicLibrary } from '../utils/musicLibraryService';
 import { billboardService, type GameBillboardItem } from '../services/billboardService';
-import { missionService, type MissionProgressStat } from '../services/missionService';
+import {
+  dispatchBestEffortPageExitAbandon,
+  missionService,
+  type MissionProgressStat,
+} from '../services/missionService';
 import { Car } from '../types';
 import {
   isSupabaseConfigured,
@@ -61,7 +65,13 @@ import {
   type OutgoingInvitationState,
   type RemotePlayerPeer,
 } from '../services/worldMultiplayerService';
-import { Ban, Loader2, LogOut } from 'lucide-react';
+import { Ban, Loader2, LogOut, RotateCcw } from 'lucide-react';
+import {
+  getSavedQualityMode,
+  saveQualityMode,
+  resolveWebGLProfile,
+  type WebGLQualityMode,
+} from '../utils/webglPerformance';
 
 interface ManifoldWorldPageProps {
   cars: Car[];
@@ -143,34 +153,35 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     } catch {}
   }, [customization]);
 
-  // Virtual Economy (MANIFOLD Credits)
-  const [playerCredits, setPlayerCredits] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('manifold_player_credits');
-      return saved ? parseInt(saved, 10) : 5000;
-    } catch {
-      return 5000;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('manifold_player_credits', playerCredits.toString());
-    } catch {}
-  }, [playerCredits]);
+  // Virtual Economy (MANIFOLD Credits - authoritative from player_profiles DB)
+  const [playerCredits, setPlayerCredits] = useState<number>(5000);
 
   const [creditNotification, setCreditNotification] = useState<{
     amount: number;
     reason: string;
   } | null>(null);
 
-  const handleAwardCredits = (amount: number, reason: string) => {
+  const [qualityMode, setQualityMode] = useState<WebGLQualityMode>(() => getSavedQualityMode());
+  const [initStage, setInitStage] = useState<{ step: string; progress: number }>({
+    step: 'Preparing Lagos world...',
+    progress: 15,
+  });
+  const [webglContextLost, setWebglContextLost] = useState(false);
+  const [worldRetryKey, setWorldRetryKey] = useState(0);
+  const [initStalled, setInitStalled] = useState(false);
+
+  const handleQualityModeChange = useCallback((mode: WebGLQualityMode) => {
+    setQualityMode(mode);
+    saveQualityMode(mode);
+  }, []);
+
+  const handleAwardCredits = useCallback((amount: number, reason: string) => {
     setPlayerCredits((prev) => prev + amount);
     setCreditNotification({ amount, reason });
     setTimeout(() => {
       setCreditNotification(null);
     }, 3500);
-  };
+  }, []);
 
   // World & Camera State (Default: DAYLIGHT and CHASE)
   const [cameraMode, setCameraMode] = useState<CameraViewMode>('CHASE');
@@ -269,6 +280,9 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   missionOverridesRef.current = missionOverrides;
   const missionManagerRef = useRef<MissionManager>(new MissionManager());
   const lastMissionUiHashRef = useRef<string>('');
+  const rewardedRunTokensRef = useRef<Set<string>>(new Set());
+  const activeUnfinalizedRunRef = useRef<{ missionId: string; runToken: string } | null>(null);
+  const keepaliveAbandonSentRef = useRef<Set<string>>(new Set());
 
   const applyProfileToWorld = useCallback((profile: PlayerProfile, offsetMs: number) => {
     const isAccountSwitch = lastAppliedPlayerIdRef.current !== profile.id;
@@ -290,10 +304,8 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     setRadioStation(station);
     engineAudio.setMusicPreference(musicPref);
 
-    if (isAccountSwitch && typeof profile.credits_balance === 'number') {
+    if (typeof profile.credits_balance === 'number') {
       setPlayerCredits(profile.credits_balance);
-    } else if (typeof profile.credits_balance === 'number' && profile.credits_balance > 0) {
-      setPlayerCredits((prev) => Math.max(prev, profile.credits_balance));
     }
   }, []);
 
@@ -357,6 +369,33 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     return 'GAME';
   })();
 
+  const webglProfileHint = useMemo(() => resolveWebGLProfile(qualityMode), [qualityMode]);
+  const shouldRenderWorldCanvas =
+    worldStage === 'GAME' ||
+    (worldStage !== 'CONFIG' &&
+      !webglProfileHint.isMobileViewport &&
+      !webglProfileHint.isSoftwareRenderer &&
+      qualityMode !== 'PERFORMANCE');
+
+  useEffect(() => {
+    if (!shouldRenderWorldCanvas) {
+      setInitStage({ step: 'Preparing Lagos world...', progress: 15 });
+      setInitStalled(false);
+      return;
+    }
+    setWebglContextLost(false);
+    setInitStalled(false);
+  }, [shouldRenderWorldCanvas, worldRetryKey]);
+
+  useEffect(() => {
+    if (worldStage !== 'GAME' || initStage.progress >= 100 || webglContextLost) {
+      setInitStalled(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setInitStalled(true), 14000);
+    return () => window.clearTimeout(timer);
+  }, [worldStage, initStage.progress, webglContextLost, worldRetryKey]);
+
   // Live 1s countdown tick for 24h lock state
   useEffect(() => {
     if (worldStage !== 'GAME') return;
@@ -382,22 +421,41 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     const overview = await missionService.getMyMissionOverview();
     const map: Record<string, Partial<MissionDef>> = {};
     for (const row of overview.missions) {
+      const parsedCheckpoints = Array.isArray(row.checkpoints)
+        ? row.checkpoints
+            .filter((cp) => typeof cp?.x === 'number' && typeof cp?.z === 'number')
+            .map((cp, idx) => ({
+              x: cp.x,
+              z: cp.z,
+              radius: typeof cp.radius === 'number' && cp.radius > 0 ? cp.radius : 14,
+              name: cp.name || `Checkpoint ${idx + 1}`,
+            }))
+        : undefined;
+
       map[row.id] = {
         title: row.title,
         subTitle: row.subtitle,
         briefing: row.description,
+        ...(row.start_location_name ? { startLocationName: row.start_location_name } : {}),
+        ...(typeof row.start_x === 'number' ? { startX: row.start_x } : {}),
+        ...(typeof row.start_z === 'number' ? { startZ: row.start_z } : {}),
+        ...(row.destination_name ? { destinationName: row.destination_name } : {}),
+        ...(typeof row.dest_x === 'number' ? { destX: row.dest_x } : {}),
+        ...(typeof row.dest_z === 'number' ? { destZ: row.dest_z } : {}),
+        ...(typeof row.dest_radius === 'number' ? { destRadius: row.dest_radius } : {}),
+        ...(parsedCheckpoints ? { checkpoints: parsedCheckpoints } : {}),
         distanceMeters: row.distance_meters,
         estimatedMinutes: row.estimated_minutes,
         baseRewardCredits: row.reward_credits,
         reputationXP: row.reward_xp,
-        rewardBadge: row.reward_badge,
+        rewardBadge: row.reward_badge ?? undefined,
         timeLimitSec: row.time_limit_seconds,
         difficulty: row.difficulty,
         cooldownSec: row.cooldown_seconds,
         requiresNoCollision: row.requires_no_collision,
         requireParkGear: row.require_park_gear,
         is_active: row.is_active,
-      } as Partial<MissionDef>;
+      };
     }
     setMissionOverrides(map);
     setMissionProgress(overview.progress || {});
@@ -496,7 +554,22 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     mpSessionRef.current = session;
     void session.start();
 
+    // Best-effort page-exit fallback only: browsers do not guarantee keepalive completion
+    // on tab close/reload. Normal abandonment stays server-confirmed via MissionManager, and
+    // server start_game_mission cleans up stale in_progress runs if exit delivery is dropped.
+    const sendKeepaliveAbandonIfNeeded = () => {
+      if (!isSupabaseConfigured) return;
+      dispatchBestEffortPageExitAbandon({
+        run: activeUnfinalizedRunRef.current,
+        sentTokens: keepaliveAbandonSentRef.current,
+        supabaseUrl,
+        publishableKey: supabasePublishableKey,
+        accessToken: accessTokenRef.current,
+      });
+    };
+
     const handlePageHide = () => {
+      sendKeepaliveAbandonIfNeeded();
       if (
         isSupabaseConfigured &&
         accessTokenRef.current &&
@@ -522,6 +595,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     return () => {
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', handlePageHide);
+      sendKeepaliveAbandonIfNeeded();
       session.stop();
       mpSessionRef.current = null;
     };
@@ -547,11 +621,108 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     applyProfileToWorld(updatedProfile, offsetMs);
   };
 
+  const syncMissionUi = useCallback((session: ActiveMissionSession | null, force = false) => {
+    if (session && missionManagerRef.current.hasUnfinalizedServerRun() && session.runToken) {
+      activeUnfinalizedRunRef.current = {
+        missionId: session.missionId,
+        runToken: session.runToken,
+      };
+    } else {
+      activeUnfinalizedRunRef.current = null;
+    }
+
+    if (!session) {
+      if (lastMissionUiHashRef.current !== 'NONE') {
+        lastMissionUiHashRef.current = 'NONE';
+        setMissionSession(null);
+      }
+      return;
+    }
+    const hash = `${session.missionId}|${session.state}|${Math.ceil(
+      session.timeRemainingSec
+    )}|${session.cargoIntegrityPercent}|${Math.ceil(session.countdownVal)}|${
+      session.currentCheckpointIdx
+    }|${session.acknowledgedCheckpointIdx}|${session.pendingCheckpoint?.index ?? -1}:${
+      session.pendingCheckpoint?.status ?? ''
+    }:${session.pendingCheckpoint?.failureType ?? ''}:${session.pendingCheckpoint?.attempts ?? 0}|${
+      session.insideDestAwaitingPark ? 1 : 0
+    }|${session.currentRaceCheckpointIdx}|${session.playerRaceRank}|${
+      session.resultSummary?.persisted ? 1 : 0
+    }`;
+    if (force || hash !== lastMissionUiHashRef.current) {
+      lastMissionUiHashRef.current = hash;
+      setMissionSession({ ...session });
+    }
+  }, []);
+
+  const awaitAbandonActiveRunBeforeExit = useCallback(async (): Promise<boolean> => {
+    const s = missionManagerRef.current.session;
+    if (!s) return true;
+    if (!missionManagerRef.current.hasUnfinalizedServerRun() || !s.runToken) {
+      missionManagerRef.current.forceClearSession();
+      setActiveDestination(null);
+      syncMissionUi(null, true);
+      return true;
+    }
+
+    const { missionId, runToken } = s;
+    const { cleared } = missionManagerRef.current.abandonMission();
+    syncMissionUi(missionManagerRef.current.session, true);
+    if (cleared) {
+      setActiveDestination(null);
+      return true;
+    }
+
+    const res = await missionService.abandonMission(missionId, runToken);
+    const nextSession = missionManagerRef.current.applyServerAbandonResult(
+      missionId,
+      runToken,
+      res
+    );
+    if (!nextSession || nextSession.state === 'COMPLETED' || nextSession.state === 'FAILED') {
+      keepaliveAbandonSentRef.current.add(runToken);
+      setActiveDestination(null);
+      syncMissionUi(nextSession, true);
+      if (nextSession?.state === 'COMPLETED') {
+        rewardedRunTokensRef.current.add(runToken);
+        void fetchMyPlayerProfile().then((profRes) => {
+          if (profRes.success && profRes.profile) {
+            applyProfileToWorld(profRes.profile, profRes.serverClockOffsetMs || 0);
+          }
+        });
+      }
+      return true;
+    }
+
+    syncMissionUi(nextSession, true);
+    setSocialToast(
+      nextSession.resultSummary?.message ||
+        res.message ||
+        'Could not confirm mission abandonment with server. Tap Retry.'
+    );
+    setTimeout(() => setSocialToast(null), 4000);
+    return false;
+  }, [applyProfileToWorld, syncMissionUi]);
+
+  const safeNavigateWithAbandon = useCallback(
+    async (route: string) => {
+      const ok = await awaitAbandonActiveRunBeforeExit();
+      if (ok) {
+        navigate(route);
+      }
+    },
+    [awaitAbandonActiveRunBeforeExit, navigate]
+  );
+
   const handleLogout = async () => {
+    await awaitAbandonActiveRunBeforeExit();
     if (mpSessionRef.current) {
       mpSessionRef.current.stop();
       mpSessionRef.current = null;
     }
+    missionManagerRef.current.forceClearSession();
+    setActiveDestination(null);
+    syncMissionUi(null, true);
     engineAudio.stop();
     await logoutPlayerAccount();
     lastAppliedPlayerIdRef.current = null;
@@ -567,60 +738,244 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   };
 
   useEffect(() => {
-    missionManagerRef.current.setCompletionCallback(
-      (missionId, success, credits, _xp, reason, runToken, runData) => {
-        if (success && credits > 0) {
-          handleAwardCredits(credits, reason);
+    missionManagerRef.current.setCheckpointCallback((missionId, cpIdx, x, z, runToken) => {
+      if (!runToken) {
+        const updated = missionManagerRef.current.applyCheckpointSyncResult(
+          missionId,
+          runToken,
+          cpIdx,
+          {
+            recorded: false,
+            rejected: true,
+            networkError: false,
+            message: 'Missing server run token for checkpoint.',
+          }
+        );
+        syncMissionUi(updated, true);
+        return;
+      }
+
+      syncMissionUi(missionManagerRef.current.session, true);
+      void missionService
+        .reportCheckpoint({
+          missionId,
+          runToken,
+          checkpointIndex: cpIdx,
+          x,
+          z,
+        })
+        .then((res) => {
+          const updated = missionManagerRef.current.applyCheckpointSyncResult(
+            missionId,
+            runToken,
+            cpIdx,
+            res
+          );
+          syncMissionUi(updated, true);
+          if (!res.recorded && !res.alreadyRecorded) {
+            if (res.expired || updated?.state === 'FAILED') {
+              setActiveDestination(null);
+              void loadMissionOverview();
+              setSocialToast(res.message || 'Mission run ended on the server.');
+              setTimeout(() => setSocialToast(null), 4000);
+            } else if (res.rejected && !res.networkError) {
+              setSocialToast(
+                res.message ||
+                  `Checkpoint ${cpIdx + 1} was rejected by the server. Re-drive the checkpoint or abandon.`
+              );
+              setTimeout(() => setSocialToast(null), 4500);
+            } else {
+              setSocialToast(
+                res.message || `Checkpoint ${cpIdx + 1} could not sync with server. Tap Retry.`
+              );
+              setTimeout(() => setSocialToast(null), 4000);
+            }
+          }
+        });
+    });
+
+    missionManagerRef.current.setAbandonCallback((missionId, runToken) => {
+      syncMissionUi(missionManagerRef.current.session, true);
+      void missionService.abandonMission(missionId, runToken).then((res) => {
+        const nextSession = missionManagerRef.current.applyServerAbandonResult(
+          missionId,
+          runToken,
+          res
+        );
+        if (!nextSession) {
+          keepaliveAbandonSentRef.current.add(runToken);
+          setActiveDestination(null);
+        } else if (nextSession.state === 'COMPLETED') {
+          keepaliveAbandonSentRef.current.add(runToken);
+          rewardedRunTokensRef.current.add(runToken);
+          setActiveDestination(null);
+          void fetchMyPlayerProfile().then((profRes) => {
+            if (profRes.success && profRes.profile) {
+              applyProfileToWorld(profRes.profile, profRes.serverClockOffsetMs || 0);
+            }
+          });
+          setSocialToast(
+            nextSession.resultSummary?.message || 'Mission was already completed on the server.'
+          );
+          setTimeout(() => setSocialToast(null), 4000);
+        } else if (nextSession.state === 'FAILED') {
+          keepaliveAbandonSentRef.current.add(runToken);
+          setActiveDestination(null);
+          setSocialToast(
+            nextSession.resultSummary?.message || 'Mission had already failed on the server.'
+          );
+          setTimeout(() => setSocialToast(null), 4000);
+        } else {
+          setSocialToast(
+            nextSession.resultSummary?.message ||
+              res.message ||
+              'Unable to confirm mission abandonment with server. Tap Retry.'
+          );
+          setTimeout(() => setSocialToast(null), 4000);
         }
-        if (runToken && !runToken.startsWith('local-')) {
+        syncMissionUi(nextSession, true);
+        if (
+          !nextSession ||
+          nextSession.state === 'COMPLETED' ||
+          nextSession.state === 'FAILED'
+        ) {
+          void loadMissionOverview();
+        }
+      });
+    });
+
+    missionManagerRef.current.setCompletionCallback(
+      (missionId, success, _credits, _xp, reason, runToken, telemetry) => {
+        if (!runToken) {
+          if (success) {
+            const updated = missionManagerRef.current.applyServerVerificationResult(
+              missionId,
+              runToken,
+              {
+                persisted: false,
+                reason: 'Missing server run token; mission run cannot be recorded.',
+              }
+            );
+            syncMissionUi(updated, true);
+          }
+          return;
+        }
+
+        if (!success) {
+          syncMissionUi(missionManagerRef.current.session, true);
           void missionService
-            .completeMission({ missionId, runToken, success, runData })
+            .failMission({
+              missionId,
+              runToken,
+              failureReason: reason,
+            })
             .then((res) => {
-              if (res.persisted) {
+              const settled = missionManagerRef.current.applyServerFailureResult(
+                missionId,
+                runToken,
+                res
+              );
+              syncMissionUi(settled, true);
+              if (!settled) {
+                setActiveDestination(null);
+                void loadMissionOverview();
+              } else if (settled.state === 'COMPLETED') {
+                // Reconciled as already completed on server: sync authoritative profile without double-crediting.
+                rewardedRunTokensRef.current.add(runToken);
+                setActiveDestination(null);
+                void fetchMyPlayerProfile().then((profRes) => {
+                  if (profRes.success && profRes.profile) {
+                    applyProfileToWorld(profRes.profile, profRes.serverClockOffsetMs || 0);
+                  }
+                });
+                void loadMissionOverview();
+                setSocialToast(
+                  settled.resultSummary?.message ||
+                    'Mission was already completed and saved on the server.'
+                );
+                setTimeout(() => setSocialToast(null), 4000);
+              } else if (settled.state === 'FAILED') {
+                void loadMissionOverview();
+              } else {
+                setSocialToast(
+                  settled.resultSummary?.message ||
+                    res.message ||
+                    'Unable to save mission failure with server. Tap Retry.'
+                );
+                setTimeout(() => setSocialToast(null), 4000);
+              }
+            });
+          return;
+        }
+
+        // Immediately sync UI into VERIFYING state while server RPC runs
+        syncMissionUi(missionManagerRef.current.session, true);
+
+        void missionService
+          .completeMission({
+            missionId,
+            runToken,
+            finalX: telemetry?.finalX ?? 0,
+            finalZ: telemetry?.finalZ ?? 0,
+            gear: telemetry?.gear || 'D1',
+            collisionCount: telemetry?.collisionCount ?? 0,
+            finishRank: telemetry?.finishRank ?? null,
+          })
+          .then((res) => {
+            const settled = missionManagerRef.current.applyServerVerificationResult(
+              missionId,
+              runToken,
+              res
+            );
+            syncMissionUi(settled, true);
+
+            if (res.persisted && !res.rejected) {
+              if (!rewardedRunTokensRef.current.has(runToken)) {
+                rewardedRunTokensRef.current.add(runToken);
                 if (typeof res.creditsBalance === 'number') {
                   setPlayerCredits(res.creditsBalance);
                 }
-                setPlayerProfile((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        credits_balance:
-                          typeof res.creditsBalance === 'number'
-                            ? res.creditsBalance
-                            : prev.credits_balance,
-                        xp_balance:
-                          typeof res.xpBalance === 'number' ? res.xpBalance : prev.xp_balance,
-                      }
-                    : prev
-                );
+                setPlayerProfile((prev) => {
+                  if (!prev) return prev;
+                  const existingBadges = Array.isArray(prev.badges_earned)
+                    ? prev.badges_earned
+                    : [];
+                  const nextBadges =
+                    res.rewardBadge && !existingBadges.includes(res.rewardBadge)
+                      ? [...existingBadges, res.rewardBadge]
+                      : existingBadges;
+                  return {
+                    ...prev,
+                    credits_balance:
+                      typeof res.creditsBalance === 'number'
+                        ? res.creditsBalance
+                        : prev.credits_balance,
+                    xp_balance:
+                      typeof res.xpBalance === 'number' ? res.xpBalance : prev.xp_balance,
+                    missions_completed_count: (prev.missions_completed_count ?? 0) + 1,
+                    badges_earned: nextBadges,
+                  };
+                });
+                const awarded = typeof res.creditsAwarded === 'number' ? res.creditsAwarded : 0;
+                if (awarded > 0) {
+                  setCreditNotification({ amount: awarded, reason });
+                  setTimeout(() => setCreditNotification(null), 3500);
+                }
               }
               void loadMissionOverview();
-            });
-        }
+            } else {
+              setSocialToast(
+                res.reason || 'Mission run could not be accepted or persisted by the server.'
+              );
+              setTimeout(() => setSocialToast(null), 4000);
+              if (res.persisted && res.rejected) {
+                void loadMissionOverview();
+              }
+            }
+          });
       }
     );
-  });
-
-  const syncMissionUi = useCallback((session: ActiveMissionSession | null, force = false) => {
-    if (!session) {
-      if (lastMissionUiHashRef.current !== 'NONE') {
-        lastMissionUiHashRef.current = 'NONE';
-        setMissionSession(null);
-      }
-      return;
-    }
-    const hash = `${session.missionId}|${session.state}|${Math.ceil(
-      session.timeRemainingSec
-    )}|${session.cargoIntegrityPercent}|${Math.ceil(session.countdownVal)}|${
-      session.currentCheckpointIdx
-    }|${session.insideDestAwaitingPark ? 1 : 0}|${
-      session.currentRaceCheckpointIdx
-    }|${session.playerRaceRank}`;
-    if (force || hash !== lastMissionUiHashRef.current) {
-      lastMissionUiHashRef.current = hash;
-      setMissionSession({ ...session });
-    }
-  }, []);
+  }, [applyProfileToWorld, loadMissionOverview, syncMissionUi]);
 
   const handleOpenMissionBriefing = useCallback(
     (id: MissionId) => {
@@ -635,13 +990,17 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     if (!activeId) return;
 
     const startRes = await missionService.startMission(activeId);
-    if (!startRes.success) {
+    if (!startRes.success || !startRes.runToken) {
       setSocialToast(startRes.message || 'This mission is currently unavailable or on cooldown.');
-      setTimeout(() => setSocialToast(null), 3500);
+      setTimeout(() => setSocialToast(null), 3800);
       return;
     }
 
-    const s = missionManagerRef.current.startMission(startRes.runToken);
+    const s = missionManagerRef.current.startMission(
+      startRes.runToken,
+      startRes.timeLimitSeconds,
+      missionOverridesRef.current
+    );
     if (s) {
       const target = missionManagerRef.current.getActiveTarget(missionOverridesRef.current);
       if (target) {
@@ -658,9 +1017,43 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   }, [syncMissionUi]);
 
   const handleAbandonMission = useCallback(() => {
-    missionManagerRef.current.abandonMission();
-    setActiveDestination(null);
-    syncMissionUi(null, true);
+    const { cleared } = missionManagerRef.current.abandonMission();
+    if (cleared) {
+      setActiveDestination(null);
+    }
+    syncMissionUi(missionManagerRef.current.session, true);
+  }, [syncMissionUi]);
+
+  const handleRetryCheckpointSync = useCallback(() => {
+    const updated = missionManagerRef.current.retryPendingCheckpoint();
+    syncMissionUi(updated, true);
+  }, [syncMissionUi]);
+
+  const handleRecoverPermanentCheckpoint = useCallback(() => {
+    const updated = missionManagerRef.current.recoverPermanentCheckpoint();
+    const target = missionManagerRef.current.getActiveTarget(missionOverridesRef.current);
+    if (target) {
+      setActiveDestination({ x: target.x, z: target.z, name: target.name });
+    }
+    syncMissionUi(updated, true);
+  }, [syncMissionUi]);
+
+  const handleRetryCompletion = useCallback(() => {
+    const updated = missionManagerRef.current.retryCompletionSubmission();
+    syncMissionUi(updated, true);
+  }, [syncMissionUi]);
+
+  const handleRetryFailureSync = useCallback(() => {
+    const updated = missionManagerRef.current.retryFailureSubmission();
+    syncMissionUi(updated, true);
+  }, [syncMissionUi]);
+
+  const handleRetryAbandonment = useCallback(() => {
+    const { cleared } = missionManagerRef.current.retryAbandonment();
+    if (cleared) {
+      setActiveDestination(null);
+    }
+    syncMissionUi(missionManagerRef.current.session, true);
   }, [syncMissionUi]);
 
   const handleMissionUpdate = useCallback(
@@ -692,11 +1085,12 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   );
 
   const handleRaceCheckpointPassed = useCallback(
-    (cpIdx: number, rank: number) => {
+    (cpIdx: number, rank: number, coords?: { x: number; z: number; gear?: TransmissionGear }) => {
       const updated = missionManagerRef.current.onPlayerReachRaceCheckpoint(
         cpIdx + 1,
         rank,
-        missionOverridesRef.current
+        missionOverridesRef.current,
+        coords
       );
       syncMissionUi(updated, true);
     },
@@ -854,12 +1248,16 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     };
   }, [worldStage]);
 
+  const handleMotionSample = useCallback(
+    (pos: { x: number; y?: number; z: number; heading: number; speed?: number }) => {
+      mpSessionRef.current?.publishLocalMotion(pos);
+    },
+    []
+  );
+
   const handleCarPositionUpdate = useCallback(
     (pos: { x: number; y?: number; z: number; heading: number; speed?: number }) => {
       setCarPosition(pos);
-      if (mpSessionRef.current) {
-        mpSessionRef.current.publishLocalMotion(pos);
-      }
     },
     []
   );
@@ -937,13 +1335,28 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   };
 
   return (
-    <div className="relative w-full h-[calc(100dvh-76px)] min-h-[420px] mt-[76px] bg-[#071A2B] overflow-hidden select-none">
-      {/* 3D WebGL Canvas Layer (Aerial presentation mode before onboarding completes; full driving inside GAME) */}
-      {worldStage !== 'CONFIG' && (
+    <div
+      className={`relative w-full h-[calc(100dvh-var(--header-height,76px))] min-h-[320px] mt-[var(--header-height,76px)] bg-[#071A2B] select-none ${
+        worldStage === 'GAME' ? 'overflow-hidden' : 'overflow-y-auto'
+      }`}
+    >
+      {/* Lightweight CSS gradient backdrop when pre-game mobile/performance mode skips heavy WebGL */}
+      {!shouldRenderWorldCanvas && worldStage !== 'CONFIG' && (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 top-[var(--header-height,76px)] bg-[radial-gradient(ellipse_at_top,_#123456_0%,_#071A2B_55%,_#030D17_100%)] pointer-events-none"
+        />
+      )}
+
+      {/* 3D WebGL Canvas Layer (Full driving inside GAME; desktop aerial preview before onboarding) */}
+      {shouldRenderWorldCanvas && (
         <WorldCanvas
+          key={worldRetryKey}
           customization={customization}
           cameraMode={cameraMode}
           timeOfDay={timeOfDay}
+          qualityMode={qualityMode}
+          isCityMapOpen={isCityMapOpen}
           presentationMode={worldStage !== 'GAME'}
           remotePlayers={worldStage === 'GAME' ? remotePlayers : []}
           onProjectedRemotePlayers={worldStage === 'GAME' ? handleProjectedPlayers : undefined}
@@ -959,6 +1372,9 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
           onOpenCustomizer={() => setIsCustomizerOpen(true)}
           onOpenDealerLounge={() => setIsDealerLoungeOpen(true)}
           onCarPositionUpdate={handleCarPositionUpdate}
+          onMotionSample={handleMotionSample}
+          onInitStageChange={setInitStage}
+          onContextLost={setWebglContextLost}
           isCustomizerOpen={isCustomizerOpen}
           virtualInput={virtualInputState}
           isEngineRunning={isEngineRunning}
@@ -981,9 +1397,71 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         />
       )}
 
+      {/* Staged 3D Engine Loader / WebGL Context Recovery inside GAME */}
+      {worldStage === 'GAME' && (initStage.progress < 100 || webglContextLost) && (
+        <div className="absolute inset-0 z-40 bg-[#04101B]/95 flex flex-col items-center justify-center p-5 text-center">
+          <div className="w-full max-w-sm bg-[#071A2B] border border-white/15 rounded-2xl p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-center gap-2.5">
+              <Loader2 className="w-6 h-6 text-[#EF233C] animate-spin shrink-0" />
+              <h2 className="text-sm font-black uppercase tracking-wider text-white">
+                {webglContextLost
+                  ? '3D Graphics Interrupted'
+                  : initStalled
+                  ? 'World Taking Longer Than Usual'
+                  : 'Loading Lagos Open World'}
+              </h2>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-[#EF233C] transition-all duration-300"
+                  style={{ width: `${Math.max(10, Math.min(100, initStage.progress))}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[11px] font-bold text-gray-300">
+                <span>{webglContextLost ? 'GPU context paused by device.' : initStage.step}</span>
+                <span>{Math.round(initStage.progress)}%</span>
+              </div>
+            </div>
+
+            {(initStalled || webglContextLost) && (
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleQualityModeChange('PERFORMANCE');
+                    setWebglContextLost(false);
+                    setInitStalled(false);
+                    setInitStage({ step: 'Switching to Smooth Mode...', progress: 15 });
+                    setWorldRetryKey((k) => k + 1);
+                  }}
+                  className="flex-1 min-h-[44px] px-3 py-2 rounded-xl bg-[#EF233C] hover:bg-red-700 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Smooth Mode & Retry</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWebglContextLost(false);
+                    setInitStalled(false);
+                    setInitStage({ step: 'Reconnecting 3D world...', progress: 15 });
+                    setWorldRetryKey((k) => k + 1);
+                  }}
+                  className="min-h-[44px] px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold cursor-pointer"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* STAGE 0: INITIAL SESSION CHECK */}
       {worldStage === 'CHECKING' && (
-        <div className="absolute inset-0 z-40 bg-[#04101B]/80 backdrop-blur-md flex flex-col items-center justify-center gap-3">
+        <div className="absolute inset-0 z-40 bg-[#04101B]/90 flex flex-col items-center justify-center gap-3">
           <Loader2 className="w-8 h-8 text-[#EF233C] animate-spin" />
           <p className="text-xs font-black uppercase tracking-widest text-white">
             Connecting to MANIFOLD World...
@@ -1002,7 +1480,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
 
       {/* SUSPENDED ACCOUNT NOTICE */}
       {worldStage === 'SUSPENDED' && (
-        <div className="absolute inset-0 z-40 bg-[#04101B]/85 backdrop-blur-xl flex items-center justify-center p-4">
+        <div className="absolute inset-0 z-40 bg-[#04101B]/92 flex items-center justify-center p-4 overflow-y-auto">
           <div className="max-w-md w-full bg-[#071A2B]/95 border border-red-500/40 rounded-3xl p-6 text-center space-y-4 shadow-2xl">
             <div className="w-12 h-12 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center mx-auto">
               <Ban className="w-6 h-6" />
@@ -1156,7 +1634,9 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             activeDestination={activeDestination}
             onClearDestination={() => setActiveDestination(null)}
             billboardItems={billboardItems}
-            onOpenBillboardListing={(slug) => navigate(`/cars/${slug}`)}
+            onOpenBillboardListing={(slug) => {
+              void safeNavigateWithAbandon(`/cars/${slug}`);
+            }}
             playerNickname={playerProfile.nickname}
             nearbyPlayersCount={remotePlayers.length}
             lockStatus={{
@@ -1169,6 +1649,8 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             onOpenBlockedDrivers={() => setIsBlockedPanelOpen(true)}
             onOpenShowroomSample={() => handleInspectShowroomCar('car-highlander-2021')}
             onLogout={() => void handleLogout()}
+            qualityMode={qualityMode}
+            onQualityModeChange={handleQualityModeChange}
           />
 
           <MissionHUDOverlay
@@ -1179,6 +1661,11 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             selectedGear={selectedGear}
             onStartMission={() => void handleStartMission()}
             onAbandonMission={handleAbandonMission}
+            onRetryCheckpointSync={handleRetryCheckpointSync}
+            onRecoverPermanentCheckpoint={handleRecoverPermanentCheckpoint}
+            onRetryCompletion={handleRetryCompletion}
+            onRetryFailureSync={handleRetryFailureSync}
+            onRetryAbandonment={handleRetryAbandonment}
             onOpenMissionBriefing={handleOpenMissionBriefing}
             isMissionDrawerOpen={isMissionDrawerOpen}
             onCloseMissionDrawer={() => setIsMissionDrawerOpen(false)}
@@ -1214,7 +1701,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             onClose={() => setIsMarketplaceModalOpen(false)}
             onNavigateToMarketplace={() => {
               setIsMarketplaceModalOpen(false);
-              navigate('/car-marketplace');
+              void safeNavigateWithAbandon('/car-marketplace');
             }}
             onSelectCar={onSelectCar}
             cars={cars}
@@ -1235,7 +1722,9 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
           <DealerLoungeModal
             isOpen={isDealerLoungeOpen}
             onClose={() => setIsDealerLoungeOpen(false)}
-            onNavigate={navigate}
+            onNavigate={(route) => {
+              void safeNavigateWithAbandon(route);
+            }}
           />
 
           <CityMapModal
