@@ -291,7 +291,6 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     setServerClockOffsetMs(offsetMs);
 
     const musicPref = profile.selected_music_preference || 'AFROBEATS';
-    const station = MUSIC_TO_STATION[musicPref] ?? 1;
 
     setCustomization((prev) => ({
       ...(isAccountSwitch ? DEFAULT_CUSTOMIZATION : prev),
@@ -301,13 +300,16 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
       musicPreference: musicPref,
     }));
 
-    setRadioStation(station);
-    engineAudio.setMusicPreference(musicPref);
+    // Keep synth FM radio muted while Default Music Library ("Downtown") is the primary soundtrack
+    setRadioStation(0);
+    engineAudio.setRadioStation(0);
 
     if (typeof profile.credits_balance === 'number') {
       setPlayerCredits(profile.credits_balance);
     }
   }, []);
+
+  const hasAutoStartedMusicRef = useRef(false);
 
   // Bootstrap World DB status + existing authenticated session
   useEffect(() => {
@@ -482,11 +484,19 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     };
   }, [worldStage, loadMissionOverview]);
 
-  // Stop audio if returning to Auth/Suspended/Briefing screens
+  // Autoplay default track ("Downtown" by Petula Clark) on entering GAME; pause cleanly when leaving
   useEffect(() => {
-    if (worldStage !== 'GAME') {
+    if (worldStage === 'GAME') {
+      if (!hasAutoStartedMusicRef.current) {
+        hasAutoStartedMusicRef.current = true;
+        engineAudio.setRadioStation(0);
+        setRadioStation(0);
+        musicLibrary.play();
+      }
+    } else {
       engineAudio.stop();
       if (worldStage === 'AUTH' || worldStage === 'SUSPENDED') {
+        hasAutoStartedMusicRef.current = false;
         musicLibrary.pause();
       }
     }
@@ -528,6 +538,13 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         setOutgoingInvite(null);
         setActiveConversation(conv);
         setIsChatMinimized(false);
+      },
+      onPeerPresenceChange: (peerPlayerId, online) => {
+        setActiveConversation((prev) =>
+          prev && prev.peerPlayerId === peerPlayerId && prev.peerOnline !== online
+            ? { ...prev, peerOnline: online }
+            : prev
+        );
       },
       onMessageReceived: (msg: ChatMessageItem) => {
         setActiveConversation((prev) => {
@@ -1210,6 +1227,9 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const handleRadioStation = (st: number) => {
     if (lockStatus.isLocked) return;
     setRadioStation(st);
+    if (st > 0) {
+      musicLibrary.pause();
+    }
     engineAudio.setRadioStation(st);
   };
 

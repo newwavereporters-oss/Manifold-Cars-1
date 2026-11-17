@@ -75,6 +75,19 @@ export interface MusicTrack {
 
 const BUILTIN_TRACKS: MusicTrack[] = [
   {
+    id: 'downtown-petula-clark',
+    title: 'Downtown',
+    artist: 'Petula Clark',
+    category: 'CHILL',
+    bpm: 112,
+    durationSec: 185,
+    sourceKind: 'LICENSED_STREAM',
+    audioUrl: '/assets/aistudio/Petula_Clark_-_down_town__mp3.pm__b733adba.mp3',
+    chordRoots: [48, 53, 55, 50],
+    bassPattern: [0, -1, 0, -1, 5, -1, 7, -1, 0, -1, 0, -1, 5, -1, 7, -1],
+    leadPattern: [12, -1, 16, 19, -1, 17, 16, -1, 14, -1, 16, 12, -1, -1, -1, -1],
+  },
+  {
     id: 'afro-lagos-sunset',
     title: 'Eko Sunset Log-Drum',
     artist: 'Manifold Studio Session',
@@ -279,6 +292,8 @@ class ManifoldMusicLibraryService {
 
   // HTML5 Audio element for external licensed URLs or uploaded local audio files
   private htmlAudio: HTMLAudioElement | null = null;
+  private currentAudioSrc: string | null = null;
+  private unlockListenersBound = false;
 
   // Dedicated Web Audio API synthesizer nodes for built-in grooves
   private ctx: AudioContext | null = null;
@@ -340,11 +355,28 @@ class ManifoldMusicLibraryService {
     }
   }
 
-  private ensureHtmlAudio() {
+  private bindAutoplayUnlock() {
+    if (typeof window === 'undefined' || this.unlockListenersBound) return;
+    this.unlockListenersBound = true;
+    const retryOnGesture = () => {
+      this.unlockListenersBound = false;
+      window.removeEventListener('pointerdown', retryOnGesture);
+      window.removeEventListener('touchstart', retryOnGesture);
+      window.removeEventListener('keydown', retryOnGesture);
+      if (this.isPlaying && this.htmlAudio && this.getActiveTrack().audioUrl) {
+        this.htmlAudio.play().catch(() => {});
+      }
+    };
+    window.addEventListener('pointerdown', retryOnGesture, { passive: true });
+    window.addEventListener('touchstart', retryOnGesture, { passive: true });
+    window.addEventListener('keydown', retryOnGesture, { passive: true });
+  }
+
+  private ensureHtmlAudio(audioUrl?: string) {
     if (typeof window === 'undefined') return;
     if (!this.htmlAudio) {
       this.htmlAudio = new Audio();
-      this.htmlAudio.crossOrigin = 'anonymous';
+      this.htmlAudio.preload = 'auto';
       this.htmlAudio.addEventListener('ended', () => {
         this.nextTrack();
       });
@@ -364,6 +396,11 @@ class ManifoldMusicLibraryService {
         }
         this.emit();
       });
+    }
+    if (audioUrl && /^https?:\/\//i.test(audioUrl)) {
+      this.htmlAudio.crossOrigin = 'anonymous';
+    } else {
+      this.htmlAudio.removeAttribute('crossorigin');
     }
     this.htmlAudio.volume = this.isMuted ? 0 : this.volume;
   }
@@ -540,14 +577,26 @@ class ManifoldMusicLibraryService {
     this.streamError = null;
     if (track.audioUrl) {
       this.stopTransportOnly();
-      this.ensureHtmlAudio();
+      this.ensureHtmlAudio(track.audioUrl);
       if (this.htmlAudio) {
-        if (this.htmlAudio.src !== track.audioUrl) {
+        if (this.currentAudioSrc !== track.audioUrl) {
+          this.currentAudioSrc = track.audioUrl;
           this.htmlAudio.src = track.audioUrl;
         }
-        this.htmlAudio.currentTime = this.elapsedSec;
+        try {
+          if (Math.abs((this.htmlAudio.currentTime || 0) - this.elapsedSec) > 0.75) {
+            this.htmlAudio.currentTime = this.elapsedSec;
+          }
+        } catch {}
         this.htmlAudio.volume = this.isMuted ? 0 : this.volume;
-        this.htmlAudio.play().catch(() => {
+        this.htmlAudio.play().catch((err: any) => {
+          const errName = err?.name || '';
+          if (errName === 'NotAllowedError') {
+            // Browser blocked un-gestured autoplay; keep the real track queued and start on first user gesture
+            this.bindAutoplayUnlock();
+            this.emit();
+            return;
+          }
           this.streamError = 'External stream blocked by browser/CORS; falling back to Studio Synth.';
           this.startSynthPlayback();
           this.emit();

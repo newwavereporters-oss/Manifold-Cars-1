@@ -17,7 +17,13 @@ import {
   markDeformable,
 } from '../../three/vehicleDamage';
 
-export type TrafficVehicleType = 'DANFO_BUS' | 'CITY_SEDAN' | 'URBAN_SUV' | 'DELIVERY_VAN';
+export type TrafficVehicleType =
+  | 'DANFO_BUS'
+  | 'COASTER_BUS'
+  | 'CITY_SEDAN'
+  | 'URBAN_SUV'
+  | 'DELIVERY_VAN'
+  | 'OKADA';
 
 export interface TrafficCar {
   id: string;
@@ -251,6 +257,19 @@ export class TrafficEngine {
         1.96,
         0.05
       ),
+      COASTER_BUS: createExtrudedCarShell(
+        [
+          [-3.36, 0.36],
+          [-3.32, 1.05], // Bus front apron
+          [-2.92, 1.88], // Panoramic sloped windscreen
+          [-2.52, 2.38], // Long bus roof
+          [3.16, 2.38],  // Rear roof
+          [3.34, 1.92],
+          [3.36, 0.4],
+        ],
+        2.12,
+        0.05
+      ),
       CITY_SEDAN: createExtrudedCarShell(
         [
           [-2.18, 0.26],
@@ -290,6 +309,18 @@ export class TrafficEngine {
         2.02,
         0.045
       ),
+      OKADA: createExtrudedCarShell(
+        [
+          [-0.78, 0.34],
+          [-0.62, 0.74], // Front headlight shroud
+          [-0.28, 0.86], // Sculpted fuel tank
+          [0.14, 0.64],  // Saddle dip
+          [0.74, 0.72],  // Rear pillion tail
+          [0.82, 0.42],
+        ],
+        0.34,
+        0.03
+      ),
     };
 
     this.glassGeos = {
@@ -301,6 +332,16 @@ export class TrafficEngine {
           [2.15, 1.15],
         ],
         1.98,
+        0.015
+      ),
+      COASTER_BUS: createExtrudedCarShell(
+        [
+          [-3.02, 1.16],
+          [-2.62, 2.14],
+          [3.04, 2.14],
+          [3.16, 1.24],
+        ],
+        2.14,
         0.015
       ),
       CITY_SEDAN: createExtrudedCarShell(
@@ -332,6 +373,16 @@ export class TrafficEngine {
         ],
         1.88,
         0.015
+      ),
+      OKADA: createExtrudedCarShell(
+        [
+          [-0.68, 0.74],
+          [-0.56, 0.96],
+          [-0.44, 0.96],
+          [-0.46, 0.74],
+        ],
+        0.28,
+        0.008
       ),
     };
 
@@ -405,15 +456,49 @@ export class TrafficEngine {
       { from: 'N_IGANDO', to: 'N_AKESAN', type: 'CITY_SEDAN', progress: 0.65, lane: 0 },
       { from: 'N_AKESAN', to: 'N_LASU_GATE', type: 'DANFO_BUS', progress: 0.45, lane: 1 },
       { from: 'N_OSHODI', to: 'N_AKESAN_LINK', type: 'DELIVERY_VAN', progress: 0.5, lane: 1 },
+
+      // Marina Financial District (UBA / Wema / UAC / Blue Line Terminus)
+      { from: 'N_OBALENDE_S', to: 'N_MARINA_E', type: 'CITY_SEDAN', progress: 0.35, lane: 0 },
+      { from: 'N_MARINA_E', to: 'N_MARINA_CENTRAL', type: 'URBAN_SUV', progress: 0.45, lane: 0 },
+      { from: 'N_MARINA_CENTRAL', to: 'N_MARINA_WEST', type: 'COASTER_BUS', progress: 0.5, lane: 1 },
+      { from: 'N_MARINA_WEST', to: 'N_MARINA_TAIL', type: 'DANFO_BUS', progress: 0.4, lane: 1 },
+      { from: 'N_MARINA_TAIL', to: 'N_DEPOT_WEST', type: 'CITY_SEDAN', progress: 0.6, lane: 0 },
+      { from: 'N_EAST_RING_S', to: 'N_MARINA_CENTRAL', type: 'URBAN_SUV', progress: 0.4, lane: 0 },
+
+      // Murtala Muhammed International Airport (MMIA) Approach, Terminal & Private Jets
+      { from: 'N_IKEJA', to: 'N_MMIA_LINK', type: 'URBAN_SUV', progress: 0.4, lane: 0 },
+      { from: 'N_MMIA_LINK', to: 'N_MMIA_GATE1_EXT', type: 'COASTER_BUS', progress: 0.5, lane: 1 },
+      { from: 'N_MMIA_GATE1_EXT', to: 'N_MMIA_GATE1', type: 'CITY_SEDAN', progress: 0.45, lane: 0 },
+      { from: 'N_MMIA_GATE1', to: 'N_MMIA_TERMINAL', type: 'URBAN_SUV', progress: 0.55, lane: 0 },
+      { from: 'N_MMIA_WEST_RD', to: 'N_MMIA_GATE2', type: 'CITY_SEDAN', progress: 0.5, lane: 0 },
+      { from: 'N_MMIA_GATE2', to: 'N_MMIA_PRIVATE_JETS', type: 'URBAN_SUV', progress: 0.45, lane: 0 },
+
+      // Mile 2 & Iyanoba Corridor (Yellow Danfos, Coaster Buses, Small Cars & Okadas)
+      { from: 'N_OSHODI', to: 'N_MILE2', type: 'DANFO_BUS', progress: 0.3, lane: 1 },
+      { from: 'N_OSHODI', to: 'N_MILE2', type: 'COASTER_BUS', progress: 0.68, lane: 1 },
+      { from: 'N_MILE2', to: 'N_MILE2_W', type: 'OKADA', progress: 0.4, lane: 0 },
+      { from: 'N_MILE2_W', to: 'N_LASU_GATE', type: 'DANFO_BUS', progress: 0.55, lane: 1 },
+      { from: 'N_BADAGRY_BYPASS_E', to: 'N_BADAGRY_BYPASS_W', type: 'COASTER_BUS', progress: 0.45, lane: 1 },
+      { from: 'N_BADAGRY_BYPASS_W', to: 'N_IYANOBA_E', type: 'DANFO_BUS', progress: 0.5, lane: 1 },
+      { from: 'N_IYANOBA_E', to: 'N_IYANOBA', type: 'OKADA', progress: 0.35, lane: 0 },
+      { from: 'N_IYANOBA_E', to: 'N_IYANOBA', type: 'DANFO_BUS', progress: 0.72, lane: 1 },
+      { from: 'N_IYANOBA', to: 'N_IYANOBA_W', type: 'CITY_SEDAN', progress: 0.45, lane: 0 },
+      { from: 'N_IYANOBA', to: 'N_IYANOBA_N', type: 'OKADA', progress: 0.55, lane: 0 },
+      { from: 'N_IYANOBA_N', to: 'N_IYANOBA_NW', type: 'DANFO_BUS', progress: 0.5, lane: 1 },
+      { from: 'N_IYANOBA_NW', to: 'N_IYANOBA_W', type: 'OKADA', progress: 0.4, lane: 0 },
+      { from: 'N_IYANOBA_W', to: 'N_IYANOBA', type: 'COASTER_BUS', progress: 0.6, lane: 1 },
     ];
 
+    const okadaPalette = [0xdc2626, 0x0284c7, 0x16a34a, 0x1e293b];
     routeSeeds.forEach((seed, i) => {
       if (!LAGOS_ROAD_NODES[seed.from] || !LAGOS_ROAD_NODES[seed.to]) return;
       const customColor =
         seed.type === 'DANFO_BUS'
           ? 0xfacc15
-          : seed.type === 'DELIVERY_VAN'
+          : seed.type === 'COASTER_BUS' || seed.type === 'DELIVERY_VAN'
           ? 0xf8fafc
+          : seed.type === 'OKADA'
+          ? okadaPalette[i % okadaPalette.length]
           : seed.type === 'URBAN_SUV'
           ? suvPalette[i % suvPalette.length]
           : sedanPalette[i % sedanPalette.length];
@@ -480,9 +565,17 @@ export class TrafficEngine {
     type: TrafficVehicleType,
     isDarkCar: boolean
   ) {
-    const seatY = type === 'CITY_SEDAN' ? 0.56 : 0.74;
-    const frontZ = type === 'DANFO_BUS' ? 1.15 : type === 'DELIVERY_VAN' ? 1.45 : 0.15;
-    const rearZ = type === 'DANFO_BUS' ? -0.35 : -0.68;
+    if (type === 'OKADA') return;
+    const seatY = type === 'CITY_SEDAN' ? 0.56 : type === 'COASTER_BUS' ? 0.92 : 0.74;
+    const frontZ =
+      type === 'COASTER_BUS'
+        ? 2.05
+        : type === 'DANFO_BUS'
+        ? 1.15
+        : type === 'DELIVERY_VAN'
+        ? 1.45
+        : 0.15;
+    const rearZ = type === 'COASTER_BUS' ? 0.35 : type === 'DANFO_BUS' ? -0.35 : -0.68;
 
     const dash = new THREE.Mesh(this.dashGeo, this.darkTrimMat);
     dash.position.set(0, seatY + 0.25, frontZ + 0.42);
@@ -541,6 +634,10 @@ export class TrafficEngine {
       length = 4.8;
       width = 2.02;
       height = 2.05;
+    } else if (type === 'COASTER_BUS') {
+      length = 6.8;
+      width = 2.15;
+      height = 2.42;
     } else if (type === 'URBAN_SUV') {
       length = 4.65;
       width = 2.0;
@@ -549,13 +646,17 @@ export class TrafficEngine {
       length = 5.1;
       width = 2.08;
       height = 2.2;
+    } else if (type === 'OKADA') {
+      length = 1.9;
+      width = 0.72;
+      height = 1.45;
     }
 
     const bodyMat = new THREE.MeshPhysicalMaterial({
       color,
-      roughness: type === 'DANFO_BUS' || type === 'DELIVERY_VAN' ? 0.34 : 0.18,
-      metalness: type === 'CITY_SEDAN' || type === 'URBAN_SUV' ? 0.65 : 0.22,
-      clearcoat: type === 'CITY_SEDAN' || type === 'URBAN_SUV' ? 0.9 : 0.35,
+      roughness: type === 'DANFO_BUS' || type === 'COASTER_BUS' || type === 'DELIVERY_VAN' ? 0.32 : 0.18,
+      metalness: type === 'CITY_SEDAN' || type === 'URBAN_SUV' ? 0.65 : 0.24,
+      clearcoat: type === 'CITY_SEDAN' || type === 'URBAN_SUV' ? 0.9 : 0.38,
       clearcoatRoughness: 0.12,
       envMapIntensity: 1.5,
     });
@@ -570,155 +671,6 @@ export class TrafficEngine {
     bodyMesh.receiveShadow = true;
     group.add(bodyMesh);
 
-    // Recessed cabin/windshield glass + realistic seats & steering wheel inside
-    const glassMesh = new THREE.Mesh(this.glassGeos[type], this.glassMat);
-    group.add(glassMesh);
-    this.addSeatAndInterior(group, type, type === 'CITY_SEDAN' || type === 'URBAN_SUV');
-
-    // Front & rear bumpers + front splitter / lower grille + rear diffuser & exhausts
-    const bumperFGeo = new THREE.BoxGeometry(width * 0.96, 0.22, 0.18);
-    const bumperRGeo = new THREE.BoxGeometry(width * 0.96, 0.22, 0.18);
-    this.ownedGeos.push(bumperFGeo, bumperRGeo);
-
-    const bumperF = markDeformable(new THREE.Mesh(bumperFGeo, this.claddingMat), 1.0);
-    bumperF.position.set(0, 0.34, length / 2 - 0.03);
-    const bumperR = markDeformable(new THREE.Mesh(bumperRGeo, this.claddingMat), 1.0);
-    bumperR.position.set(0, 0.36, -length / 2 + 0.03);
-
-    const grilleGeo = new THREE.BoxGeometry(width * 0.52, 0.24, 0.08);
-    const grilleBarGeo = new THREE.BoxGeometry(width * 0.48, 0.038, 0.1);
-    const exhaustGeo = new THREE.CylinderGeometry(0.042, 0.042, 0.14, 10);
-    exhaustGeo.rotateX(Math.PI / 2);
-    this.ownedGeos.push(grilleGeo, grilleBarGeo, exhaustGeo);
-
-    const grille = markDeformable(new THREE.Mesh(grilleGeo, this.darkTrimMat), 0.8);
-    grille.position.set(0, type === 'CITY_SEDAN' ? 0.5 : 0.62, length / 2 - 0.01);
-    const grilleBar = new THREE.Mesh(grilleBarGeo, this.chromeMat);
-    grilleBar.position.copy(grille.position);
-    group.add(bumperF, bumperR, grille, grilleBar);
-
-    const exOffsets = type === 'CITY_SEDAN' || type === 'URBAN_SUV' ? [-0.54, 0.54] : [-0.52];
-    exOffsets.forEach((ex) => {
-      const tip = new THREE.Mesh(exhaustGeo, this.chromeMat);
-      tip.position.set(ex, 0.25, -length / 2 - 0.03);
-      group.add(tip);
-    });
-
-    // Wing mirrors with chrome reflective backs & painted door handles
-    const mirrorGeo = new THREE.BoxGeometry(0.15, 0.09, 0.1);
-    const mirrorFaceGeo = new THREE.BoxGeometry(0.12, 0.065, 0.02);
-    const handleGeo = new THREE.BoxGeometry(0.03, 0.032, 0.14);
-    this.ownedGeos.push(mirrorGeo, mirrorFaceGeo, handleGeo);
-
-    [-1, 1].forEach((side) => {
-      const mirrorMat = type === 'CITY_SEDAN' || type === 'URBAN_SUV' ? bodyMat : this.darkTrimMat;
-      const mirror = new THREE.Mesh(mirrorGeo, mirrorMat);
-      mirror.position.set(
-        side * (width / 2 + 0.05),
-        type === 'CITY_SEDAN' ? 0.92 : 1.15,
-        type === 'DANFO_BUS' ? 1.55 : 0.65
-      );
-      const face = new THREE.Mesh(mirrorFaceGeo, this.chromeMat);
-      face.position.set(mirror.position.x, mirror.position.y, mirror.position.z - 0.045);
-      group.add(mirror, face);
-
-      const hFront = new THREE.Mesh(handleGeo, this.chromeMat);
-      hFront.position.set(
-        side * (width / 2 - 0.01),
-        type === 'CITY_SEDAN' ? 0.74 : 0.95,
-        type === 'DANFO_BUS' ? 0.95 : 0.15
-      );
-      group.add(hFront);
-      if (type === 'CITY_SEDAN' || type === 'URBAN_SUV') {
-        const hRear = new THREE.Mesh(handleGeo, this.chromeMat);
-        hRear.position.set(side * (width / 2 - 0.01), hFront.position.y, -0.7);
-        group.add(hRear);
-      }
-    });
-
-    // License plates front & rear
-    const fBack = new THREE.Mesh(this.plateBackGeo, this.darkTrimMat);
-    fBack.position.set(0, 0.34, length / 2 + 0.06);
-    const fFace = new THREE.Mesh(this.plateFaceGeo, this.plateMat);
-    fFace.position.set(0, 0.34, length / 2 + 0.072);
-
-    const rBack = new THREE.Mesh(this.plateBackGeo, this.darkTrimMat);
-    rBack.position.set(0, type === 'CITY_SEDAN' ? 0.56 : 0.68, -length / 2 + 0.02);
-    const rFace = new THREE.Mesh(this.plateFaceGeo, this.plateMat);
-    rFace.position.set(0, rBack.position.y, -length / 2 + 0.008);
-    rFace.rotation.y = Math.PI;
-    group.add(fBack, fFace, rBack, rFace);
-
-    // Danfo Signature Dual Black Racing Stripes, Roof Rack & Route Board
-    if (type === 'DANFO_BUS') {
-      const sU = new THREE.BoxGeometry(0.03, 0.12, length * 0.88);
-      const sL = new THREE.BoxGeometry(0.03, 0.08, length * 0.88);
-      const rackRail = new THREE.BoxGeometry(0.05, 0.06, 2.8);
-      const boardGeo = new THREE.BoxGeometry(1.16, 0.2, 0.09);
-      this.ownedGeos.push(sU, sL, rackRail, boardGeo);
-
-      [-1, 1].forEach((sign) => {
-        const stripeUpper = new THREE.Mesh(sU, this.darkTrimMat);
-        stripeUpper.position.set(sign * (width / 2 - 0.01), 0.95, 0);
-        const stripeLower = new THREE.Mesh(sL, this.darkTrimMat);
-        stripeLower.position.set(sign * (width / 2 - 0.01), 0.72, 0);
-        const rail = new THREE.Mesh(rackRail, this.darkTrimMat);
-        rail.position.set(sign * 0.72, 2.08, -0.2);
-        group.add(stripeUpper, stripeLower, rail);
-      });
-      const destBoard = new THREE.Mesh(boardGeo, this.darkTrimMat);
-      destBoard.position.set(0, 1.92, 1.72);
-      const routeStrip = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.09, 0.02), this.amberMat);
-      routeStrip.position.set(0, 1.92, 1.77);
-      this.ownedGeos.push(routeStrip.geometry);
-      group.add(destBoard, routeStrip);
-    }
-
-    // Delivery Van Rear Roll-up Door Seams + Amber Roof Markers
-    if (type === 'DELIVERY_VAN') {
-      const doorFrame = new THREE.Mesh(
-        new THREE.BoxGeometry(width * 0.84, 1.45, 0.06),
-        this.chromeMat
-      );
-      doorFrame.position.set(0, 1.18, -length / 2 + 0.04);
-      this.ownedGeos.push(doorFrame.geometry);
-      group.add(doorFrame);
-    }
-
-    // 4 Realistic 5-Spoke Wheels with Arch Flares
-    const wheelScale = type === 'URBAN_SUV' || type === 'DELIVERY_VAN' ? 1.07 : 0.96;
-    const wheelRadius = 0.35 * wheelScale;
-    const wheelX = width / 2 - 0.06;
-    const wheelZF = type === 'DANFO_BUS' ? 1.45 : length * 0.31;
-    const wheelZR = -length * 0.31;
-    const useDarkRims = type === 'URBAN_SUV';
-
-    const wheels = [
-      this.addTrafficWheel(group, -wheelX, wheelRadius, wheelZF, wheelScale, useDarkRims),
-      this.addTrafficWheel(group, wheelX, wheelRadius, wheelZF, wheelScale, useDarkRims),
-      this.addTrafficWheel(group, -wheelX, wheelRadius, wheelZR, wheelScale, useDarkRims),
-      this.addTrafficWheel(group, wheelX, wheelRadius, wheelZR, wheelScale, useDarkRims),
-    ];
-
-    // Multi-Element Headlight Housings (LED core + DRL bar + clear lens)
-    const headY = type === 'CITY_SEDAN' ? 0.56 : 0.68;
-    const headCoreGeo = new THREE.BoxGeometry(0.3, 0.1, 0.07);
-    const drlGeo = new THREE.BoxGeometry(0.32, 0.025, 0.08);
-    const lensGeo = new THREE.BoxGeometry(0.34, 0.14, 0.09);
-    this.ownedGeos.push(headCoreGeo, drlGeo, lensGeo);
-
-    [-1, 1].forEach((side) => {
-      const hx = side * width * 0.34;
-      const head = new THREE.Mesh(headCoreGeo, this.headLightMat);
-      head.position.set(hx, headY, length / 2 - 0.02);
-      const drl = new THREE.Mesh(drlGeo, this.drlMat);
-      drl.position.set(hx, headY - 0.055, length / 2 - 0.015);
-      const lens = new THREE.Mesh(lensGeo, this.clearLensMat);
-      lens.position.set(hx, headY - 0.01, length / 2);
-      group.add(head, drl, lens);
-    });
-
-    // Tail / Brake Lights + Amber Indicators + Reverse Lenses
     const brakeMat = new THREE.MeshStandardMaterial({
       color: 0xdc2626,
       emissive: 0xdc2626,
@@ -727,28 +679,275 @@ export class TrafficEngine {
     });
     this.sharedMats.push(brakeMat);
 
-    const brakeY = type === 'CITY_SEDAN' ? 0.63 : 0.74;
-    const brakeGeo = new THREE.BoxGeometry(0.34, 0.11, 0.08);
-    const amberGeo = new THREE.BoxGeometry(0.16, 0.04, 0.07);
-    const revGeo = new THREE.BoxGeometry(0.14, 0.04, 0.07);
-    this.ownedGeos.push(brakeGeo, amberGeo, revGeo);
+    let wheels: THREE.Group[] = [];
+    let wheelRadius = 0.35;
 
-    [-1, 1].forEach((side) => {
-      const bx = side * width * 0.34;
-      const brake = new THREE.Mesh(brakeGeo, brakeMat);
-      brake.position.set(bx, brakeY, -length / 2 + 0.01);
-      const amb = new THREE.Mesh(amberGeo, this.amberMat);
-      amb.position.set(bx, brakeY - 0.065, -length / 2 + 0.01);
-      const rev = new THREE.Mesh(revGeo, this.reverseMat);
-      rev.position.set(bx * 0.72, brakeY - 0.065, -length / 2 + 0.01);
-      group.add(brake, amb, rev);
-    });
+    if (type === 'OKADA') {
+      // Okada Motorcycle Hardware + Helmeted Commercial Rider
+      const visor = new THREE.Mesh(this.glassGeos.OKADA, this.glassMat);
+      group.add(visor);
+
+      const handleGeo = new THREE.BoxGeometry(0.68, 0.04, 0.04);
+      const forkGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.62, 8);
+      const saddleGeo = new THREE.BoxGeometry(0.28, 0.09, 0.56);
+      const okadaHeadGeo = new THREE.CylinderGeometry(0.095, 0.095, 0.09, 12);
+      okadaHeadGeo.rotateX(Math.PI / 2);
+      const okadaTailGeo = new THREE.BoxGeometry(0.14, 0.07, 0.06);
+      const riderTorsoGeo = new THREE.BoxGeometry(0.32, 0.44, 0.22);
+      const riderHelmetGeo = new THREE.SphereGeometry(0.145, 12, 10);
+      const riderLegGeo = new THREE.BoxGeometry(0.11, 0.38, 0.12);
+      this.ownedGeos.push(
+        handleGeo,
+        forkGeo,
+        saddleGeo,
+        okadaHeadGeo,
+        okadaTailGeo,
+        riderTorsoGeo,
+        riderHelmetGeo,
+        riderLegGeo
+      );
+
+      const handlebars = new THREE.Mesh(handleGeo, this.chromeMat);
+      handlebars.position.set(0, 0.96, 0.42);
+      const fork = new THREE.Mesh(forkGeo, this.chromeMat);
+      fork.position.set(0, 0.62, 0.55);
+      fork.rotation.x = -0.32;
+      const saddle = new THREE.Mesh(saddleGeo, this.darkTrimMat);
+      saddle.position.set(0, 0.71, -0.14);
+
+      const headLamp = new THREE.Mesh(okadaHeadGeo, this.headLightMat);
+      headLamp.position.set(0, 0.79, 0.66);
+      const tailLamp = new THREE.Mesh(okadaTailGeo, brakeMat);
+      tailLamp.position.set(0, 0.68, -0.82);
+
+      const riderTorso = new THREE.Mesh(riderTorsoGeo, this.amberMat);
+      riderTorso.position.set(0, 1.04, -0.06);
+      riderTorso.rotation.x = 0.24;
+      const riderHelmet = new THREE.Mesh(riderHelmetGeo, this.chromeMat);
+      riderHelmet.position.set(0, 1.38, 0.04);
+      const legL = new THREE.Mesh(riderLegGeo, this.darkTrimMat);
+      legL.position.set(-0.18, 0.56, 0.02);
+      legL.rotation.x = 0.25;
+      const legR = legL.clone();
+      legR.position.x = 0.18;
+
+      group.add(handlebars, fork, saddle, headLamp, tailLamp, riderTorso, riderHelmet, legL, legR);
+
+      wheelRadius = 0.3;
+      const frontWheel = this.addTrafficWheel(group, 0, wheelRadius, 0.66, 0.86, true);
+      const rearWheel = this.addTrafficWheel(group, 0, wheelRadius, -0.64, 0.86, true);
+      frontWheel.scale.x = 0.52;
+      rearWheel.scale.x = 0.58;
+      wheels = [frontWheel, rearWheel];
+    } else {
+      // Recessed cabin/windshield glass + realistic seats & steering wheel inside
+      const glassMesh = new THREE.Mesh(this.glassGeos[type], this.glassMat);
+      group.add(glassMesh);
+      this.addSeatAndInterior(
+        group,
+        type,
+        type === 'CITY_SEDAN' || type === 'URBAN_SUV' || type === 'COASTER_BUS'
+      );
+
+      // Front & rear bumpers + front splitter / lower grille + rear diffuser & exhausts
+      const bumperFGeo = new THREE.BoxGeometry(width * 0.96, 0.22, 0.18);
+      const bumperRGeo = new THREE.BoxGeometry(width * 0.96, 0.22, 0.18);
+      this.ownedGeos.push(bumperFGeo, bumperRGeo);
+
+      const bumperF = markDeformable(new THREE.Mesh(bumperFGeo, this.claddingMat), 1.0);
+      bumperF.position.set(0, 0.34, length / 2 - 0.03);
+      const bumperR = markDeformable(new THREE.Mesh(bumperRGeo, this.claddingMat), 1.0);
+      bumperR.position.set(0, 0.36, -length / 2 + 0.03);
+
+      const grilleGeo = new THREE.BoxGeometry(width * 0.52, 0.24, 0.08);
+      const grilleBarGeo = new THREE.BoxGeometry(width * 0.48, 0.038, 0.1);
+      const exhaustGeo = new THREE.CylinderGeometry(0.042, 0.042, 0.14, 10);
+      exhaustGeo.rotateX(Math.PI / 2);
+      this.ownedGeos.push(grilleGeo, grilleBarGeo, exhaustGeo);
+
+      const grille = markDeformable(new THREE.Mesh(grilleGeo, this.darkTrimMat), 0.8);
+      grille.position.set(0, type === 'CITY_SEDAN' ? 0.5 : 0.62, length / 2 - 0.01);
+      const grilleBar = new THREE.Mesh(grilleBarGeo, this.chromeMat);
+      grilleBar.position.copy(grille.position);
+      group.add(bumperF, bumperR, grille, grilleBar);
+
+      const exOffsets = type === 'CITY_SEDAN' || type === 'URBAN_SUV' ? [-0.54, 0.54] : [-0.52];
+      exOffsets.forEach((ex) => {
+        const tip = new THREE.Mesh(exhaustGeo, this.chromeMat);
+        tip.position.set(ex, 0.25, -length / 2 - 0.03);
+        group.add(tip);
+      });
+
+      // Wing mirrors with chrome reflective backs & painted door handles
+      const mirrorGeo = new THREE.BoxGeometry(0.15, 0.09, 0.1);
+      const mirrorFaceGeo = new THREE.BoxGeometry(0.12, 0.065, 0.02);
+      const handleGeo = new THREE.BoxGeometry(0.03, 0.032, 0.14);
+      this.ownedGeos.push(mirrorGeo, mirrorFaceGeo, handleGeo);
+
+      [-1, 1].forEach((side) => {
+        const mirrorMat = type === 'CITY_SEDAN' || type === 'URBAN_SUV' ? bodyMat : this.darkTrimMat;
+        const mirror = new THREE.Mesh(mirrorGeo, mirrorMat);
+        mirror.position.set(
+          side * (width / 2 + 0.05),
+          type === 'CITY_SEDAN' ? 0.92 : type === 'COASTER_BUS' ? 1.35 : 1.15,
+          type === 'COASTER_BUS' ? 2.65 : type === 'DANFO_BUS' ? 1.55 : 0.65
+        );
+        const face = new THREE.Mesh(mirrorFaceGeo, this.chromeMat);
+        face.position.set(mirror.position.x, mirror.position.y, mirror.position.z - 0.045);
+        group.add(mirror, face);
+
+        const hFront = new THREE.Mesh(handleGeo, this.chromeMat);
+        hFront.position.set(
+          side * (width / 2 - 0.01),
+          type === 'CITY_SEDAN' ? 0.74 : 0.95,
+          type === 'COASTER_BUS' ? 1.8 : type === 'DANFO_BUS' ? 0.95 : 0.15
+        );
+        group.add(hFront);
+        if (type === 'CITY_SEDAN' || type === 'URBAN_SUV') {
+          const hRear = new THREE.Mesh(handleGeo, this.chromeMat);
+          hRear.position.set(side * (width / 2 - 0.01), hFront.position.y, -0.7);
+          group.add(hRear);
+        }
+      });
+
+      // License plates front & rear
+      const fBack = new THREE.Mesh(this.plateBackGeo, this.darkTrimMat);
+      fBack.position.set(0, 0.34, length / 2 + 0.06);
+      const fFace = new THREE.Mesh(this.plateFaceGeo, this.plateMat);
+      fFace.position.set(0, 0.34, length / 2 + 0.072);
+
+      const rBack = new THREE.Mesh(this.plateBackGeo, this.darkTrimMat);
+      rBack.position.set(0, type === 'CITY_SEDAN' ? 0.56 : 0.68, -length / 2 + 0.02);
+      const rFace = new THREE.Mesh(this.plateFaceGeo, this.plateMat);
+      rFace.position.set(0, rBack.position.y, -length / 2 + 0.008);
+      rFace.rotation.y = Math.PI;
+      group.add(fBack, fFace, rBack, rFace);
+
+      // Danfo Signature Dual Black Racing Stripes, Roof Rack & Route Board
+      if (type === 'DANFO_BUS') {
+        const sU = new THREE.BoxGeometry(0.03, 0.12, length * 0.88);
+        const sL = new THREE.BoxGeometry(0.03, 0.08, length * 0.88);
+        const rackRail = new THREE.BoxGeometry(0.05, 0.06, 2.8);
+        const boardGeo = new THREE.BoxGeometry(1.16, 0.2, 0.09);
+        this.ownedGeos.push(sU, sL, rackRail, boardGeo);
+
+        [-1, 1].forEach((sign) => {
+          const stripeUpper = new THREE.Mesh(sU, this.darkTrimMat);
+          stripeUpper.position.set(sign * (width / 2 - 0.01), 0.95, 0);
+          const stripeLower = new THREE.Mesh(sL, this.darkTrimMat);
+          stripeLower.position.set(sign * (width / 2 - 0.01), 0.72, 0);
+          const rail = new THREE.Mesh(rackRail, this.darkTrimMat);
+          rail.position.set(sign * 0.72, 2.08, -0.2);
+          group.add(stripeUpper, stripeLower, rail);
+        });
+        const destBoard = new THREE.Mesh(boardGeo, this.darkTrimMat);
+        destBoard.position.set(0, 1.92, 1.72);
+        const routeStrip = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.09, 0.02), this.amberMat);
+        routeStrip.position.set(0, 1.92, 1.77);
+        this.ownedGeos.push(routeStrip.geometry);
+        group.add(destBoard, routeStrip);
+      }
+
+      // Coaster Bus Blue-Green Transit Livery Stripes, Roof AC Unit & Destination Display
+      if (type === 'COASTER_BUS') {
+        const coasterStripeMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.35 });
+        this.sharedMats.push(coasterStripeMat);
+        const stripeGeo = new THREE.BoxGeometry(0.03, 0.24, length * 0.9);
+        const acPodGeo = new THREE.BoxGeometry(1.3, 0.22, 1.9);
+        const destGeo = new THREE.BoxGeometry(1.35, 0.22, 0.09);
+        this.ownedGeos.push(stripeGeo, acPodGeo, destGeo);
+
+        [-1, 1].forEach((sign) => {
+          const st = new THREE.Mesh(stripeGeo, coasterStripeMat);
+          st.position.set(sign * (width / 2 - 0.01), 0.96, 0);
+          group.add(st);
+        });
+        const acPod = new THREE.Mesh(acPodGeo, this.chromeMat);
+        acPod.position.set(0, 2.48, 0.2);
+        const dest = new THREE.Mesh(destGeo, this.darkTrimMat);
+        dest.position.set(0, 2.22, 2.68);
+        group.add(acPod, dest);
+      }
+
+      // Delivery Van Rear Roll-up Door Seams + Amber Roof Markers
+      if (type === 'DELIVERY_VAN') {
+        const doorFrame = new THREE.Mesh(
+          new THREE.BoxGeometry(width * 0.84, 1.45, 0.06),
+          this.chromeMat
+        );
+        doorFrame.position.set(0, 1.18, -length / 2 + 0.04);
+        this.ownedGeos.push(doorFrame.geometry);
+        group.add(doorFrame);
+      }
+
+      // 4 Realistic 5-Spoke Wheels with Arch Flares
+      const wheelScale =
+        type === 'COASTER_BUS' ? 1.12 : type === 'URBAN_SUV' || type === 'DELIVERY_VAN' ? 1.07 : 0.96;
+      wheelRadius = 0.35 * wheelScale;
+      const wheelX = width / 2 - 0.06;
+      const wheelZF = type === 'COASTER_BUS' ? 2.15 : type === 'DANFO_BUS' ? 1.45 : length * 0.31;
+      const wheelZR = type === 'COASTER_BUS' ? -2.05 : -length * 0.31;
+      const useDarkRims = type === 'URBAN_SUV';
+
+      wheels = [
+        this.addTrafficWheel(group, -wheelX, wheelRadius, wheelZF, wheelScale, useDarkRims),
+        this.addTrafficWheel(group, wheelX, wheelRadius, wheelZF, wheelScale, useDarkRims),
+        this.addTrafficWheel(group, -wheelX, wheelRadius, wheelZR, wheelScale, useDarkRims),
+        this.addTrafficWheel(group, wheelX, wheelRadius, wheelZR, wheelScale, useDarkRims),
+      ];
+
+      // Multi-Element Headlight Housings (LED core + DRL bar + clear lens)
+      const headY = type === 'CITY_SEDAN' ? 0.56 : 0.68;
+      const headCoreGeo = new THREE.BoxGeometry(0.3, 0.1, 0.07);
+      const drlGeo = new THREE.BoxGeometry(0.32, 0.025, 0.08);
+      const lensGeo = new THREE.BoxGeometry(0.34, 0.14, 0.09);
+      this.ownedGeos.push(headCoreGeo, drlGeo, lensGeo);
+
+      [-1, 1].forEach((side) => {
+        const hx = side * width * 0.34;
+        const head = new THREE.Mesh(headCoreGeo, this.headLightMat);
+        head.position.set(hx, headY, length / 2 - 0.02);
+        const drl = new THREE.Mesh(drlGeo, this.drlMat);
+        drl.position.set(hx, headY - 0.055, length / 2 - 0.015);
+        const lens = new THREE.Mesh(lensGeo, this.clearLensMat);
+        lens.position.set(hx, headY - 0.01, length / 2);
+        group.add(head, drl, lens);
+      });
+
+      // Tail / Brake Lights + Amber Indicators + Reverse Lenses
+      const brakeY = type === 'CITY_SEDAN' ? 0.63 : 0.74;
+      const brakeGeo = new THREE.BoxGeometry(0.34, 0.11, 0.08);
+      const amberGeo = new THREE.BoxGeometry(0.16, 0.04, 0.07);
+      const revGeo = new THREE.BoxGeometry(0.14, 0.04, 0.07);
+      this.ownedGeos.push(brakeGeo, amberGeo, revGeo);
+
+      [-1, 1].forEach((side) => {
+        const bx = side * width * 0.34;
+        const brake = new THREE.Mesh(brakeGeo, brakeMat);
+        brake.position.set(bx, brakeY, -length / 2 + 0.01);
+        const amb = new THREE.Mesh(amberGeo, this.amberMat);
+        amb.position.set(bx, brakeY - 0.065, -length / 2 + 0.01);
+        const rev = new THREE.Mesh(revGeo, this.reverseMat);
+        rev.position.set(bx * 0.72, brakeY - 0.065, -length / 2 + 0.01);
+        group.add(brake, amb, rev);
+      });
+    }
 
     const fromNode = LAGOS_ROAD_NODES[fromId];
     const toNode = LAGOS_ROAD_NODES[toId];
     const segLen = Math.hypot(toNode.x - fromNode.x, toNode.z - fromNode.z);
     const speed =
-      type === 'DANFO_BUS' ? 7.8 : type === 'DELIVERY_VAN' ? 8.2 : type === 'URBAN_SUV' ? 10.2 : 11.2;
+      type === 'COASTER_BUS'
+        ? 7.2
+        : type === 'DANFO_BUS'
+        ? 7.8
+        : type === 'DELIVERY_VAN'
+        ? 8.2
+        : type === 'URBAN_SUV'
+        ? 10.2
+        : type === 'OKADA'
+        ? 11.8
+        : 11.2;
 
     const initY = (fromNode.y ?? 0) + ((toNode.y ?? 0) - (fromNode.y ?? 0)) * progress;
     return {

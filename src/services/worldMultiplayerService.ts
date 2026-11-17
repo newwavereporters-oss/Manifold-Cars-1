@@ -4,7 +4,7 @@ import { createAsyncMutex, withTimeout } from '../utils/networkReliability';
 import type { VehicleModelType } from '../components/world/worldModels';
 import type { PlayerProfile } from './playerService';
 
-export const DEFAULT_DISCOVERY_RADIUS = 110;
+export const DEFAULT_DISCOVERY_RADIUS = 260;
 const HEARTBEAT_INTERVAL_MS = 35_000;
 const NEARBY_POLL_INTERVAL_MS = 8_000;
 const BROADCAST_MIN_INTERVAL_MS = 110;
@@ -70,11 +70,15 @@ export interface ModerationBlockFeedback {
 }
 
 export function inferLagosRegion(x: number, z: number): string {
-  if (x > 1420) return 'Epe Coastal Highway';
-  if (x > 600) return 'Lekki Peninsula & Ajah';
-  if (x > 420 && z > -250 && z < 350) return 'Ikoyi & Link Bridge';
-  if (z < -260) return 'Third Mainland Bridge / Mainland';
-  if (x < -160) return 'Surulere & Mainland West';
+  if (z < -1500 && x > 220) return 'Murtala Muhammed Airport';
+  if (x < -1650 && z < -900) return 'Iyanoba Town';
+  if (x < -900 && z < -900) return 'LASU / Mile 2 Corridor';
+  if (z > 240 && x > -220 && x < 340) return 'Marina Financial District';
+  if (x > 2200) return 'Epe Coastal Highway';
+  if (x > 980) return 'Lekki Peninsula & Ajah';
+  if (x > 700 && z > -400 && z < 500) return 'Ikoyi & Link Bridge';
+  if (z < -380) return 'Third Mainland Bridge / Mainland';
+  if (x < -250) return 'Surulere & Mainland West';
   return 'Lagos Island';
 }
 
@@ -95,6 +99,7 @@ export class WorldMultiplayerSession {
   private onConversationOpen: (conv: ActiveConversationState) => void;
   private onMessageReceived: (msg: ChatMessageItem) => void;
   private onConversationClosed: (conversationId: string, reason: string) => void;
+  private onPeerPresenceChange?: (peerPlayerId: string, online: boolean, distanceMeters?: number) => void;
 
   private nicknameCache = new Map<string, string>();
   private activeConversationId: string | null = null;
@@ -112,6 +117,7 @@ export class WorldMultiplayerSession {
       onConversationOpen: (conv: ActiveConversationState) => void;
       onMessageReceived: (msg: ChatMessageItem) => void;
       onConversationClosed: (conversationId: string, reason: string) => void;
+      onPeerPresenceChange?: (peerPlayerId: string, online: boolean, distanceMeters?: number) => void;
     }
   ) {
     this.me = profile;
@@ -121,6 +127,7 @@ export class WorldMultiplayerSession {
     this.onConversationOpen = callbacks.onConversationOpen;
     this.onMessageReceived = callbacks.onMessageReceived;
     this.onConversationClosed = callbacks.onConversationClosed;
+    this.onPeerPresenceChange = callbacks.onPeerPresenceChange;
   }
 
   public updateProfile(profile: PlayerProfile) {
@@ -158,8 +165,13 @@ export class WorldMultiplayerSession {
       const dist = Math.hypot(payload.x - this.lastKnownPos.x, payload.z - this.lastKnownPos.z);
       const existing = this.remotePeers.get(payload.playerId);
       this.nicknameCache.set(payload.playerId, payload.nickname);
+      const isActiveChatPeer = this.activeConversationPeerId === payload.playerId;
 
-      if (dist <= this.discoveryRadius * 1.45) {
+      if (isActiveChatPeer) {
+        this.onPeerPresenceChange?.(payload.playerId, true, Math.round(dist));
+      }
+
+      if (dist <= this.discoveryRadius * 1.5 || isActiveChatPeer) {
         this.remotePeers.set(payload.playerId, {
           playerId: payload.playerId,
           nickname: payload.nickname,
@@ -193,16 +205,23 @@ export class WorldMultiplayerSession {
         if (this.isStopped) return;
         const row = (payload.new || payload.old) as any;
         if (!row || row.player_id === this.me.id) return;
+        const isActiveChatPeer = this.activeConversationPeerId === row.player_id;
         if (payload.eventType === 'DELETE' || row.is_online === false) {
           this.remotePeers.delete(row.player_id);
           this.emitPeers();
+          if (isActiveChatPeer) {
+            this.onPeerPresenceChange?.(row.player_id, false);
+          }
         } else {
           this.nicknameCache.set(row.player_id, row.nickname);
           const dist = Math.hypot(
             (row.pos_x ?? 0) - this.lastKnownPos.x,
             (row.pos_z ?? 0) - this.lastKnownPos.z
           );
-          if (dist <= this.discoveryRadius) {
+          if (isActiveChatPeer) {
+            this.onPeerPresenceChange?.(row.player_id, true, Math.round(dist));
+          }
+          if (dist <= this.discoveryRadius || isActiveChatPeer) {
             this.remotePeers.set(row.player_id, {
               playerId: row.player_id,
               nickname: row.nickname,
@@ -498,8 +517,53 @@ export class WorldMultiplayerSession {
           });
         }
 
+        if (this.activeConversationPeerId) {
+          if (freshIds.has(this.activeConversationPeerId)) {
+            const p = this.remotePeers.get(this.activeConversationPeerId);
+            this.onPeerPresenceChange?.(this.activeConversationPeerId, true, p?.distance);
+          } else {
+            // Distance-independent chat presence check: peer may have driven across the map
+            const { data: peerRow } = await supabase
+              .from('player_presence')
+              .select('player_id, nickname, vehicle_model, paint_color, world_region, pos_x, pos_y, pos_z, heading, speed, is_online, last_heartbeat_at')
+              .eq('player_id', this.activeConversationPeerId)
+              .maybeSingle();
+            if (!this.isStopped && peerRow && peerRow.is_online) {
+              const dist = Math.round(
+                Math.hypot(
+                  (peerRow.pos_x ?? 0) - this.lastKnownPos.x,
+                  (peerRow.pos_z ?? 0) - this.lastKnownPos.z
+                )
+              );
+              this.onPeerPresenceChange?.(peerRow.player_id, true, dist);
+              const existing = this.remotePeers.get(peerRow.player_id);
+              const keepBroadcast = existing && Date.now() - existing.lastUpdatedAtMs < 3500;
+              this.remotePeers.set(peerRow.player_id, {
+                playerId: peerRow.player_id,
+                nickname: peerRow.nickname,
+                vehicleModel: peerRow.vehicle_model || 'SPORTS_COUPE',
+                paintColor: peerRow.paint_color || '#DC2626',
+                worldRegion: peerRow.world_region || 'Lagos Island',
+                x: keepBroadcast ? existing.x : peerRow.pos_x ?? 0,
+                y: keepBroadcast ? existing.y : peerRow.pos_y ?? 0,
+                z: keepBroadcast ? existing.z : peerRow.pos_z ?? 0,
+                heading: keepBroadcast ? existing.heading : peerRow.heading ?? Math.PI,
+                speed: keepBroadcast ? existing.speed : peerRow.speed ?? 0,
+                distance: dist,
+                isOnline: true,
+                lastUpdatedAtMs: keepBroadcast
+                  ? existing.lastUpdatedAtMs
+                  : Date.parse(peerRow.last_heartbeat_at) || Date.now(),
+              });
+              freshIds.add(peerRow.player_id);
+            } else if (!this.isStopped && this.activeConversationPeerId) {
+              this.onPeerPresenceChange?.(this.activeConversationPeerId, false);
+            }
+          }
+        }
+
         for (const id of Array.from(this.remotePeers.keys())) {
-          if (!freshIds.has(id)) {
+          if (!freshIds.has(id) && id !== this.activeConversationPeerId) {
             this.remotePeers.delete(id);
           }
         }

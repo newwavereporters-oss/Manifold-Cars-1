@@ -1113,6 +1113,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         if (playerCarGroupRef.current) playerCarGroupRef.current.visible = false;
         trafficEngine.update(delta, 0, -40 * WORLD_XZ_SCALE, 0, perfProfileRef.current.trafficCullDistance);
         cityData.updateTrafficSignals?.(currentTime / 1000);
+        cityData.updateDynamicWorld?.(delta, currentTime / 1000);
         const orbitAngle = currentTime * 0.00012;
         const camX = Math.sin(orbitAngle) * 165;
         const camZ = -35 * WORLD_XZ_SCALE + Math.cos(orbitAngle) * 165;
@@ -1330,6 +1331,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       rivalsEngine.update(delta, currentTime);
       cityData.updateTrafficSignals?.(currentTime / 1000);
       cityData.updateFallingProps(delta);
+      cityData.updateDynamicWorld?.(delta, currentTime / 1000);
 
       // Hardened Building, Barricade, Traffic, Rival & Falling Prop Collision Resolution
       const frameCollisions = collisionEngine.resolveWorldCollisions(
@@ -1930,26 +1932,26 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             entry.y + 1.8 - camera.position.y,
             entry.z - camera.position.z
           );
-          if (camDist > 135 || visibleCount >= 10) {
+          if (camDist > 260 || visibleCount >= 12) {
             continue;
           }
 
-          tmpProjVec.set(entry.x, entry.y + 2.45, entry.z);
+          tmpProjVec.set(entry.x, entry.y + 2.75, entry.z);
           tmpProjVec.project(camera);
 
           const inViewFrustum =
             tmpProjVec.z > -1 &&
             tmpProjVec.z < 1 &&
-            tmpProjVec.x >= -0.92 &&
-            tmpProjVec.x <= 0.92 &&
-            tmpProjVec.y >= -0.92 &&
-            tmpProjVec.y <= 0.92;
+            tmpProjVec.x >= -0.95 &&
+            tmpProjVec.x <= 0.95 &&
+            tmpProjVec.y >= -0.95 &&
+            tmpProjVec.y <= 0.95;
 
           const occluded =
             inViewFrustum &&
             isTargetOccludedByBuildings(
               { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-              { x: entry.x, y: entry.y + 2.25, z: entry.z },
+              { x: entry.x, y: entry.y + 2.45, z: entry.z },
               cityData.collidableBuildings
             );
 

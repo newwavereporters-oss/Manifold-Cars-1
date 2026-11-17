@@ -293,14 +293,14 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                     proj.screenY
                   )}px) translate(-50%, -100%)`,
                 }}
-                className="pointer-events-auto absolute top-0 left-0 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-xl bg-[#071A2B]/92 hover:bg-[#EF233C] border border-white/25 text-white shadow-lg transition-colors flex items-center gap-1.5 cursor-pointer group min-h-[30px]"
+                className="pointer-events-auto absolute top-0 left-0 px-3 py-1.5 rounded-xl bg-[#071A2B]/96 hover:bg-[#EF233C] border-2 border-emerald-400/90 text-white shadow-2xl transition-colors flex items-center gap-2 cursor-pointer group min-h-[34px]"
                 title={`Tap to interact with ${proj.nickname}`}
               >
-                <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 shrink-0" />
-                <span className="text-[10px] sm:text-[11px] font-black tracking-wide max-w-[96px] truncate">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="text-xs sm:text-sm font-black tracking-wide max-w-[175px] truncate drop-shadow">
                   {proj.nickname}
                 </span>
-                <span className="text-[9px] font-mono text-gray-300 group-hover:text-white/90">
+                <span className="text-[10px] sm:text-[11px] font-mono font-bold text-emerald-300 group-hover:text-white/95 shrink-0">
                   {proj.distance}m
                 </span>
               </button>
@@ -308,9 +308,9 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
           })}
       </div>
 
-      {/* 2. INTERACTIVE PLAYER CARD ("REQUEST CHAT") */}
+      {/* 2. INTERACTIVE PLAYER CARD ("REQUEST CHAT") — Anchored in Top-Right Corner Clear of Windshield */}
       {selectedPeer && (
-        <div className="absolute top-[134px] sm:top-[156px] [@media(max-height:480px)]:top-[96px] left-1/2 -translate-x-1/2 z-40 w-[calc(100vw-1.5rem)] max-w-xs max-h-[calc(100dvh-120px)] overflow-y-auto bg-[#071A2B]/98 border border-white/20 rounded-2xl p-4 shadow-2xl pointer-events-auto">
+        <div className="absolute top-[108px] sm:top-[116px] [@media(max-height:480px)]:top-[84px] right-2.5 sm:right-5 z-40 w-[252px] sm:w-[290px] max-h-[calc(100dvh-230px)] overflow-y-auto bg-[#071A2B]/98 border border-white/20 rounded-2xl p-3.5 shadow-2xl pointer-events-auto">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
@@ -446,9 +446,9 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
         </div>
       )}
 
-      {/* 3. INCOMING CHAT INVITATION CARD (Two-Way Acceptance Prompt) */}
+      {/* 3. INCOMING CHAT INVITATION CARD (Corner Prompt, Never Center) */}
       {incomingInvite && inviteSecondsLeft > 0 && (
-        <div className="absolute top-[134px] sm:top-[156px] [@media(max-height:480px)]:top-[96px] left-3 sm:left-6 z-40 w-[calc(100vw-1.5rem)] max-w-xs bg-[#071A2B]/98 border border-emerald-400/55 rounded-2xl p-3.5 shadow-2xl pointer-events-auto">
+        <div className="absolute top-[108px] sm:top-[116px] [@media(max-height:480px)]:top-[84px] left-2.5 sm:left-5 z-40 w-[248px] sm:w-[290px] bg-[#071A2B]/98 border border-emerald-400/55 rounded-2xl p-3 shadow-2xl pointer-events-auto">
           <div className="flex items-center justify-between gap-2 mb-1">
             <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
               PLAYER WANTS TO CHAT
@@ -498,15 +498,15 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
         </div>
       )}
 
-      {/* 4. COMPACT FLOATING PRIVATE TWO-WAY CHAT CARD (Above Mobile Pedals Safe Zone) */}
+      {/* 4. COMPACT CORNER PRIVATE CHAT CARD (Distance-Unlimited, Never Obstructs Center Driving View) */}
       {activeConversation && (
         <div
-          className={`absolute right-3 sm:right-6 top-[134px] sm:top-[156px] [@media(max-height:480px)]:top-[96px] lg:top-auto lg:bottom-28 z-40 pointer-events-auto transition-all ${
-            isChatMinimized ? 'w-56' : 'w-[calc(100vw-1.5rem)] sm:w-88'
+          className={`absolute right-2.5 sm:right-5 top-[108px] sm:top-[116px] [@media(max-height:480px)]:top-[84px] lg:top-auto lg:bottom-28 z-40 pointer-events-auto transition-all ${
+            isChatMinimized ? 'w-44' : 'w-[250px] sm:w-[300px]'
           }`}
         >
-          <div className="bg-[#071A2B]/98 border border-white/20 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-160px)] [@media(max-height:480px)]:max-h-[calc(100dvh-112px)]">
-            <div className="px-3.5 py-2.5 bg-[#0b233a] border-b border-white/10 flex items-center justify-between gap-2">
+          <div className="bg-[#071A2B]/96 border border-white/20 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-235px)] lg:max-h-[calc(100dvh-210px)] [@media(max-height:480px)]:max-h-[calc(100dvh-118px)]">
+            <div className="px-3 py-2 bg-[#0b233a] border-b border-white/10 flex items-center justify-between gap-1.5">
               <div className="flex items-center gap-2 min-w-0">
                 <span
                   className={`w-2 h-2 rounded-full shrink-0 ${
@@ -518,7 +518,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                     {activeConversation.peerNickname}
                   </span>
                   <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-400 block">
-                    {activeConversation.peerOnline ? 'Online Nearby' : 'Connected'}
+                    {activeConversation.peerOnline ? 'Online • Anywhere' : 'Connected'}
                   </span>
                 </div>
                 {isChatMinimized && activeConversation.unreadCount > 0 && (
@@ -598,7 +598,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                   </div>
                 )}
 
-                <div className="h-36 sm:h-52 max-h-[32dvh] overflow-y-auto p-3 space-y-2 text-xs">
+                <div className="h-28 sm:h-40 max-h-[26dvh] overflow-y-auto p-2.5 space-y-2 text-xs">
                   {activeConversation.messages.length === 0 ? (
                     <p className="text-center text-gray-400 text-[11px] py-6">
                       Say hello to {activeConversation.peerNickname}. Keep chat friendly and about

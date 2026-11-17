@@ -35,6 +35,7 @@ export interface LagosCityResult {
   gpsRouteLine: THREE.Line;
   updateGPSRoute: (path: { x: number; z: number }[]) => void;
   updateTrafficSignals?: (timeSec: number) => void;
+  updateDynamicWorld?: (delta: number, timeSec: number) => void;
   updateTimeOfDay?: (mode: TimeOfDay) => void;
   dispose?: () => void;
 }
@@ -208,35 +209,35 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
   // =========================================================================
   // 1. TERRAIN (4 COASTAL LANDMASSES + MAINLAND NORTH — ZERO VOID HOLES)
   // =========================================================================
-  // A. Lagos Island + Obalende + Ikoyi (x = -460*S..+445*S, z = -165*S..+270*S)
-  const southWestLandGeo = trackGeo(new THREE.PlaneGeometry(905 * S, 435 * S, 10, 6));
+  // A. Lagos Island + Marina + Obalende + Ikoyi (x = -460*S..+445*S, z = -165*S..+275*S)
+  const southWestLandGeo = trackGeo(new THREE.PlaneGeometry(905 * S, 440 * S, 10, 6));
   const southWestLand = new THREE.Mesh(southWestLandGeo, texPack.groundTerrainMat);
   southWestLand.rotation.x = -Math.PI / 2;
-  southWestLand.position.set(-7.5 * S, -0.08, 52.5 * S);
+  southWestLand.position.set(-7.5 * S, -0.08, 55 * S);
   southWestLand.receiveShadow = true;
   cityGroup.add(southWestLand);
 
   // B. Lekki Peninsula + Ikate + Eleganza + VGC + Ajah + Eleko
-  const lekkiAjahLandGeo = trackGeo(new THREE.PlaneGeometry(755 * S, 435 * S, 10, 6));
+  const lekkiAjahLandGeo = trackGeo(new THREE.PlaneGeometry(755 * S, 440 * S, 10, 6));
   const lekkiAjahLand = new THREE.Mesh(lekkiAjahLandGeo, texPack.groundTerrainMat);
   lekkiAjahLand.rotation.x = -Math.PI / 2;
-  lekkiAjahLand.position.set(972.5 * S, -0.08, 52.5 * S);
+  lekkiAjahLand.position.set(972.5 * S, -0.08, 55 * S);
   lekkiAjahLand.receiveShadow = true;
   cityGroup.add(lekkiAjahLand);
 
   // C. Epe Town & Waterfront Peninsula
-  const epeLandGeo = trackGeo(new THREE.PlaneGeometry(175 * S, 435 * S, 4, 4));
+  const epeLandGeo = trackGeo(new THREE.PlaneGeometry(175 * S, 440 * S, 4, 4));
   const epeLand = new THREE.Mesh(epeLandGeo, texPack.groundTerrainMat);
   epeLand.rotation.x = -Math.PI / 2;
-  epeLand.position.set(1512.5 * S, -0.08, 52.5 * S);
+  epeLand.position.set(1512.5 * S, -0.08, 55 * S);
   epeLand.receiveShadow = true;
   cityGroup.add(epeLand);
 
-  // D. Mainland North: Iyana-Oworo -> Oshodi -> Ikeja -> LASU
-  const northMainlandGeo = trackGeo(new THREE.PlaneGeometry(3100 * S, 565 * S, 18, 8));
+  // D. Mainland North: Iyana-Oworo -> Oshodi -> Ikeja -> MMIA Airport -> Mile 2 -> LASU -> Iyanoba
+  const northMainlandGeo = trackGeo(new THREE.PlaneGeometry(3400 * S, 900 * S, 20, 10));
   const northMainland = new THREE.Mesh(northMainlandGeo, texPack.groundTerrainMat);
   northMainland.rotation.x = -Math.PI / 2;
-  northMainland.position.set(350 * S, -0.08, -867.5 * S);
+  northMainland.position.set(280 * S, -0.08, -1035 * S);
   northMainland.receiveShadow = true;
   cityGroup.add(northMainland);
 
@@ -1276,8 +1277,8 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
   allCollidableBuildings.forEach(buildCompositeBuilding);
 
   // Build Expanded Regions: Lagos Lagoon, Third Mainland Bridge, Epe Corridor,
-  // Iyana-Oworo, Oshodi, Ikeja, Iyana Ipaja, Egbeda, Igando, Akesan, Road Signs & LASU Campus
-  buildExpandedLagosRegions({
+  // Iyana-Oworo, Oshodi, Ikeja, MMIA Airport, Marina Skyline, Blue Line Rail, Mile 2, LASU & Iyanoba
+  const dynamicRegionCtrl = buildExpandedLagosRegions({
     cityGroup,
     texPack,
     trackGeo,
@@ -2103,6 +2104,10 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     texPack.dispose();
   };
 
+  const updateDynamicWorld = (delta: number, timeSec: number) => {
+    dynamicRegionCtrl.update(delta, timeSec);
+  };
+
   return {
     cityGroup,
     collidableBuildings: allCollidableBuildings,
@@ -2115,6 +2120,7 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     gpsRouteLine,
     updateGPSRoute,
     updateTrafficSignals,
+    updateDynamicWorld,
     updateTimeOfDay,
     dispose,
   };

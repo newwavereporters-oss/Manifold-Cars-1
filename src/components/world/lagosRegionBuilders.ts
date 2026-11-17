@@ -20,6 +20,10 @@ import {
   createAjahFlyover,
   createEpeBridge,
 } from '../../three/lagosCityBuilder';
+import {
+  buildAirportMarinaAndRail,
+  AirportAndRailController,
+} from '../../three/airportAndRailBuilder';
 
 export interface RegionBuildContext {
   cityGroup: THREE.Group;
@@ -42,7 +46,7 @@ export interface RegionBuildContext {
   dynamicProps: DynamicPropCollider[];
 }
 
-export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
+export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRailController {
   const {
     cityGroup,
     texPack,
@@ -112,11 +116,11 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
   // 1. CONTINUOUS LAGOS LAGOON OCEAN PLANE & COASTAL SEAWALLS
   // =========================================================================
   {
-    // Single seamless lagoon ocean plane sitting below all 4 coastal landmass slabs (y = -1.65)
-    const oceanGeo = trackGeo(new THREE.PlaneGeometry(3600 * S, 1250 * S));
+    // Single seamless lagoon ocean plane sitting below all coastal landmass slabs (y = -1.65)
+    const oceanGeo = trackGeo(new THREE.PlaneGeometry(4200 * S, 1500 * S));
     const oceanMesh = new THREE.Mesh(oceanGeo, waterMat);
     oceanMesh.rotation.x = -Math.PI / 2;
-    oceanMesh.position.set(400 * S, -1.65, -75 * S);
+    oceanMesh.position.set(220 * S, -1.65, -80 * S);
     oceanMesh.receiveShadow = true;
     cityGroup.add(oceanMesh);
 
@@ -158,25 +162,30 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     buildSeawallZ(595 * S, 1350 * S, -165 * S, 'SS_3');
     buildSeawallZ(1425 * S, 1600 * S, -165 * S, 'SS_4');
 
-    // North Mainland Shore (z = -585*S)
-    buildSeawallZ(-1200 * S, -15.5, -585 * S, 'NM_1');
+    // Marina & South Atlantic Coastline Seawalls (z = 275*S)
+    buildSeawallZ(-460 * S, 445 * S, 275 * S, 'MARINA_S');
+    buildSeawallZ(595 * S, 1350 * S, 275 * S, 'LEKKI_S');
+    buildSeawallZ(1425 * S, 1600 * S, 275 * S, 'EPE_S');
+
+    // North Mainland Shore (z = -585*S) — extended west past Mile 2 & Iyanoba
+    buildSeawallZ(-1420 * S, -15.5, -585 * S, 'NM_1');
     buildSeawallZ(15.5, 1800 * S, -585 * S, 'NM_2');
 
     // Ikoyi-Lekki Lagoon Channel Shores (x = 445*S & x = 595*S, wide gap for bridge z in [-20*S - 15.5, -20*S + 15.5])
     buildSeawallX(445 * S, -165 * S, -20 * S - 15.5, 'IK_W1');
-    buildSeawallX(445 * S, -20 * S + 15.5, 270 * S, 'IK_W2');
+    buildSeawallX(445 * S, -20 * S + 15.5, 275 * S, 'IK_W2');
     buildSeawallX(595 * S, -165 * S, -20 * S - 15.5, 'IK_E1');
-    buildSeawallX(595 * S, -20 * S + 15.5, 270 * S, 'IK_E2');
+    buildSeawallX(595 * S, -20 * S + 15.5, 275 * S, 'IK_E2');
 
     // Epe Creek Shores (x = 1350*S & x = 1425*S, gap for Epe Bridge z in [100*S - 15.5, 100*S + 15.5])
     buildSeawallX(1350 * S, -165 * S, 100 * S - 15.5, 'EC_W1');
-    buildSeawallX(1350 * S, 100 * S + 15.5, 270 * S, 'EC_W2');
+    buildSeawallX(1350 * S, 100 * S + 15.5, 275 * S, 'EC_W2');
     buildSeawallX(1425 * S, -165 * S, 100 * S - 15.5, 'EC_E1');
-    buildSeawallX(1425 * S, 100 * S + 15.5, 270 * S, 'EC_E2');
+    buildSeawallX(1425 * S, 100 * S + 15.5, 275 * S, 'EC_E2');
 
     // East Epe Waterfront Bay Shore (x = 1600*S, opening at Marina Pier z in [100*S - 15.5, 100*S + 15.5])
     buildSeawallX(1600 * S, -165 * S, 100 * S - 15.5, 'EE_1');
-    buildSeawallX(1600 * S, 100 * S + 15.5, 270 * S, 'EE_2');
+    buildSeawallX(1600 * S, 100 * S + 15.5, 275 * S, 'EE_2');
   }
 
   // =========================================================================
@@ -296,9 +305,14 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
   addHighwayGantry(-215 * S, 0, -880 * S, Math.PI / 2, 'IYANA IPAJA JUNCTION', '◀ EGBEDA • IGANDO   |   OSHODI ▼', 29.6);
   addHighwayGantry(-355 * S, 0, -855 * S, Math.PI * 0.43, 'EGBEDA COMMERCIAL AVE', '◀ IGANDO • AKESAN • LASU CAMPUS', 29.6);
   addHighwayGantry(-615 * S, 0, -755 * S, Math.PI * 0.36, 'AKESAN & IGANDO EXPRESS', '◀ LASU MAIN GATE   |   EGBEDA ▶', 29.6);
+  addHighwayGantry(55 * S, 0, 185 * S, Math.PI / 2, 'MARINA FINANCIAL DISTRICT', 'UBA • WEMA • UAC TOWERS   |   BLUE LINE RAIL ▼', 29.6);
+  addHighwayGantry(70 * S, 0, -880 * S, Math.PI / 2, 'MURTALA MUHAMMED INTL AIRPORT ▲', 'GATE 1 TERMINAL   |   GATE 2 PRIVATE JETS', 29.6);
+  addHighwayGantry(-355 * S, 0, -630 * S, Math.PI / 2, 'MILE 2 INTERCHANGE & RAIL', 'BLUE LINE STATION   |   FESTAC • LASU • IYANOBA', 29.6);
+  addHighwayGantry(-1095 * S, 0, -640 * S, Math.PI / 2, 'IYANOBA TERMINUS & TOWN', 'BLUE LINE END STATION   |   DANFO & OKADA HUB', 29.6);
 
   // Roadside Confirmation Signs
   addRoadsideSign(175 * S, 16 * S, Math.PI / 2, 'OBALENDE', 'COMMERCIAL MARKET & BUS HUB');
+  addRoadsideSign(105 * S, 169 * S, 0, 'MARINA CBD', 'UBA • WEMA • UAC • BLUE LINE STATION');
   addRoadsideSign(276 * S, -114 * S, 0, 'IKOYI BOURDILLON', '◀ ADEKUNLE   |   LINK BRIDGE ▶');
   addRoadsideSign(790 * S, 84 * S, 0, 'IKATE CHISCO', 'LEKKI-EPE EXPRESSWAY');
   addRoadsideSign(905 * S, 84 * S, 0, 'ELEGANZA PLAZA', '◀ LEKKI   |   VGC & AJAH ▶');
@@ -308,10 +322,13 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
   addRoadsideSign(-16 * S, -622 * S, 0, 'IYANA-OWORO', 'MAINLAND GATEWAY');
   addRoadsideSign(-246 * S, -624 * S, 0, 'OSHODI', 'TRANSIT TERMINAL');
   addRoadsideSign(-16 * S, -862 * S, 0, 'IKEJA', 'CENTRAL BUSINESS DISTRICT');
+  addRoadsideSign(165 * S, -864 * S, 0, 'MMIA AIRPORT', 'GATE 1 TERMINAL ▶  |  GATE 2 EXEC JETS ▲');
   addRoadsideSign(-245 * S, -864 * S, 0, 'IYANA IPAJA', '◀ EGBEDA   |   OSHODI ▼');
   addRoadsideSign(-425 * S, -824 * S, 0, 'EGBEDA', '◀ IGANDO • LASU');
   addRoadsideSign(-565 * S, -772 * S, 0, 'IGANDO', '◀ AKESAN • LASU');
   addRoadsideSign(-695 * S, -702 * S, 0, 'AKESAN', 'LASU CAMPUS AHEAD ◀');
+  addRoadsideSign(-455 * S, -606 * S, 0, 'MILE 2', 'BLUE LINE RAIL INTERCHANGE');
+  addRoadsideSign(-1160 * S, -624 * S, 0, 'IYANOBA', 'BLUE LINE TERMINUS • DANFO & OKADA');
 
   // =========================================================================
   // 4. OBALENDE COMMERCIAL MARKET STALLS & OFF-LANE DANFO INTERCHANGE BAY
@@ -1426,6 +1443,10 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       { x: 905, z: 116, angle: Math.PI, label: 'ELEGANZA BUS STOP' },
       { x: 1285, z: 84, angle: 0, label: 'ELEKO BEACH JUNCTION' },
       { x: 1495, z: 116, angle: Math.PI, label: 'EPE TOWN TERMINUS' },
+      { x: 45, z: 201, angle: Math.PI, label: 'MARINA BANKING / CMS STOP' },
+      { x: -110, z: 201, angle: Math.PI, label: 'MARINA BLUE LINE STATION' },
+      { x: -455, z: -638, angle: 0, label: 'MILE 2 RAIL & BRT HUB' },
+      { x: -1160, z: -656, angle: 0, label: 'IYANOBA MOTOR PARK & RAIL' },
     ];
 
     regionalStops.forEach((loc, idx) => {
@@ -1668,4 +1689,21 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       cityGroup.add(sTrunkInst, canopyInst);
     }
   }
+
+  // =========================================================================
+  // 11. MURTALA MUHAMMED INTL AIRPORT, MARINA SKYLINE, BLUE LINE RAIL & IYANOBA
+  // =========================================================================
+  const airportAndRailCtrl = buildAirportMarinaAndRail({
+    cityGroup,
+    texPack,
+    trackGeo,
+    trackMat,
+    distToNearestRoad,
+    allCollidableBuildings,
+    buildCompositeBuilding,
+    addBarricade,
+    S,
+  });
+
+  return airportAndRailCtrl;
 }

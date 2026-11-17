@@ -35,7 +35,15 @@ interface CityMapModalProps {
   rivalPositions?: { name: string; x: number; z: number }[];
 }
 
-type RegionFilter = 'ALL' | 'ISLAND' | 'OBALENDE_IKOYI' | 'LEKKI_AJAH_EPE' | 'MAINLAND' | 'LASU';
+type RegionFilter =
+  | 'ALL'
+  | 'ISLAND'
+  | 'MARINA'
+  | 'OBALENDE_IKOYI'
+  | 'LEKKI_AJAH_EPE'
+  | 'MAINLAND'
+  | 'AIRPORT'
+  | 'LASU';
 
 // Dynamic World-to-SVG base projection aligned with expanded WORLD_BOUNDS
 const SVG_W = 1060;
@@ -117,21 +125,34 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
   const filteredLandmarks = useMemo(() => {
     return CITY_LANDMARKS.filter((lm: CityLandmark) => {
       if (regionFilter === 'ALL') return true;
+      if (regionFilter === 'MARINA') return lm.district === 'MARINA';
+      if (regionFilter === 'AIRPORT') return lm.district === 'AIRPORT';
       if (regionFilter === 'OBALENDE_IKOYI') {
         return lm.district === 'OBALENDE' || lm.district === 'IKOYI' || lm.id === 'IKOYI_LINK_BRIDGE';
       }
       if (regionFilter === 'LEKKI_AJAH_EPE') {
         return lm.district === 'LEKKI' || lm.district === 'AJAH' || lm.district === 'EPE' || lm.id === 'IKOYI_LINK_BRIDGE';
       }
-      if (regionFilter === 'LASU') return lm.district === 'LASU';
-      if (regionFilter === 'MAINLAND') return lm.district === 'MAINLAND' || lm.id === 'THIRD_MAINLAND_BRIDGE';
+      if (regionFilter === 'LASU') {
+        return lm.district === 'LASU' || lm.district === 'MILE2' || lm.district === 'IYANOBA';
+      }
+      if (regionFilter === 'MAINLAND') {
+        return (
+          lm.district === 'MAINLAND' ||
+          lm.district === 'AIRPORT' ||
+          lm.district === 'MILE2' ||
+          lm.district === 'IYANOBA' ||
+          lm.id === 'THIRD_MAINLAND_BRIDGE'
+        );
+      }
       return (
         lm.district === 'SHOWROOM_HUB' ||
         lm.district === 'YABA_TECH' ||
         lm.district === 'COMMERCIAL_ROW' ||
         lm.district === 'SURULERE_EXPRESS' ||
         lm.district === 'LOGISTICS_DEPOT' ||
-        lm.district === 'MARKETPLACE'
+        lm.district === 'MARKETPLACE' ||
+        lm.district === 'MARINA'
       );
     });
   }, [regionFilter]);
@@ -393,9 +414,70 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 );
               })()}
 
+              {/* Murtala Muhammed International Airport Compound & Runway Overlay */}
+              {(() => {
+                const a1 = worldToSvg(165 * S, -1420 * S);
+                const a2 = worldToSvg(600 * S, -960 * S);
+                const rw1 = worldToSvg(465 * S, -1395 * S);
+                const rw2 = worldToSvg(465 * S, -980 * S);
+                return (
+                  <g>
+                    <rect
+                      x={a1.x}
+                      y={a1.y}
+                      width={a2.x - a1.x}
+                      height={a2.y - a1.y}
+                      rx="6"
+                      fill="#1e293b"
+                      fillOpacity="0.45"
+                      stroke="#38bdf8"
+                      strokeOpacity="0.4"
+                      strokeWidth="1.2"
+                      strokeDasharray="4 3"
+                    />
+                    <line
+                      x1={rw1.x}
+                      y1={rw1.y}
+                      x2={rw2.x}
+                      y2={rw2.y}
+                      stroke="#94a3b8"
+                      strokeWidth="4.5"
+                      strokeDasharray="6 3"
+                    />
+                  </g>
+                );
+              })()}
+
+              {/* Blue Line Elevated Lagoon Rail Corridor (Marina -> Mile 2 -> Iyanoba) */}
+              {(() => {
+                const railPts = [
+                  worldToSvg(-152 * S, 185 * S),
+                  worldToSvg(-330 * S, 170 * S),
+                  worldToSvg(-455 * S, -20 * S),
+                  worldToSvg(-455 * S, -598 * S),
+                  worldToSvg(-560 * S, -572 * S),
+                  worldToSvg(-1020 * S, -572 * S),
+                  worldToSvg(-1160 * S, -608 * S),
+                ]
+                  .map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+                  .join(' ');
+                return (
+                  <polyline
+                    points={railPts}
+                    fill="none"
+                    stroke="#0ea5e9"
+                    strokeOpacity="0.72"
+                    strokeWidth="2.4"
+                    strokeDasharray="5 3"
+                  />
+                );
+              })()}
+
               {/* District Labels */}
               {[
                 { x: 0, z: 45, label: 'LAGOS ISLAND' },
+                { x: 55, z: 220, label: 'MARINA (UBA · WEMA · UAC)' },
+                { x: -135, z: 220, label: 'MARINA STATION' },
                 { x: 160, z: -152, label: 'ADEKUNLE' },
                 { x: 180, z: 75, label: 'OBALENDE' },
                 { x: 335, z: -145, label: 'IKOYI' },
@@ -408,14 +490,18 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 { x: 1388, z: 58, label: 'EPE BRIDGE' },
                 { x: 1545, z: 145, label: 'EPE WATERFRONT' },
                 { x: 85, z: -380, label: 'THIRD MAINLAND BRIDGE' },
+                { x: -495, z: -310, label: 'BLUE LINE RAIL BRIDGE' },
                 { x: 30, z: -618, label: 'IYANA-OWORO' },
                 { x: -260, z: -612, label: 'OSHODI' },
+                { x: -455, z: -600, label: 'MILE 2' },
                 { x: -65, z: -918, label: 'IKEJA CBD' },
+                { x: 380, z: -1190, label: 'MURTALA MUHAMMED INTL AIRPORT' },
                 { x: -260, z: -918, label: 'IYANA IPAJA' },
                 { x: -410, z: -875, label: 'EGBEDA' },
                 { x: -550, z: -828, label: 'IGANDO' },
                 { x: -680, z: -755, label: 'AKESAN' },
                 { x: -885, z: -762, label: 'LASU CAMPUS' },
+                { x: -1160, z: -765, label: 'IYANOBA TOWN' },
               ].map((d) => {
                 const pt = worldToSvg(d.x * S, d.z * S);
                 return (
@@ -626,10 +712,12 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 [
                   { id: 'ALL', label: 'All' },
                   { id: 'ISLAND', label: 'Island' },
+                  { id: 'MARINA', label: 'Marina' },
                   { id: 'OBALENDE_IKOYI', label: 'Obalende & Ikoyi' },
                   { id: 'LEKKI_AJAH_EPE', label: 'Lekki · Ajah · Epe' },
-                  { id: 'MAINLAND', label: 'TMB & Mainland' },
-                  { id: 'LASU', label: 'LASU' },
+                  { id: 'MAINLAND', label: 'Mainland' },
+                  { id: 'AIRPORT', label: 'MMIA Airport' },
+                  { id: 'LASU', label: 'LASU · Mile 2 · Iyanoba' },
                 ] as { id: RegionFilter; label: string }[]
               ).map((tab) => (
                 <button
