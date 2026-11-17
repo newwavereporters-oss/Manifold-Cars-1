@@ -5,7 +5,13 @@
 // Lekki/Ikate/Eleganza/VGC, Ajah interchange, preserved Epe Waterfront, and Mainland -> LASU.
 
 import * as THREE from 'three';
-import { BuildingBox } from './lagosCityData';
+import {
+  BuildingBox,
+  BarricadeKind,
+  DynamicPropCollider,
+  WORLD_XZ_SCALE,
+  WORLD_BOUNDS,
+} from './lagosCityData';
 import type { LagosTexturePack } from './lagosTextures';
 import {
   createThirdMainlandBridge,
@@ -23,6 +29,17 @@ export interface RegionBuildContext {
   distToNearestRoad: (px: number, pz: number) => number;
   allCollidableBuildings: BuildingBox[];
   buildCompositeBuilding: (b: BuildingBox) => void;
+  addBarricade: (
+    id: string,
+    x: number,
+    y: number,
+    z: number,
+    halfW: number,
+    halfD: number,
+    angle: number,
+    kind: BarricadeKind
+  ) => void;
+  dynamicProps: DynamicPropCollider[];
 }
 
 export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
@@ -34,7 +51,11 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     distToNearestRoad,
     allCollidableBuildings,
     buildCompositeBuilding,
+    addBarricade,
+    dynamicProps,
   } = ctx;
+
+  const S = WORLD_XZ_SCALE;
 
   // Shared materials for regional hardware & districts
   const parapetMat = trackMat(
@@ -92,64 +113,70 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
   // =========================================================================
   {
     // Single seamless lagoon ocean plane sitting below all 4 coastal landmass slabs (y = -1.65)
-    const oceanGeo = trackGeo(new THREE.PlaneGeometry(3600, 1250));
+    const oceanGeo = trackGeo(new THREE.PlaneGeometry(3600 * S, 1250 * S));
     const oceanMesh = new THREE.Mesh(oceanGeo, waterMat);
     oceanMesh.rotation.x = -Math.PI / 2;
-    oceanMesh.position.set(400, -1.65, -75);
+    oceanMesh.position.set(400 * S, -1.65, -75 * S);
     oceanMesh.receiveShadow = true;
     cityGroup.add(oceanMesh);
 
-    const buildSeawallZ = (xStart: number, xEnd: number, zPos: number) => {
+    const buildSeawallZ = (xStart: number, xEnd: number, zPos: number, idPrefix: string) => {
       const len = xEnd - xStart;
       if (len <= 2) return;
+      const cx = (xStart + xEnd) / 2;
       const wall = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(len, 2.4, 3.8)), seawallMat);
-      wall.position.set((xStart + xEnd) / 2, -0.8, zPos);
+      wall.position.set(cx, -0.8, zPos);
       wall.receiveShadow = true;
       cityGroup.add(wall);
 
       const coping = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(len, 0.35, 1.0)), parapetMat);
-      coping.position.set((xStart + xEnd) / 2, 0.55, zPos);
+      coping.position.set(cx, 0.55, zPos);
       cityGroup.add(coping);
+
+      addBarricade(`SEAWALL_${idPrefix}`, cx, 0, zPos, len / 2, 1.9, 0, 'SEAWALL');
     };
 
-    const buildSeawallX = (xPos: number, zStart: number, zEnd: number) => {
+    const buildSeawallX = (xPos: number, zStart: number, zEnd: number, idPrefix: string) => {
       const len = zEnd - zStart;
       if (len <= 2) return;
+      const cz = (zStart + zEnd) / 2;
       const wall = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(3.8, 2.4, len)), seawallMat);
-      wall.position.set(xPos, -0.8, (zStart + zEnd) / 2);
+      wall.position.set(xPos, -0.8, cz);
       wall.receiveShadow = true;
       cityGroup.add(wall);
 
       const coping = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.0, 0.35, len)), parapetMat);
-      coping.position.set(xPos, 0.55, (zStart + zEnd) / 2);
+      coping.position.set(xPos, 0.55, cz);
       cityGroup.add(coping);
+
+      addBarricade(`SEAWALL_${idPrefix}`, xPos, 0, cz, 1.9, len / 2, 0, 'SEAWALL');
     };
 
-    // Main South Shore (z = -165) — openings around TMB [-13..13], Ikoyi Channel [445..595], Epe Creek [1350..1425]
-    buildSeawallZ(-460, -13, -165);
-    buildSeawallZ(13, 445, -165);
-    buildSeawallZ(595, 1350, -165);
-    buildSeawallZ(1425, 1600, -165);
+    // Main South Shore (z = -165*S) — wide openings around TMB [-15.5..15.5], Ikoyi Channel, Epe Creek
+    buildSeawallZ(-460 * S, -15.5, -165 * S, 'SS_1');
+    buildSeawallZ(15.5, 445 * S, -165 * S, 'SS_2');
+    buildSeawallZ(595 * S, 1350 * S, -165 * S, 'SS_3');
+    buildSeawallZ(1425 * S, 1600 * S, -165 * S, 'SS_4');
 
-    // North Mainland Shore (z = -585)
-    buildSeawallZ(-1200, -13, -585);
-    buildSeawallZ(13, 1800, -585);
+    // North Mainland Shore (z = -585*S)
+    buildSeawallZ(-1200 * S, -15.5, -585 * S, 'NM_1');
+    buildSeawallZ(15.5, 1800 * S, -585 * S, 'NM_2');
 
-    // Ikoyi-Lekki Lagoon Channel Shores (x = 445 & x = 595, gap for bridge z in [-33, -7])
-    buildSeawallX(445, -165, -33);
-    buildSeawallX(445, -7, 270);
-    buildSeawallX(595, -165, -33);
-    buildSeawallX(595, -7, 270);
+    // Ikoyi-Lekki Lagoon Channel Shores (x = 445*S & x = 595*S, wide gap for bridge z in [-20*S - 15.5, -20*S + 15.5])
+    buildSeawallX(445 * S, -165 * S, -20 * S - 15.5, 'IK_W1');
+    buildSeawallX(445 * S, -20 * S + 15.5, 270 * S, 'IK_W2');
+    buildSeawallX(595 * S, -165 * S, -20 * S - 15.5, 'IK_E1');
+    buildSeawallX(595 * S, -20 * S + 15.5, 270 * S, 'IK_E2');
 
-    // Epe Creek Shores (x = 1350 & x = 1425, gap for Epe Bridge z in [87, 113])
-    buildSeawallX(1350, -165, 87);
-    buildSeawallX(1350, 113, 270);
-    buildSeawallX(1425, -165, 87);
-    buildSeawallX(1425, 113, 270);
+    // Epe Creek Shores (x = 1350*S & x = 1425*S, gap for Epe Bridge z in [100*S - 15.5, 100*S + 15.5])
+    buildSeawallX(1350 * S, -165 * S, 100 * S - 15.5, 'EC_W1');
+    buildSeawallX(1350 * S, 100 * S + 15.5, 270 * S, 'EC_W2');
+    buildSeawallX(1425 * S, -165 * S, 100 * S - 15.5, 'EC_E1');
+    buildSeawallX(1425 * S, 100 * S + 15.5, 270 * S, 'EC_E2');
 
-    // East Epe Waterfront Bay Shore (x = 1600, opening at Marina Pier z in [86, 114])
-    buildSeawallX(1600, -165, 86);
-    buildSeawallX(1600, 114, 270);
+    // East Epe Waterfront Bay Shore (x = 1600*S, opening at Marina Pier z in [100*S - 15.5, 100*S + 15.5])
+    buildSeawallX(1600 * S, -165 * S, 100 * S - 15.5, 'EE_1');
+    buildSeawallX(1600 * S, 100 * S + 15.5, 270 * S, 'EE_2');
   }
 
   // =========================================================================
@@ -165,6 +192,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
   // =========================================================================
   // 3. GREEN HIGHWAY GANTRIES & DIRECTIONAL ROAD SIGNS
   // =========================================================================
+  let gantryIdx = 0;
   const addHighwayGantry = (
     x: number,
     y: number,
@@ -172,7 +200,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     yaw: number,
     title: string,
     subtitle: string,
-    span = 23.2
+    span = 29.6
   ) => {
     const g = new THREE.Group();
     g.position.set(x, y, z);
@@ -187,7 +215,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     beam.position.set(0, 8.0, 0);
 
     const boardFrame = new THREE.Mesh(
-      trackGeo(new THREE.BoxGeometry(13.8, 3.2, 0.35)),
+      trackGeo(new THREE.BoxGeometry(15.2, 3.2, 0.35)),
       greenHwyMat
     );
     boardFrame.position.set(0, 8.0, 0);
@@ -199,7 +227,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       text: '#FFFFFF',
     });
     const signMat = trackMat(new THREE.MeshBasicMaterial({ map: signTex }));
-    const faceF = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(13.4, 2.9)), signMat);
+    const faceF = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(14.8, 2.9)), signMat);
     faceF.position.set(0, 8.0, 0.21);
     const faceB = faceF.clone();
     faceB.position.z = -0.21;
@@ -207,6 +235,13 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
 
     g.add(pL, pR, beam, boardFrame, faceF, faceB);
     cityGroup.add(g);
+
+    const cosY = Math.cos(yaw);
+    const sinY = Math.sin(yaw);
+    const halfS = span / 2;
+    const id = gantryIdx++;
+    addBarricade(`REG_GANTRY_${id}_L`, x - halfS * cosY, y, z + halfS * sinY, 0.45, 0.45, yaw, 'GANTRY_PILLAR');
+    addBarricade(`REG_GANTRY_${id}_R`, x + halfS * cosY, y, z - halfS * sinY, 0.45, 0.45, yaw, 'GANTRY_PILLAR');
   };
 
   const addRoadsideSign = (
@@ -216,6 +251,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     title: string,
     subtitle: string
   ) => {
+    if (distToNearestRoad(x, z) < 15.2) return;
     const sg = new THREE.Group();
     sg.position.set(x, 0, z);
     sg.rotation.y = yaw;
@@ -245,45 +281,47 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
   };
 
   // Third Mainland Bridge, Adekunle, Obalende, Ikoyi, Lekki, Ajah & Epe Gantries
-  addHighwayGantry(0, 0, -140, 0, 'THIRD MAINLAND BRIDGE ▲', 'IYANA-OWORO • ADEKUNLE • MAINLAND', 23.6);
-  addHighwayGantry(0, 6.0, -225, 0, 'LAGOS ISLAND ▲  |  ADEKUNLE RAMP ▶', 'KEEP RIGHT SOUTHBOUND FOR OBALENDE & IKOYI', 23.0);
-  addHighwayGantry(0, 6.0, -548, 0, 'IYANA-OWORO INTERCHANGE', '◀ OSHODI   |   IKEJA ▲   |   LASU', 23.0);
-  addHighwayGantry(195, 0, -130, Math.PI / 2, 'ADEKUNLE INTERCHANGE', '◀ LAGOS ISLAND   |   IKOYI ▶   |   OBALENDE ▼', 23.4);
-  addHighwayGantry(396, 0, -20, Math.PI / 2, 'IKOYI - LEKKI LINK BRIDGE ▲', 'LEKKI PENINSULA • IKATE • AJAH • EPE', 23.6);
-  addHighwayGantry(692, 0, 100, Math.PI / 2, 'LEKKI - EPE EXPRESSWAY ▲', 'IKATE • ELEGANZA • VGC • AJAH • EPE', 23.6);
-  addHighwayGantry(1042, 0, 100, Math.PI / 2, 'AJAH EXPRESS FLYOVER ▲', 'OVERPASS TO EPE   |   SLIP ROAD: AJAH MARKET', 23.6);
-  addHighwayGantry(1310, 0, 100, Math.PI / 2, 'EPE LAGOON BRIDGE ▲', 'EPE TOWN • WATERFRONT MARINA', 23.6);
+  addHighwayGantry(0, 0, -140 * S, 0, 'THIRD MAINLAND BRIDGE ▲', 'IYANA-OWORO • ADEKUNLE • MAINLAND', 29.6);
+  addHighwayGantry(0, 6.0, -225 * S, 0, 'LAGOS ISLAND ▲  |  ADEKUNLE RAMP ▶', 'KEEP RIGHT SOUTHBOUND FOR OBALENDE & IKOYI', 29.2);
+  addHighwayGantry(0, 6.0, -548 * S, 0, 'IYANA-OWORO INTERCHANGE', '◀ OSHODI   |   IKEJA ▲   |   LASU', 29.2);
+  addHighwayGantry(195 * S, 0, -130 * S, Math.PI / 2, 'ADEKUNLE INTERCHANGE', '◀ LAGOS ISLAND   |   IKOYI ▶   |   OBALENDE ▼', 29.6);
+  addHighwayGantry(396 * S, 0, -20 * S, Math.PI / 2, 'IKOYI - LEKKI LINK BRIDGE ▲', 'LEKKI PENINSULA • IKATE • AJAH • EPE', 29.6);
+  addHighwayGantry(692 * S, 0, 100 * S, Math.PI / 2, 'LEKKI - EPE EXPRESSWAY ▲', 'IKATE • ELEGANZA • VGC • AJAH • EPE', 29.6);
+  addHighwayGantry(1042 * S, 0, 100 * S, Math.PI / 2, 'AJAH EXPRESS FLYOVER ▲', 'OVERPASS TO EPE   |   SLIP ROAD: AJAH MARKET', 29.6);
+  addHighwayGantry(1310 * S, 0, 100 * S, Math.PI / 2, 'EPE LAGOON BRIDGE ▲', 'EPE TOWN • WATERFRONT MARINA', 29.6);
 
   // Mainland & LASU Corridor Gantries
-  addHighwayGantry(-90, 0, -640, Math.PI / 2, '◀ OSHODI   |   IKEJA ▲', 'CONNECTS TO IYANA IPAJA • EGBEDA', 23.6);
-  addHighwayGantry(0, 0, -720, 0, 'IKEJA BUSINESS DISTRICT ▲', 'ALAUSA SECRETARIAT • IKEJA MALL', 23.6);
-  addHighwayGantry(-215, 0, -880, Math.PI / 2, 'IYANA IPAJA JUNCTION', '◀ EGBEDA • IGANDO   |   OSHODI ▼', 23.6);
-  addHighwayGantry(-355, 0, -855, Math.PI * 0.43, 'EGBEDA COMMERCIAL AVE', '◀ IGANDO • AKESAN • LASU CAMPUS', 23.6);
-  addHighwayGantry(-615, 0, -755, Math.PI * 0.36, 'AKESAN & IGANDO EXPRESS', '◀ LASU MAIN GATE   |   EGBEDA ▶', 23.6);
+  addHighwayGantry(-90 * S, 0, -640 * S, Math.PI / 2, '◀ OSHODI   |   IKEJA ▲', 'CONNECTS TO IYANA IPAJA • EGBEDA', 29.6);
+  addHighwayGantry(0, 0, -720 * S, 0, 'IKEJA BUSINESS DISTRICT ▲', 'ALAUSA SECRETARIAT • IKEJA MALL', 29.6);
+  addHighwayGantry(-215 * S, 0, -880 * S, Math.PI / 2, 'IYANA IPAJA JUNCTION', '◀ EGBEDA • IGANDO   |   OSHODI ▼', 29.6);
+  addHighwayGantry(-355 * S, 0, -855 * S, Math.PI * 0.43, 'EGBEDA COMMERCIAL AVE', '◀ IGANDO • AKESAN • LASU CAMPUS', 29.6);
+  addHighwayGantry(-615 * S, 0, -755 * S, Math.PI * 0.36, 'AKESAN & IGANDO EXPRESS', '◀ LASU MAIN GATE   |   EGBEDA ▶', 29.6);
 
   // Roadside Confirmation Signs
-  addRoadsideSign(175, 16, Math.PI / 2, 'OBALENDE', 'COMMERCIAL MARKET & BUS HUB');
-  addRoadsideSign(276, -114, 0, 'IKOYI BOURDILLON', '◀ ADEKUNLE   |   LINK BRIDGE ▶');
-  addRoadsideSign(790, 84, 0, 'IKATE CHISCO', 'LEKKI-EPE EXPRESSWAY');
-  addRoadsideSign(905, 84, 0, 'ELEGANZA PLAZA', '◀ LEKKI   |   VGC & AJAH ▶');
-  addRoadsideSign(1000, 84, 0, 'VICTORIA GARDEN CITY', 'VGC GATED ESTATE ▲');
-  addRoadsideSign(1152, 16, Math.PI / 2, 'AJAH UNDERPASS', 'BADORE / JUBILEE MARKET');
-  addRoadsideSign(1476, 84, 0, 'EPE TOWN', 'EPE WATERFRONT & MARINA ▶');
-  addRoadsideSign(-16, -622, 0, 'IYANA-OWORO', 'MAINLAND GATEWAY');
-  addRoadsideSign(-246, -624, 0, 'OSHODI', 'TRANSIT TERMINAL');
-  addRoadsideSign(-16, -862, 0, 'IKEJA', 'CENTRAL BUSINESS DISTRICT');
-  addRoadsideSign(-245, -864, 0, 'IYANA IPAJA', '◀ EGBEDA   |   OSHODI ▼');
-  addRoadsideSign(-425, -824, 0, 'EGBEDA', '◀ IGANDO • LASU');
-  addRoadsideSign(-565, -772, 0, 'IGANDO', '◀ AKESAN • LASU');
-  addRoadsideSign(-695, -702, 0, 'AKESAN', 'LASU CAMPUS AHEAD ◀');
+  addRoadsideSign(175 * S, 16 * S, Math.PI / 2, 'OBALENDE', 'COMMERCIAL MARKET & BUS HUB');
+  addRoadsideSign(276 * S, -114 * S, 0, 'IKOYI BOURDILLON', '◀ ADEKUNLE   |   LINK BRIDGE ▶');
+  addRoadsideSign(790 * S, 84 * S, 0, 'IKATE CHISCO', 'LEKKI-EPE EXPRESSWAY');
+  addRoadsideSign(905 * S, 84 * S, 0, 'ELEGANZA PLAZA', '◀ LEKKI   |   VGC & AJAH ▶');
+  addRoadsideSign(1000 * S, 84 * S, 0, 'VICTORIA GARDEN CITY', 'VGC GATED ESTATE ▲');
+  addRoadsideSign(1152 * S, 16 * S, Math.PI / 2, 'AJAH UNDERPASS', 'BADORE / JUBILEE MARKET');
+  addRoadsideSign(1476 * S, 84 * S, 0, 'EPE TOWN', 'EPE WATERFRONT & MARINA ▶');
+  addRoadsideSign(-16 * S, -622 * S, 0, 'IYANA-OWORO', 'MAINLAND GATEWAY');
+  addRoadsideSign(-246 * S, -624 * S, 0, 'OSHODI', 'TRANSIT TERMINAL');
+  addRoadsideSign(-16 * S, -862 * S, 0, 'IKEJA', 'CENTRAL BUSINESS DISTRICT');
+  addRoadsideSign(-245 * S, -864 * S, 0, 'IYANA IPAJA', '◀ EGBEDA   |   OSHODI ▼');
+  addRoadsideSign(-425 * S, -824 * S, 0, 'EGBEDA', '◀ IGANDO • LASU');
+  addRoadsideSign(-565 * S, -772 * S, 0, 'IGANDO', '◀ AKESAN • LASU');
+  addRoadsideSign(-695 * S, -702 * S, 0, 'AKESAN', 'LASU CAMPUS AHEAD ◀');
 
   // =========================================================================
   // 4. OBALENDE COMMERCIAL MARKET STALLS & OFF-LANE DANFO INTERCHANGE BAY
   // =========================================================================
   {
-    // Off-lane Obalende Danfo Bus Interchange Bay at [132, 0, 56] (clear of x=160 carriageway!)
+    // Off-lane Obalende Danfo Bus Interchange Bay at [132*S, 0, 56*S] (clear of x=160*S carriageway)
+    const termX = 132 * S;
+    const termZ = 56 * S;
     const term = new THREE.Group();
-    term.position.set(132, 0, 56);
+    term.position.set(termX, 0, termZ);
 
     const apron = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(18, 0.14, 28)), texPack.commercialRoadMat);
     apron.position.y = 0.05;
@@ -295,7 +333,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     canopy.castShadow = true;
     term.add(canopy);
 
-    [-8, 0, 8].forEach((bz) => {
+    [-8, 0, 8].forEach((bz, idx) => {
       const col = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.2, 0.25, 4.8, 8)), steelDarkMat);
       col.position.set(-6.5, 2.4, bz);
       const colR = col.clone();
@@ -309,7 +347,10 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       const busStripe = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.16, 0.18, 4.84)), steelDarkMat);
       busStripe.position.set(4.5, 1.0, bz);
       term.add(parkedBus, busStripe);
+
+      addBarricade(`OBALENDE_BAY_${idx}`, termX + 4.5, 0, termZ + bz, 1.1, 2.45, 0, 'SHELTER');
     });
+    addBarricade('OBALENDE_CANOPY_COLS', termX - 6.5, 0, termZ, 0.45, 8.5, 0, 'SHELTER');
 
     const termTex = texPack.createSignTexture('OBALENDE BUS TERMINAL', 'DANFO INTERCHANGE • IKOYI • ISLAND', {
       bg: '#111827',
@@ -325,20 +366,20 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     term.add(termSign);
     cityGroup.add(term);
 
-    // Colorful Street Market Stalls & Umbrellas along Obalende East Sidewalk (x = 182..192)
+    // Colorful Street Market Stalls & Umbrellas along Obalende East Sidewalk
     const canopyMats = [marketRedMat, marketBlueMat, marketGreenMat, barrierYellowMat];
     const stallCoords = [
-      { x: 183, z: -48 },
-      { x: 183, z: -38 },
-      { x: 183, z: -6 },
-      { x: 183, z: 4 },
-      { x: 183, z: 46 },
-      { x: 183, z: 56 },
-      { x: 183, z: 66 },
-      { x: 183, z: 76 },
+      { x: 183 * S, z: -48 * S },
+      { x: 183 * S, z: -38 * S },
+      { x: 183 * S, z: -6 * S },
+      { x: 183 * S, z: 4 * S },
+      { x: 183 * S, z: 46 * S },
+      { x: 183 * S, z: 56 * S },
+      { x: 183 * S, z: 66 * S },
+      { x: 183 * S, z: 76 * S },
     ];
     stallCoords.forEach((sc, idx) => {
-      if (distToNearestRoad(sc.x, sc.z) < 13.5) return;
+      if (distToNearestRoad(sc.x, sc.z) < 16.5) return;
       const sg = new THREE.Group();
       sg.position.set(sc.x, 0, sc.z);
 
@@ -366,6 +407,8 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
 
       sg.add(kiosk, awning, table, umbrella, pole);
       cityGroup.add(sg);
+
+      addBarricade(`OBALENDE_STALL_${idx}`, sc.x + 1.2, 0, sc.z, 3.0, 2.8, 0, 'SHELTER');
     });
   }
 
@@ -374,6 +417,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
   // =========================================================================
   {
     const buildGatedCompound = (
+      idPrefix: string,
       cx: number,
       cz: number,
       w: number,
@@ -384,7 +428,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       const g = new THREE.Group();
       g.position.set(cx, 0, cz);
       const wallH = 2.6;
-      const gateGap = 11.0;
+      const gateGap = 13.0;
 
       // Left, Right & Back perimeter walls
       const sideGeo = trackGeo(new THREE.BoxGeometry(0.65, wallH, d));
@@ -399,6 +443,10 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       const backWall = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(w, wallH, 0.65)), estateWallMat);
       backWall.position.set(0, wallH / 2, backZ);
 
+      addBarricade(`${idPrefix}_WL`, cx - w / 2, 0, cz, 0.45, d / 2, 0, 'WALL');
+      addBarricade(`${idPrefix}_WR`, cx + w / 2, 0, cz, 0.45, d / 2, 0, 'WALL');
+      addBarricade(`${idPrefix}_WB`, cx, 0, cz + backZ, w / 2, 0.45, 0, 'WALL');
+
       // Front walls flanking entrance gatehouse
       const wingW = (w - gateGap) / 2;
       if (wingW > 1) {
@@ -408,6 +456,9 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
         const fR = fL.clone();
         fR.position.x = w / 2 - wingW / 2;
         g.add(fL, fR);
+
+        addBarricade(`${idPrefix}_WFL`, cx - w / 2 + wingW / 2, 0, cz + frontZ, wingW / 2, 0.45, 0, 'WALL');
+        addBarricade(`${idPrefix}_WFR`, cx + w / 2 - wingW / 2, 0, cz + frontZ, wingW / 2, 0.45, 0, 'WALL');
       }
 
       // Estate Gatehouse Arch
@@ -418,6 +469,9 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       gpR.position.x = gateGap / 2;
       const lintel = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(gateGap + 2.4, 1.3, 1.8)), steelDarkMat);
       lintel.position.set(0, 5.4, frontZ);
+
+      addBarricade(`${idPrefix}_GPL`, cx - gateGap / 2, 0, cz + frontZ, 0.75, 0.85, 0, 'GANTRY_PILLAR');
+      addBarricade(`${idPrefix}_GPR`, cx + gateGap / 2, 0, cz + frontZ, 0.75, 0.85, 0, 'GANTRY_PILLAR');
 
       const eTex = texPack.createSignTexture(label, 'PRIVATE GATED RESIDENCE', {
         bg: '#064E3B',
@@ -438,7 +492,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
         [-w * 0.25, d * 0.18],
         [w * 0.25, d * 0.18],
       ];
-      villaCoords.forEach(([vx, vz]) => {
+      villaCoords.forEach(([vx, vz], vIdx) => {
         const villa = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(11.5, 7.2, 10.0)), texPack.stuccoCreamMat);
         villa.position.set(vx, 3.6, vz);
         villa.castShadow = true;
@@ -448,28 +502,32 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
         const vGlass = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(6.5, 2.8)), texPack.nightWindowCoolMat);
         vGlass.position.set(vx, 4.2, vz + 5.05);
         g.add(villa, vRoof, vGlass);
+        addBarricade(`${idPrefix}_VILLA_${vIdx}`, cx + vx, 0, cz + vz, 5.8, 5.0, 0, 'WALL');
       });
 
       g.add(wallL, wallR, backWall, gpL, gpR, lintel, eSign);
       cityGroup.add(g);
     };
 
-    // Ikoyi Gated Luxury Communities (between x=260..365 boulevards)
-    buildGatedCompound(312.5, -75, 58, 56, 'SOUTH', 'BOURDILLON COURT ESTATE');
-    buildGatedCompound(312.5, 40, 58, 66, 'NORTH', 'PARKVIEW IKOYI ESTATE');
+    // Ikoyi Gated Luxury Communities (between x=260*S..365*S boulevards)
+    buildGatedCompound('IKOYI_BOURD', 312.5 * S, -75 * S, 58 * S, 56 * S, 'SOUTH', 'BOURDILLON COURT ESTATE');
+    buildGatedCompound('IKOYI_PARK', 312.5 * S, 40 * S, 58 * S, 66 * S, 'NORTH', 'PARKVIEW IKOYI ESTATE');
 
-    // Victoria Garden City (VGC) Iconic Expressway Arched Estate Gatehouse spanning [1015, 0, 44]
+    // Victoria Garden City (VGC) Iconic Expressway Arched Estate Gatehouse spanning [1015*S, 0, 44*S]
+    const vgcCx = 1015 * S;
+    const vgcGz = 44 * S;
     const vgcGate = new THREE.Group();
-    vgcGate.position.set(1015, 0, 44);
-    [-12.2, 12.2].forEach((gx) => {
+    vgcGate.position.set(vgcCx, 0, vgcGz);
+    [-15.2, 15.2].forEach((gx, idx) => {
       const tower = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.6, 9.6, 2.8)), texPack.stuccoCreamMat);
       tower.position.set(gx, 4.8, 0);
       tower.castShadow = true;
       const cap = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(3.0, 0.85, 3.2)), lasuEmeraldMat);
       cap.position.set(gx, 9.8, 0);
       vgcGate.add(tower, cap);
+      addBarricade(`VGC_GATE_TOWER_${idx}`, vgcCx + gx, 0, vgcGz, 1.35, 1.45, 0, 'GANTRY_PILLAR');
     });
-    const vgcBeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(27.0, 2.1, 2.4)), lasuEmeraldMat);
+    const vgcBeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(33.0, 2.1, 2.4)), lasuEmeraldMat);
     vgcBeam.position.set(0, 8.2, 0);
     const vgcTex = texPack.createSignTexture(
       'VICTORIA GARDEN CITY (VGC)',
@@ -477,7 +535,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       { bg: '#064E3B', border: '#FDE047', accent: '#FFFFFF' }
     );
     const vgcMat = trackMat(new THREE.MeshBasicMaterial({ map: vgcTex }));
-    const vSignF = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(18, 1.85)), vgcMat);
+    const vSignF = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(21, 1.85)), vgcMat);
     vSignF.position.set(0, 8.2, 1.24);
     const vSignB = vSignF.clone();
     vSignB.position.z = -1.24;
@@ -486,31 +544,37 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     cityGroup.add(vgcGate);
 
     // VGC Estate Perimeter Wall & Villas flanking VGC Boulevard
+    let vgcWallIdx = 0;
     const buildVgcWall = (wx: number, wz: number, lx: number, lz: number) => {
       const w = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(lx, 2.5, lz)), estateWallMat);
       w.position.set(wx, 1.25, wz);
       const top = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(lx + 0.15, 0.25, lz + 0.15)), lasuEmeraldMat);
       top.position.set(wx, 2.6, wz);
       cityGroup.add(w, top);
+      addBarricade(`VGC_WALL_${vgcWallIdx++}`, wx, 0, wz, lx / 2 + 0.15, lz / 2 + 0.15, 0, 'WALL');
     };
-    buildVgcWall(982, 44, 42, 0.65);
-    buildVgcWall(1048, 44, 42, 0.65);
-    buildVgcWall(961, -24, 0.65, 136);
-    buildVgcWall(1069, -24, 0.65, 136);
+    const vgcGateHalfClear = 15.6;
+    const vgcWingSpan = 54 * S - vgcGateHalfClear;
+    buildVgcWall(vgcCx - vgcGateHalfClear - vgcWingSpan / 2, vgcGz, vgcWingSpan, 0.65);
+    buildVgcWall(vgcCx + vgcGateHalfClear + vgcWingSpan / 2, vgcGz, vgcWingSpan, 0.65);
+    buildVgcWall(vgcCx - 54 * S, -24 * S, 0.65, 136 * S);
+    buildVgcWall(vgcCx + 54 * S, -24 * S, 0.65, 136 * S);
 
     [
-      [984, -8],
-      [1046, -8],
-      [984, -46],
-      [1046, -46],
-      [1015, -62],
-    ].forEach(([vx, vz]) => {
+      [984 * S, -8 * S],
+      [1046 * S, -8 * S],
+      [984 * S, -46 * S],
+      [1046 * S, -46 * S],
+      [1015 * S, -62 * S],
+    ].forEach(([vx, vz], idx) => {
+      if (distToNearestRoad(vx, vz) < 22.0) return;
       const villa = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(14, 7.6, 12)), texPack.stuccoCreamMat);
       villa.position.set(vx, 3.8, vz);
       villa.castShadow = true;
       const vRoof = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(15, 0.8, 13)), terraceBrickMat);
       vRoof.position.set(vx, 7.9, vz);
       cityGroup.add(villa, vRoof);
+      addBarricade(`VGC_VILLA_${idx}`, vx, 0, vz, 7.1, 6.1, 0, 'WALL');
     });
   }
 
@@ -518,24 +582,28 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
   // 6. LEKKI TOLL PLAZA & PRESERVED EPE WATERFRONT MARINA PIER
   // =========================================================================
   {
-    // Lekki-Epe Admiralty Toll Plaza at [725, 0, 100] (fits 22m dual carriageway cleanly!)
+    // Lekki-Epe Admiralty Toll Plaza at [725*S, 0, 100*S] (fits widened 27.6m dual carriageway)
+    const tollX = 725 * S;
+    const tollZ = 100 * S;
     const tollGroup = new THREE.Group();
-    tollGroup.position.set(725, 0, 100);
+    tollGroup.position.set(tollX, 0, tollZ);
     tollGroup.rotation.y = Math.PI / 2;
 
-    const canopy = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(26.5, 1.3, 6.4)), greenHwyMat);
+    const canopy = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(33.0, 1.3, 6.4)), greenHwyMat);
     canopy.position.set(0, 6.2, 0);
     canopy.castShadow = true;
 
-    const canopyTrim = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(26.8, 0.35, 6.6)), barrierYellowMat);
+    const canopyTrim = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(33.4, 0.35, 6.6)), barrierYellowMat);
     canopyTrim.position.set(0, 6.85, 0);
 
-    [-11.2, 0, 11.2].forEach((bx) => {
+    [-14.6, 0, 14.6].forEach((bx, idx) => {
       const booth = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.0, 3.2, 4.4)), texPack.stuccoCreamMat);
       booth.position.set(bx, 1.6, 0);
       const pillar = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.65, 6.0, 0.8)), steelDarkMat);
       pillar.position.set(bx, 3.0, 0);
       tollGroup.add(booth, pillar);
+      // Group rotated PI/2: local +X maps to world -Z
+      addBarricade(`LEKKI_TOLL_BOOTH_${idx}`, tollX, 0, tollZ - bx, 2.25, 0.55, 0, 'TOLL_BOOTH');
     });
 
     const tollTex = texPack.createSignTexture('LEKKI - EPE TOLL PLAZA', 'OPEN EXPRESSWAY PASS • IKATE • AJAH • EPE', {
@@ -544,7 +612,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       accent: '#FFFFFF',
     });
     const tollMat = trackMat(new THREE.MeshBasicMaterial({ map: tollTex }));
-    const tSignF = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(18, 1.8)), tollMat);
+    const tSignF = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(22, 1.8)), tollMat);
     tSignF.position.set(0, 6.2, 3.24);
     const tSignB = tSignF.clone();
     tSignB.position.z = -3.24;
@@ -552,11 +620,13 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     tollGroup.add(canopy, canopyTrim, tSignF, tSignB);
     cityGroup.add(tollGroup);
 
-    // Preserved Epe Waterfront Marina Pier & Monument at [1594, 0, 100]
+    // Preserved Epe Waterfront Marina Pier & Monument at [1594*S, 0, 100*S]
+    const epeX = 1594 * S;
+    const epeZ = 100 * S;
     const epeGroup = new THREE.Group();
-    epeGroup.position.set(1594, 0, 100);
+    epeGroup.position.set(epeX, 0, epeZ);
 
-    const plazaSlab = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(18, 0.35, 28)), texPack.sidewalkMat);
+    const plazaSlab = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(18, 0.35, 32)), texPack.sidewalkMat);
     plazaSlab.position.y = 0.15;
     plazaSlab.receiveShadow = true;
 
@@ -566,11 +636,14 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     boardwalk.receiveShadow = true;
 
     const archL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.4, 8.2, 1.4)), lasuEmeraldMat);
-    archL.position.set(0, 4.1, -9);
+    archL.position.set(0, 4.1, -11.5);
     const archR = archL.clone();
-    archR.position.z = 9;
-    const archTop = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.8, 1.8, 20)), steelDarkMat);
+    archR.position.z = 11.5;
+    const archTop = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.8, 1.8, 25)), steelDarkMat);
     archTop.position.set(0, 8.4, 0);
+
+    addBarricade('EPE_ARCH_L', epeX, 0, epeZ - 11.5, 0.75, 0.75, 0, 'GANTRY_PILLAR');
+    addBarricade('EPE_ARCH_R', epeX, 0, epeZ + 11.5, 0.75, 0.75, 0, 'GANTRY_PILLAR');
 
     const epeTex = texPack.createSignTexture('EPE WATERFRONT', 'LAGOON MARINA & RESORT TERMINUS', {
       bg: '#0C4A6E',
@@ -578,7 +651,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       accent: '#FDE047',
     });
     const epeSign = new THREE.Mesh(
-      trackGeo(new THREE.PlaneGeometry(13.5, 1.8)),
+      trackGeo(new THREE.PlaneGeometry(15.0, 1.8)),
       trackMat(new THREE.MeshBasicMaterial({ map: epeTex }))
     );
     epeSign.position.set(-0.95, 8.4, 0);
@@ -1214,22 +1287,29 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
   ];
 
   regionalBuildingSpecs.forEach((b) => {
-    // 11.5m guarantees zero overlap with widened 22m dual carriageways
-    const clearMargin = Math.max(b.width, b.depth) / 2 + 11.5;
-    if (distToNearestRoad(b.x, b.z) < clearMargin) return;
-    allCollidableBuildings.push(b);
-    buildCompositeBuilding(b);
+    const scaledB: BuildingBox = {
+      ...b,
+      x: b.x * S,
+      z: b.z * S,
+    };
+    // 15.0m margin guarantees zero overlap with widened 27.6m dual carriageways
+    const clearMargin = Math.max(scaledB.width, scaledB.depth) / 2 + 15.0;
+    if (distToNearestRoad(scaledB.x, scaledB.z) < clearMargin) return;
+    allCollidableBuildings.push(scaledB);
+    buildCompositeBuilding(scaledB);
   });
 
   // =========================================================================
   // 8. LAGOS STATE UNIVERSITY (LASU) ARCHED GATE, PERIMETER WALL & QUAD
   // =========================================================================
   {
+    const gateX = -790 * S;
+    const gateZ = -660 * S;
     const gate = new THREE.Group();
-    gate.position.set(-790, 0, -660);
+    gate.position.set(gateX, 0, gateZ);
     gate.rotation.y = Math.PI / 2;
 
-    [-11.8, 11.8].forEach((gx) => {
+    [-15.0, 15.0].forEach((gx, idx) => {
       const tower = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.6, 11.2, 2.8)), texPack.stuccoCreamMat);
       tower.position.set(gx, 5.6, 0);
       tower.castShadow = true;
@@ -1240,13 +1320,16 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       const trim = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.8, 0.35, 3.0)), lasuGoldMat);
       trim.position.set(gx, 8.2, 0);
       gate.add(tower, cap, trim);
+
+      // Gate rotated PI/2: local +X maps to world -Z
+      addBarricade(`LASU_GATE_TOWER_${idx}`, gateX, 0, gateZ - gx, 1.45, 1.35, 0, 'GANTRY_PILLAR');
     });
 
-    const portalSpan = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(26.4, 2.4, 2.4)), lasuEmeraldMat);
+    const portalSpan = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(32.8, 2.4, 2.4)), lasuEmeraldMat);
     portalSpan.position.set(0, 9.6, 0);
     portalSpan.castShadow = true;
 
-    const archPediment = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(15.5, 1.4, 2.6)), texPack.stuccoCreamMat);
+    const archPediment = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(17.5, 1.4, 2.6)), texPack.stuccoCreamMat);
     archPediment.position.set(0, 11.4, 0);
 
     const goldCrown = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(1.1, 1.1, 0.45, 18)), lasuGoldMat);
@@ -1259,7 +1342,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       { bg: '#064E3B', border: '#FACC15', accent: '#FDE047', text: '#FFFFFF' }
     );
     const lasuMat = trackMat(new THREE.MeshBasicMaterial({ map: lasuGateTex }));
-    const signF = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(18.5, 2.1)), lasuMat);
+    const signF = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(22.0, 2.1)), lasuMat);
     signF.position.set(0, 9.6, 1.24);
     const signB = signF.clone();
     signB.position.z = -1.24;
@@ -1268,7 +1351,9 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     gate.add(portalSpan, archPediment, goldCrown, signF, signB);
     cityGroup.add(gate);
 
+    let lasuWallIdx = 0;
     const buildPerimeterWall = (wx: number, wz: number, lenX: number, lenZ: number) => {
+      if (lenX <= 0.5 || lenZ <= 0.5) return;
       const wall = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(lenX, 2.6, lenZ)), texPack.stuccoCreamMat);
       wall.position.set(wx, 1.3, wz);
       wall.castShadow = true;
@@ -1279,31 +1364,37 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       );
       coping.position.set(wx, 2.7, wz);
       cityGroup.add(wall, coping);
+      addBarricade(`LASU_WALL_${lasuWallIdx++}`, wx, 0, wz, lenX / 2 + 0.15, lenZ / 2 + 0.15, 0, 'WALL');
     };
 
-    buildPerimeterWall(-790, -722, 0.7, 94);
-    buildPerimeterWall(-790, -616, 0.7, 60);
-    buildPerimeterWall(-885, -772, 190, 0.7);
-    buildPerimeterWall(-885, -584, 190, 0.7);
+    const lasuTopZ = -772 * S;
+    const lasuBotZ = -584 * S;
+    const gateGapZ = 15.6;
+    const northWallLenZ = gateZ - gateGapZ - lasuTopZ;
+    const southWallLenZ = lasuBotZ - (gateZ + gateGapZ);
+    buildPerimeterWall(gateX, lasuTopZ + northWallLenZ / 2, 0.7, northWallLenZ);
+    buildPerimeterWall(gateX, gateZ + gateGapZ + southWallLenZ / 2, 0.7, southWallLenZ);
+    buildPerimeterWall(-885 * S, lasuTopZ, 190 * S, 0.7);
+    buildPerimeterWall(-885 * S, lasuBotZ, 190 * S, 0.7);
 
-    const quadLawn = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(36, 0.12, 22)), texPack.medianGrassMat);
-    quadLawn.position.set(-905, 0.05, -690);
+    const quadLawn = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(44, 0.12, 26)), texPack.medianGrassMat);
+    quadLawn.position.set(-905 * S, 0.05, -690 * S);
     quadLawn.receiveShadow = true;
     cityGroup.add(quadLawn);
 
-    const walkway = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(38, 0.14, 3.6)), texPack.sidewalkMat);
-    walkway.position.set(-905, 0.06, -690);
+    const walkway = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(46, 0.14, 4.0)), texPack.sidewalkMat);
+    walkway.position.set(-905 * S, 0.06, -690 * S);
     walkway.receiveShadow = true;
     cityGroup.add(walkway);
 
     [-4, 0, 4].forEach((fz, idx) => {
       const pole = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.06, 0.09, 8.5, 8)), steelSilverMat);
-      pole.position.set(-947, 4.25, -660 + fz);
+      pole.position.set(-947 * S, 4.25, -660 * S + fz);
       const flag = new THREE.Mesh(
         trackGeo(new THREE.BoxGeometry(0.08, 1.1, 1.8)),
         idx === 1 ? lasuEmeraldMat : lasuGoldMat
       );
-      flag.position.set(-947, 7.8, -659.1 + fz);
+      flag.position.set(-947 * S, 7.8, -659.1 * S + fz);
       cityGroup.add(pole, flag);
     });
   }
@@ -1337,10 +1428,12 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       { x: 1495, z: 116, angle: Math.PI, label: 'EPE TOWN TERMINUS' },
     ];
 
-    regionalStops.forEach((loc) => {
-      if (distToNearestRoad(loc.x, loc.z) < 12.2) return;
+    regionalStops.forEach((loc, idx) => {
+      const rx = loc.x * S;
+      const rz = loc.z * S;
+      if (distToNearestRoad(rx, rz) < 16.0) return;
       const sg = new THREE.Group();
-      sg.position.set(loc.x, 0, loc.z);
+      sg.position.set(rx, 0, rz);
       sg.rotation.y = loc.angle;
 
       const pad = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(7.2, 0.16, 3.4)), texPack.sidewalkMat);
@@ -1367,11 +1460,12 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
 
       sg.add(pad, roof, stripe, back, sSign);
       cityGroup.add(sg);
+      addBarricade(`REG_STOP_${idx}`, rx, 0, rz, 3.6, 1.7, loc.angle, 'SHELTER');
     });
   }
 
   // =========================================================================
-  // 10. EXPANDED REGIONAL PALM & SHADE VEGETATION (INSTANCED)
+  // 10. EXPANDED REGIONAL PALM & SHADE VEGETATION (INSTANCED + FALLING COLLIDERS)
   // =========================================================================
   {
     const palmCoords: { x: number; z: number; scale: number; yaw: number }[] = [];
@@ -1384,12 +1478,22 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     };
 
     const isClear = (x: number, z: number): boolean => {
-      if (z < -158 && z > -590) return false; // Lagoon channel
-      if (x > 440 && x < 600 && z >= -165) return false; // Ikoyi-Lekki channel
-      if (x > 1345 && x < 1430 && z >= -165) return false; // Epe creek
-      if (x > 1592) return false; // East Epe bay
-      if (z > 235) return false;
-      if (distToNearestRoad(x, z) < 14.8) return false;
+      if (z < WORLD_BOUNDS.lagoonSouthZ + 7 && z > WORLD_BOUNDS.lagoonNorthZ - 7) return false;
+      if (
+        x > WORLD_BOUNDS.ikoyiChannelMinX - 8 &&
+        x < WORLD_BOUNDS.ikoyiChannelMaxX + 8 &&
+        z >= WORLD_BOUNDS.lagoonSouthZ - 8
+      )
+        return false;
+      if (
+        x > WORLD_BOUNDS.epeCreekMinX - 8 &&
+        x < WORLD_BOUNDS.epeCreekMaxX + 8 &&
+        z >= WORLD_BOUNDS.lagoonSouthZ - 8
+      )
+        return false;
+      if (x > WORLD_BOUNDS.epeBayMinX - 8) return false;
+      if (z > WORLD_BOUNDS.southOceanZ - 12) return false;
+      if (distToNearestRoad(x, z) < 17.5) return false;
       for (let i = 0; i < allCollidableBuildings.length; i++) {
         const b = allCollidableBuildings[i];
         if (Math.abs(x - b.x) < b.width / 2 + 4.5 && Math.abs(z - b.z) < b.depth / 2 + 4.5) {
@@ -1400,10 +1504,10 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     };
 
     // Obalende & Ikoyi Boulevards + VGC Palms
-    for (let x = 145; x <= 430; x += 26) {
-      for (let z = -148; z <= 145; z += 28) {
-        const px = x + (rand() - 0.5) * 8;
-        const pz = z + (rand() - 0.5) * 8;
+    for (let x = 145 * S; x <= 430 * S; x += 38) {
+      for (let z = -148 * S; z <= 145 * S; z += 40) {
+        const px = x + (rand() - 0.5) * 10;
+        const pz = z + (rand() - 0.5) * 10;
         if (!isClear(px, pz)) continue;
         if (rand() < 0.6) {
           palmCoords.push({ x: px, z: pz, scale: 0.9 + rand() * 0.3, yaw: rand() * Math.PI * 2 });
@@ -1414,10 +1518,10 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
     }
 
     // Lekki Peninsula -> Ikate -> Eleganza -> VGC -> Ajah -> Eleko -> Epe Coastal Palms
-    for (let x = 610; x <= 1580; x += 28) {
-      [-95, -45, 25, 76, 124, 175].forEach((zBase) => {
-        const px = x + (rand() - 0.5) * 8;
-        const pz = zBase + (rand() - 0.5) * 8;
+    for (let x = 610 * S; x <= 1580 * S; x += 42) {
+      [-95 * S, -45 * S, 25 * S, 76 * S, 124 * S, 175 * S].forEach((zBase) => {
+        const px = x + (rand() - 0.5) * 10;
+        const pz = zBase + (rand() - 0.5) * 10;
         if (isClear(px, pz)) {
           palmCoords.push({ x: px, z: pz, scale: 0.9 + rand() * 0.35, yaw: rand() * Math.PI * 2 });
         }
@@ -1426,13 +1530,13 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
 
     // Mainland Highways & LASU Campus Shade/Palm Trees
     const mainlandBands: [number, number, number, number][] = [
-      [-320, 40, -915, -605],
-      [-760, -320, -895, -620],
-      [-960, -780, -765, -595],
+      [-320 * S, 40 * S, -915 * S, -605 * S],
+      [-760 * S, -320 * S, -895 * S, -620 * S],
+      [-960 * S, -780 * S, -765 * S, -595 * S],
     ];
     mainlandBands.forEach(([x0, x1, z0, z1]) => {
-      for (let x = x0; x <= x1; x += 36) {
-        for (let z = z0; z <= z1; z += 36) {
+      for (let x = x0; x <= x1; x += 48) {
+        for (let z = z0; z <= z1; z += 48) {
           const tx = x + (rand() - 0.5) * 14;
           const tz = z + (rand() - 0.5) * 14;
           if (!isClear(tx, tz)) continue;
@@ -1459,8 +1563,17 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       const frondsPerPalm = 6;
       const frondInst = new THREE.InstancedMesh(frondGeo, frondMat, palmCoords.length * frondsPerPalm);
       const dummy = new THREE.Object3D();
+      const localDummy = new THREE.Object3D();
 
       palmCoords.forEach((p, idx) => {
+        const parts: DynamicPropCollider['parts'] = [];
+
+        localDummy.position.set(0, 0, 0);
+        localDummy.rotation.set(0.05, p.yaw, 0.04);
+        localDummy.scale.setScalar(p.scale);
+        localDummy.updateMatrix();
+        parts.push({ mesh: trunkInst, index: idx, localMatrix: Array.from(localDummy.matrix.elements) });
+
         dummy.position.set(p.x, 0, p.z);
         dummy.rotation.set(0.05, p.yaw, 0.04);
         dummy.scale.setScalar(p.scale);
@@ -1468,12 +1581,36 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
         trunkInst.setMatrixAt(idx, dummy.matrix);
 
         for (let f = 0; f < frondsPerPalm; f++) {
+          const fYaw = p.yaw + (f / frondsPerPalm) * Math.PI * 2;
+          localDummy.position.set(0, 0, 0);
+          localDummy.rotation.set(0, fYaw, 0);
+          localDummy.scale.setScalar(p.scale);
+          localDummy.updateMatrix();
+
           dummy.position.set(p.x, 0, p.z);
-          dummy.rotation.set(0, p.yaw + (f / frondsPerPalm) * Math.PI * 2, 0);
+          dummy.rotation.set(0, fYaw, 0);
           dummy.scale.setScalar(p.scale);
           dummy.updateMatrix();
-          frondInst.setMatrixAt(idx * frondsPerPalm + f, dummy.matrix);
+          const fIdx = idx * frondsPerPalm + f;
+          frondInst.setMatrixAt(fIdx, dummy.matrix);
+          parts.push({ mesh: frondInst, index: fIdx, localMatrix: Array.from(localDummy.matrix.elements) });
         }
+
+        dynamicProps.push({
+          id: `REG_PALM_${idx}`,
+          kind: 'PALM_TREE',
+          x: p.x,
+          y: 0,
+          z: p.z,
+          radius: 0.55 * p.scale,
+          height: 7.6 * p.scale,
+          parts,
+          state: 'STANDING',
+          fallAngle: 0,
+          fallVel: 0,
+          fallAxisX: 1,
+          fallAxisZ: 0,
+        });
       });
       trunkInst.computeBoundingSphere();
       frondInst.computeBoundingSphere();
@@ -1491,14 +1628,40 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): void {
       const sTrunkInst = new THREE.InstancedMesh(sTrunkGeo, sTrunkMat, shadeCoords.length);
       const canopyInst = new THREE.InstancedMesh(canopyGeo, canopyMat, shadeCoords.length);
       const dummy = new THREE.Object3D();
+      const localDummy = new THREE.Object3D();
 
       shadeCoords.forEach((t, idx) => {
+        localDummy.position.set(0, 0, 0);
+        localDummy.rotation.set(0, t.yaw, 0);
+        localDummy.scale.setScalar(t.scale);
+        localDummy.updateMatrix();
+        const localArr = Array.from(localDummy.matrix.elements);
+
         dummy.position.set(t.x, 0, t.z);
         dummy.rotation.set(0, t.yaw, 0);
         dummy.scale.setScalar(t.scale);
         dummy.updateMatrix();
         sTrunkInst.setMatrixAt(idx, dummy.matrix);
         canopyInst.setMatrixAt(idx, dummy.matrix);
+
+        dynamicProps.push({
+          id: `REG_SHADE_${idx}`,
+          kind: 'SHADE_TREE',
+          x: t.x,
+          y: 0,
+          z: t.z,
+          radius: 0.65 * t.scale,
+          height: 6.4 * t.scale,
+          parts: [
+            { mesh: sTrunkInst, index: idx, localMatrix: localArr },
+            { mesh: canopyInst, index: idx, localMatrix: localArr },
+          ],
+          state: 'STANDING',
+          fallAngle: 0,
+          fallVel: 0,
+          fallAxisX: 1,
+          fallAxisZ: 0,
+        });
       });
       sTrunkInst.computeBoundingSphere();
       canopyInst.computeBoundingSphere();

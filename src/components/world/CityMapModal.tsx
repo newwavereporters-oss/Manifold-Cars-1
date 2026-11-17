@@ -18,6 +18,8 @@ import {
 import {
   CITY_LANDMARKS,
   LAGOS_ROAD_NODES,
+  WORLD_BOUNDS,
+  WORLD_XZ_SCALE,
   findShortestRoadPathDetailed,
   CityLandmark,
 } from './lagosCityData';
@@ -35,13 +37,13 @@ interface CityMapModalProps {
 
 type RegionFilter = 'ALL' | 'ISLAND' | 'OBALENDE_IKOYI' | 'LEKKI_AJAH_EPE' | 'MAINLAND' | 'LASU';
 
-// Fixed World-to-SVG base projection: World X [-1020, 1620] -> [0, 1060], Z [-960, 280] -> [0, 500]
+// Dynamic World-to-SVG base projection aligned with expanded WORLD_BOUNDS
 const SVG_W = 1060;
 const SVG_H = 500;
-const MIN_X = -1020;
-const MAX_X = 1620;
-const MIN_Z = -960;
-const MAX_Z = 280;
+const MIN_X = WORLD_BOUNDS.minX;
+const MAX_X = WORLD_BOUNDS.maxX;
+const MIN_Z = WORLD_BOUNDS.minZ;
+const MAX_Z = WORLD_BOUNDS.maxZ;
 
 function worldToSvg(wx: number, wz: number): { x: number; y: number } {
   const x = ((wx - MIN_X) / (MAX_X - MIN_X)) * SVG_W;
@@ -139,16 +141,17 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
   const pSvg = worldToSvg(playerPos.x, playerPos.z);
   const destSvg = activeDestination ? worldToSvg(activeDestination.x, activeDestination.z) : null;
 
-  // Water polygons matching WORLD_BOUNDS
-  const lagoonTopLeft = worldToSvg(MIN_X, -585);
-  const lagoonBotRight = worldToSvg(MAX_X, -165);
-  const ikoyiChanTopLeft = worldToSvg(445, -165);
-  const ikoyiChanBotRight = worldToSvg(595, MAX_Z);
-  const epeCreekTopLeft = worldToSvg(1350, -165);
-  const epeCreekBotRight = worldToSvg(1425, MAX_Z);
-  const eastBayTopLeft = worldToSvg(1600, -165);
+  // Water polygons matching expanded WORLD_BOUNDS
+  const S = WORLD_XZ_SCALE;
+  const lagoonTopLeft = worldToSvg(MIN_X, WORLD_BOUNDS.lagoonNorthZ);
+  const lagoonBotRight = worldToSvg(MAX_X, WORLD_BOUNDS.lagoonSouthZ);
+  const ikoyiChanTopLeft = worldToSvg(WORLD_BOUNDS.ikoyiChannelMinX, WORLD_BOUNDS.lagoonSouthZ);
+  const ikoyiChanBotRight = worldToSvg(WORLD_BOUNDS.ikoyiChannelMaxX, MAX_Z);
+  const epeCreekTopLeft = worldToSvg(WORLD_BOUNDS.epeCreekMinX, WORLD_BOUNDS.lagoonSouthZ);
+  const epeCreekBotRight = worldToSvg(WORLD_BOUNDS.epeCreekMaxX, MAX_Z);
+  const eastBayTopLeft = worldToSvg(WORLD_BOUNDS.epeBayMinX, WORLD_BOUNDS.lagoonSouthZ);
   const eastBayBotRight = worldToSvg(MAX_X, MAX_Z);
-  const southCoastTop = worldToSvg(MIN_X, 250);
+  const southCoastTop = worldToSvg(MIN_X, WORLD_BOUNDS.southOceanZ);
 
   const routeSvgPoints = routeInfo
     ? routeInfo.path.map((pt) => {
@@ -358,7 +361,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
 
               {/* Lagoon Label */}
               <text
-                x={worldToSvg(240, -375).x}
+                x={worldToSvg(240 * S, -375 * S).x}
                 y={(lagoonTopLeft.y + lagoonBotRight.y) / 2 + 5}
                 textAnchor="middle"
                 fill="rgba(56, 189, 248, 0.35)"
@@ -371,8 +374,8 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
 
               {/* LASU Campus Precinct Boundary Shading */}
               {(() => {
-                const c1 = worldToSvg(-980, -780);
-                const c2 = worldToSvg(-785, -580);
+                const c1 = worldToSvg(-980 * S, -780 * S);
+                const c2 = worldToSvg(-785 * S, -580 * S);
                 return (
                   <rect
                     x={c1.x}
@@ -414,7 +417,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 { x: -680, z: -755, label: 'AKESAN' },
                 { x: -885, z: -762, label: 'LASU CAMPUS' },
               ].map((d) => {
-                const pt = worldToSvg(d.x, d.z);
+                const pt = worldToSvg(d.x * S, d.z * S);
                 return (
                   <text
                     key={d.label}
@@ -440,7 +443,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                   x2={e.x2}
                   y2={e.y2}
                   stroke={e.isBridge ? '#38bdf8' : '#1e293b'}
-                  strokeWidth={e.isDual ? 9.5 : 7}
+                  strokeWidth={e.isDual ? 10.5 : 7.8}
                   strokeLinecap="round"
                 />
               ))}
@@ -454,7 +457,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                   x2={e.x2}
                   y2={e.y2}
                   stroke={e.isBridge ? '#1e3a5f' : '#475569'}
-                  strokeWidth={e.isDual ? 6.2 : 4.2}
+                  strokeWidth={e.isDual ? 7.0 : 4.8}
                   strokeLinecap="round"
                 />
               ))}

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VehicleModelFactory } from '../../three/VehicleModelFactory';
+import { WORLD_XZ_SCALE } from './lagosCityData';
 
 export { VehicleModelFactory };
 export type VehicleModelType = 'SPORTS_COUPE' | 'LUXURY_SUV' | 'EXECUTIVE_SEDAN' | 'RUGGED_4X4';
@@ -435,9 +436,11 @@ export function createWorldEnvironment(): {
   const environmentGroup = new THREE.Group();
   const podiums: { group: THREE.Group; carMesh: THREE.Group; carId: string }[] = [];
 
-  // 1. SHOWROOM BOULEVARD PAVILION (Open Drive-Through Canopy straddling [0, 0, -48])
+  const S = WORLD_XZ_SCALE;
+
+  // 1. SHOWROOM BOULEVARD PAVILION (Open Drive-Through Canopy straddling [0, 0, -48 * S])
   const pavilionGroup = new THREE.Group();
-  pavilionGroup.position.set(0, 0, -48);
+  pavilionGroup.position.set(0, 0, -48 * S);
 
   const floorMat = new THREE.MeshStandardMaterial({
     color: 0xe2e8f0,
@@ -445,14 +448,14 @@ export function createWorldEnvironment(): {
     roughness: 0.25,
   });
 
-  // Left and right flanking showroom esplanade decks (leaving x: -8.5..+8.5 clear for road!)
+  // Left and right flanking showroom esplanade decks (leaving x: -11.5..+11.5 clear for 17.6m road + shoulders!)
   const deckGeo = new THREE.BoxGeometry(16, 0.3, 28);
   const leftDeck = new THREE.Mesh(deckGeo, floorMat);
-  leftDeck.position.set(-18, 0.15, 0);
+  leftDeck.position.set(-19.5, 0.15, 0);
   leftDeck.receiveShadow = true;
 
   const rightDeck = new THREE.Mesh(deckGeo, floorMat);
-  rightDeck.position.set(18, 0.15, 0);
+  rightDeck.position.set(19.5, 0.15, 0);
   rightDeck.receiveShadow = true;
   pavilionGroup.add(leftDeck, rightDeck);
 
@@ -467,26 +470,26 @@ export function createWorldEnvironment(): {
   });
 
   const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.35, 8.2, 28), pavilionGlassMat);
-  leftWall.position.set(-25.8, 4.2, 0);
+  leftWall.position.set(-27.3, 4.2, 0);
   const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.35, 8.2, 28), pavilionGlassMat);
-  rightWall.position.set(25.8, 4.2, 0);
+  rightWall.position.set(27.3, 4.2, 0);
   pavilionGroup.add(leftWall, rightWall);
 
-  // Structural Steel Support Columns flanking road shoulders (outside 14m road + curbs)
+  // Structural Steel Support Columns flanking road shoulders (outside 17.6m road + curbs)
   const colMat = new THREE.MeshStandardMaterial({
     color: 0x1e293b,
     metalness: 0.8,
     roughness: 0.25,
   });
   const colPositions: [number, number][] = [
-    [-10.2, -13],
-    [10.2, -13],
-    [-10.2, 13],
-    [10.2, 13],
-    [-25.6, -13],
-    [25.6, -13],
-    [-25.6, 13],
-    [25.6, 13],
+    [-11.0, -13],
+    [11.0, -13],
+    [-11.0, 13],
+    [11.0, 13],
+    [-27.1, -13],
+    [27.1, -13],
+    [-27.1, 13],
+    [27.1, 13],
   ];
   colPositions.forEach(([cx, cz]) => {
     const col = new THREE.Mesh(new THREE.BoxGeometry(0.65, 8.5, 0.65), colMat);
@@ -501,7 +504,7 @@ export function createWorldEnvironment(): {
     metalness: 0.75,
     roughness: 0.25,
   });
-  const pavilionRoof = new THREE.Mesh(new THREE.BoxGeometry(54, 0.85, 30), roofMat);
+  const pavilionRoof = new THREE.Mesh(new THREE.BoxGeometry(58, 0.85, 30), roofMat);
   pavilionRoof.position.set(0, 8.8, 0);
   pavilionRoof.castShadow = true;
   pavilionGroup.add(pavilionRoof);
@@ -539,22 +542,22 @@ export function createWorldEnvironment(): {
   const displayConfigs = [
     {
       carId: 'car-highlander-2021',
-      x: -18,
-      z: -42,
+      x: -19.5,
+      z: -42 * S,
       type: 'LUXURY_SUV' as VehicleModelType,
       color: '#F8FAFC',
     },
     {
       carId: 'car-c63-amg-2021',
-      x: 18,
-      z: -42,
+      x: 19.5,
+      z: -42 * S,
       type: 'SPORTS_COUPE' as VehicleModelType,
       color: '#DC2626',
     },
     {
       carId: 'car-e350-2020',
-      x: -18,
-      z: -56,
+      x: -19.5,
+      z: -56 * S,
       type: 'EXECUTIVE_SEDAN' as VehicleModelType,
       color: '#0B0D11',
     },
@@ -601,10 +604,10 @@ export function createWorldEnvironment(): {
     environmentGroup.add(podGroup);
   });
 
-  // 3. TUNING & CUSTOMIZATION SERVICE BAY (at [35, 0, 10], clear of roads & buildings)
+  // 3. TUNING & CUSTOMIZATION SERVICE BAY (at [35 * S, 0, 10 * S], clear of roads & buildings)
   {
     const tuningBay = new THREE.Group();
-    tuningBay.position.set(35, 0, 10);
+    tuningBay.position.set(35 * S, 0, 10 * S);
 
     const bayPad = new THREE.Mesh(
       new THREE.BoxGeometry(10.5, 0.14, 9.0),
@@ -644,10 +647,10 @@ export function createWorldEnvironment(): {
     environmentGroup.add(tuningBay);
   }
 
-  // 4. VIP DEALER LOUNGE & CONCIERGE PAVILION (Relocated off intersection to [57, 0, 22])
+  // 4. VIP DEALER LOUNGE & CONCIERGE PAVILION (at [57 * S, 0, 22 * S])
   {
     const loungeGroup = new THREE.Group();
-    loungeGroup.position.set(57, 0, 22);
+    loungeGroup.position.set(57 * S, 0, 22 * S);
     loungeGroup.rotation.y = Math.PI; // Faces North towards Commercial Ave [z=0]
 
     const loungeBase = new THREE.Mesh(
@@ -696,14 +699,14 @@ export function createWorldEnvironment(): {
     environmentGroup.add(loungeGroup);
   }
 
-  // 5. MARKETPLACE PORTAL REFERENCE GROUP (3D Arch rendered by lagosCityBuilder at [0, 0, 100])
+  // 5. MARKETPLACE PORTAL REFERENCE GROUP (3D Arch rendered by lagosCityBuilder at [0, 0, 100 * S])
   const marketplacePortal = new THREE.Group();
-  marketplacePortal.position.set(0, 0, 100);
+  marketplacePortal.position.set(0, 0, 100 * S);
   environmentGroup.add(marketplacePortal);
 
-  // 6. SPEED TRAP GATE (Spanning West Surulere Corridor at [-55, 0, 0])
+  // 6. SPEED TRAP GATE (Spanning West Surulere Corridor at [-55 * S, 0, 0], widened for 17.6m road)
   const speedTrapGate = new THREE.Group();
-  speedTrapGate.position.set(-55, 0, 0);
+  speedTrapGate.position.set(-55 * S, 0, 0);
   speedTrapGate.rotation.y = Math.PI / 2;
 
   const trapGantryMat = new THREE.MeshStandardMaterial({
@@ -712,11 +715,11 @@ export function createWorldEnvironment(): {
     roughness: 0.3,
   });
   const trapColL = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 6.8, 12), trapGantryMat);
-  trapColL.position.set(-7.4, 3.4, 0);
+  trapColL.position.set(-10.4, 3.4, 0);
   const trapColR = trapColL.clone();
-  trapColR.position.x = 7.4;
+  trapColR.position.x = 10.4;
 
-  const trapTop = new THREE.Mesh(new THREE.BoxGeometry(15.6, 0.7, 0.7), trapGantryMat);
+  const trapTop = new THREE.Mesh(new THREE.BoxGeometry(22.0, 0.7, 0.7), trapGantryMat);
   trapTop.position.set(0, 6.8, 0);
 
   const speedDisplay = new THREE.Mesh(

@@ -27,7 +27,13 @@ import {
   getBridgePitchAt,
   enforceBridgeAndWaterBarriers,
   WORLD_BOUNDS,
+  WORLD_XZ_SCALE,
 } from './lagosCityData';
+import {
+  applyVehicleDent,
+  computeImpactSeverity,
+  resetVehicleDamage,
+} from '../../three/vehicleDamage';
 import { ActiveMissionSession, MISSIONS_CATALOG } from './missionEngine';
 import type { RemotePlayerPeer } from '../../services/worldMultiplayerService';
 import {
@@ -330,7 +336,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const carState = useRef({
     x: 0,
     y: 0,
-    z: 10,
+    z: 10 * WORLD_XZ_SCALE,
     rotation: Math.PI, // yaw in radians (facing showroom towards z-minus)
     speed: 0, // units/sec (~ 1 unit ≈ 1.5 meter)
     steeringAngle: 0,
@@ -527,8 +533,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
     if (activeMissionSession.missionId === 'MISSION_B_RACE') {
       if (stateChanged && activeMissionSession.state === 'COUNTDOWN') {
-        cs.x = -50;
-        cs.z = -130;
+        cs.x = -50 * WORLD_XZ_SCALE;
+        cs.z = -130 * WORLD_XZ_SCALE;
         cs.rotation = Math.PI / 2;
         cs.speed = 0;
         cs.steeringAngle = 0;
@@ -732,18 +738,19 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         cs.steeringAngle = 0;
         cs.y = 0;
         if (activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE') {
-          cs.x = -50;
-          cs.z = -130;
+          cs.x = -50 * WORLD_XZ_SCALE;
+          cs.z = -130 * WORLD_XZ_SCALE;
           cs.rotation = Math.PI / 2;
         } else {
           cs.x = 0;
-          cs.z = 10;
+          cs.z = 10 * WORLD_XZ_SCALE;
           cs.rotation = Math.PI;
         }
         if (playerCarGroupRef.current) {
           playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
           playerCarGroupRef.current.rotation.y = cs.rotation;
           playerCarGroupRef.current.rotation.x = 0;
+          resetVehicleDamage(playerCarGroupRef.current);
         }
       }
     };
@@ -790,12 +797,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     cs.steeringAngle = 0;
     cs.y = 0;
     if (activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE') {
-      cs.x = -50;
-      cs.z = -130;
+      cs.x = -50 * WORLD_XZ_SCALE;
+      cs.z = -130 * WORLD_XZ_SCALE;
       cs.rotation = Math.PI / 2;
     } else {
       cs.x = 0;
-      cs.z = 10;
+      cs.z = 10 * WORLD_XZ_SCALE;
       cs.rotation = Math.PI;
     }
     chaseCamRef.current.yaw = cs.rotation;
@@ -803,6 +810,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
       playerCarGroupRef.current.rotation.y = cs.rotation;
       playerCarGroupRef.current.rotation.x = 0;
+      resetVehicleDamage(playerCarGroupRef.current);
     }
   }, [resetVehicleTrigger]);
 
@@ -915,7 +923,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     roomEnv.dispose();
 
     // Atmospheric Sky Dome (tracks player XZ in animate() for seamless horizon everywhere)
-    const skyGeo = new THREE.SphereGeometry(2400, 24, 16);
+    const skyGeo = new THREE.SphereGeometry(4600, 24, 16);
     const skyMat = new THREE.MeshBasicMaterial({
       color: 0x7dd3fc,
       side: THREE.BackSide,
@@ -953,9 +961,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     dirLightRef.current = dirLight;
 
     // Accent Showroom Spotlight
-    const showroomSpot = new THREE.SpotLight(0xffffff, 4, 70, Math.PI / 3.5, 0.35);
-    showroomSpot.position.set(0, 18, -48);
-    showroomSpot.target.position.set(0, 0, -48);
+    const showroomSpot = new THREE.SpotLight(0xffffff, 4, 75, Math.PI / 3.5, 0.35);
+    showroomSpot.position.set(0, 18, -48 * WORLD_XZ_SCALE);
+    showroomSpot.target.position.set(0, 0, -48 * WORLD_XZ_SCALE);
     scene.add(showroomSpot);
     scene.add(showroomSpot.target);
     showroomSpotRef.current = showroomSpot;
@@ -1000,13 +1008,13 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       rearRightWheel: playerCar.rearRightWheel,
     };
 
-    playerCar.carGroup.position.set(0, 0, 10);
+    playerCar.carGroup.position.set(0, 0, 10 * WORLD_XZ_SCALE);
     carState.current.x = 0;
     carState.current.y = 0;
-    carState.current.z = 10;
+    carState.current.z = 10 * WORLD_XZ_SCALE;
     carState.current.rotation = Math.PI;
 
-    // Floating Interactive 3D Holographic Marker Above Marketplace Gate [0, 100]
+    // Floating Interactive 3D Holographic Marker Above Marketplace Gate [0, 100 * S]
     const markerCanvas = document.createElement('canvas');
     markerCanvas.width = 512;
     markerCanvas.height = 128;
@@ -1030,7 +1038,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     markerTex.colorSpace = THREE.SRGBColorSpace;
     const markerSpriteMat = new THREE.SpriteMaterial({ map: markerTex, transparent: true });
     const marketplaceMarkerSprite = new THREE.Sprite(markerSpriteMat);
-    marketplaceMarkerSprite.position.set(0, 13.0, 100);
+    marketplaceMarkerSprite.position.set(0, 13.0, 100 * WORLD_XZ_SCALE);
     marketplaceMarkerSprite.scale.set(13, 3.2, 1);
     scene.add(marketplaceMarkerSprite);
 
@@ -1066,6 +1074,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     const tmpPodWorldPos = new THREE.Vector3();
     const tmpLookTarget = new THREE.Vector3();
     const tmpProjVec = new THREE.Vector3();
+    const tmpDentHit = new THREE.Vector3();
+    const tmpDentDir = new THREE.Vector3();
 
     // 6. Animation & Physics Game Loop
     let animationFrameId = 0;
@@ -1101,13 +1111,13 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       // Presentation / Unauthenticated Aerial Mode (Background world only — no driving session)
       if (presentationModeRef.current) {
         if (playerCarGroupRef.current) playerCarGroupRef.current.visible = false;
-        trafficEngine.update(delta, 0, -40, 0, perfProfileRef.current.trafficCullDistance);
+        trafficEngine.update(delta, 0, -40 * WORLD_XZ_SCALE, 0, perfProfileRef.current.trafficCullDistance);
         cityData.updateTrafficSignals?.(currentTime / 1000);
         const orbitAngle = currentTime * 0.00012;
         const camX = Math.sin(orbitAngle) * 165;
-        const camZ = -35 + Math.cos(orbitAngle) * 165;
+        const camZ = -35 * WORLD_XZ_SCALE + Math.cos(orbitAngle) * 165;
         camera.position.set(camX, 58, camZ);
-        camera.lookAt(0, 4, -35);
+        camera.lookAt(0, 4, -35 * WORLD_XZ_SCALE);
         const sunOff = sunOffsetRef.current;
         dirLight.position.set(sunOff.x, sunOff.y, sunOff.z);
         dirLight.target.position.set(0, 0, 0);
@@ -1307,9 +1317,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       }
 
       // Bridge Parapet Guardrails (respecting Adekunle Exit Gore) & Coastal Seawall Barriers
-      enforceBridgeAndWaterBarriers(cs, cs.y);
+      const barrierHit = enforceBridgeAndWaterBarriers(cs, cs.y, baseSpec.bodyWidth * 0.5);
 
-      // Autonomous Traffic AI, Rival Racers & Live Traffic Signals Update
+      // Autonomous Traffic AI, Rival Racers, Falling Poles/Trees & Live Traffic Signals Update
       trafficEngine.update(
         delta,
         cs.x,
@@ -1319,15 +1329,18 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       );
       rivalsEngine.update(delta, currentTime);
       cityData.updateTrafficSignals?.(currentTime / 1000);
+      cityData.updateFallingProps(delta);
 
-      // Building, Traffic & Rival Collision Resolution matched to actual vehicle dimensions
-      const collisionEvent = collisionEngine.checkAndResolvePlayerCollisions(
+      // Hardened Building, Barricade, Traffic, Rival & Falling Prop Collision Resolution
+      const frameCollisions = collisionEngine.resolveWorldCollisions(
         cs,
         baseSpec.bodyWidth * 0.5,
         baseSpec.bodyLength * 0.5,
         cityData.collidableBuildings,
         trafficEngine.getTrafficBoundingBoxes(),
-        rivalsEngine.isRaceActive ? rivalsEngine.getRivalsBoundingBoxes() : []
+        rivalsEngine.isRaceActive ? rivalsEngine.getRivalsBoundingBoxes() : [],
+        cityData.barricades,
+        cityData.dynamicProps
       );
 
       // Compute exact level-aware road/bridge/ramp elevation Y and heading-aligned pitch
@@ -1335,11 +1348,80 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       cs.y = carY;
       const bridgePitch = getBridgePitchAt(cs.x, cs.z, cs.rotation, carY);
 
-      // Sync 3D model with physics state
+      // Sync 3D model with physics state BEFORE applying vertex deformation so world transforms match
       if (playerCarGroupRef.current) {
         playerCarGroupRef.current.position.set(cs.x, carY, cs.z);
         playerCarGroupRef.current.rotation.y = cs.rotation;
         playerCarGroupRef.current.rotation.x = bridgePitch;
+      }
+
+      // Real-Time Car Denting & Physics Consequences (Barriers, Buildings, Vehicles, Falling Poles/Trees)
+      const playerGroup = playerCarGroupRef.current;
+      if (barrierHit && playerGroup) {
+        const bSev = computeImpactSeverity(barrierHit.impactVelocity);
+        if (bSev > 0) {
+          tmpDentHit.set(barrierHit.hitX, carY + 0.58, barrierHit.hitZ);
+          tmpDentDir.set(barrierHit.normalX, -0.06, barrierHit.normalZ);
+          applyVehicleDent(playerGroup, tmpDentHit, tmpDentDir, bSev);
+        }
+      }
+
+      if (
+        frameCollisions.primaryHit &&
+        (frameCollisions.primaryHit.type === 'BUILDING' ||
+          frameCollisions.primaryHit.type === 'BARRICADE') &&
+        playerGroup
+      ) {
+        const sHit = frameCollisions.primaryHit;
+        const sSev = computeImpactSeverity(sHit.impactVelocity);
+        if (sSev > 0) {
+          tmpDentHit.set(sHit.hitX, carY + 0.58, sHit.hitZ);
+          tmpDentDir.set(sHit.normalX, -0.06, sHit.normalZ);
+          applyVehicleDent(playerGroup, tmpDentHit, tmpDentDir, sSev);
+        }
+      }
+
+      for (let i = 0; i < frameCollisions.vehicleHits.length; i++) {
+        const vHit = frameCollisions.vehicleHits[i];
+        const vSev = computeImpactSeverity(vHit.impactVelocity);
+        if (vSev > 0 && playerGroup) {
+          tmpDentHit.set(vHit.hitX, carY + 0.58, vHit.hitZ);
+          tmpDentDir.set(vHit.normalX, -0.05, vHit.normalZ);
+          applyVehicleDent(playerGroup, tmpDentHit, tmpDentDir, vSev);
+        }
+        // Apply physical push & dent to the struck traffic/rival vehicle as well
+        if (vHit.otherKind === 'TRAFFIC') {
+          trafficEngine.applyImpactAndDent(
+            vHit.otherId,
+            vHit.otherPushX ?? 0,
+            vHit.otherPushZ ?? 0,
+            vHit.hitX,
+            vHit.hitZ,
+            vSev
+          );
+        } else if (vHit.otherKind === 'RIVAL') {
+          rivalsEngine.applyImpactAndDent(
+            vHit.otherId,
+            vHit.otherPushX ?? 0,
+            vHit.otherPushZ ?? 0,
+            vHit.hitX,
+            vHit.hitZ,
+            vSev
+          );
+        }
+      }
+
+      for (let i = 0; i < frameCollisions.propHits.length; i++) {
+        const pHit = frameCollisions.propHits[i];
+        if (pHit.prop) {
+          cityData.triggerPropFall(pHit.prop, -pHit.normalX, -pHit.normalZ, pHit.impactVelocity);
+        }
+        const pSev = computeImpactSeverity(pHit.impactVelocity);
+        if (pSev > 0 && playerGroup) {
+          tmpDentHit.set(pHit.hitX, carY + 0.58, pHit.hitZ);
+          tmpDentDir.set(pHit.normalX, -0.04, pHit.normalZ);
+          applyVehicleDent(playerGroup, tmpDentHit, tmpDentDir, pSev * 0.85);
+        }
       }
 
       // Track sun shadow frustum & skyDome to player position (texel-snapped to prevent shimmer)
@@ -1386,7 +1468,11 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           }
         }
 
-        const hasHeavyImpact = Boolean(collisionEvent && collisionEvent.impactVelocity > 6);
+        const maxImpactVel = Math.max(
+          frameCollisions.maxImpactVelocity,
+          barrierHit?.impactVelocity ?? 0
+        );
+        const hasHeavyImpact = maxImpactVel > 6;
         onMissionUpdateRef.current?.(
           delta,
           { x: cs.x, z: cs.z, speed: cs.speed, gear: currentGear },
@@ -1573,9 +1659,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       // Zone Detection & Proximity Hotspots
       let detectedZone: string | null = null;
 
-      // 1. Marketplace Grand Gate Check (at [0, 0, 100])
-      const distToPortal = Math.hypot(cs.x - 0, cs.z - 100);
-      if (distToPortal < 12) {
+      // 1. Marketplace Grand Gate Check (at [0, 0, 100 * S])
+      const distToPortal = Math.hypot(cs.x - 0, cs.z - 100 * WORLD_XZ_SCALE);
+      if (distToPortal < 13) {
         detectedZone = 'marketplace';
       }
 
@@ -1588,21 +1674,24 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         }
       });
 
-      // 3. Customization Garage Check (at [35, 0, 10])
-      const distToCustomizer = Math.hypot(cs.x - 35, cs.z - 10);
-      if (distToCustomizer < 8.5) {
+      // 3. Customization Garage Check (at [35 * S, 0, 10 * S])
+      const distToCustomizer = Math.hypot(cs.x - 35 * WORLD_XZ_SCALE, cs.z - 10 * WORLD_XZ_SCALE);
+      if (distToCustomizer < 9.5) {
         detectedZone = 'customizer';
       }
 
-      // 4. VIP Concierge Lounge Check (at [56, 0, 16] forecourt of [57, 0, 22])
-      const distToLounge = Math.hypot(cs.x - 56, cs.z - 16);
-      if (distToLounge < 10.5) {
+      // 4. VIP Concierge Lounge Check (forecourt of [57 * S, 0, 22 * S])
+      const distToLounge = Math.hypot(
+        cs.x - 57 * WORLD_XZ_SCALE,
+        cs.z - (22 * WORLD_XZ_SCALE - 6.5)
+      );
+      if (distToLounge < 11.5) {
         detectedZone = 'dealer-lounge';
       }
 
-      // 5. Speed Trap Trigger (at [-55, 0, 0])
-      const distToSpeedTrap = Math.hypot(cs.x - (-55), cs.z - 0);
-      if (distToSpeedTrap < 6.0 && speedKmh > 20) {
+      // 5. Speed Trap Trigger (at [-55 * S, 0, 0])
+      const distToSpeedTrap = Math.hypot(cs.x - -55 * WORLD_XZ_SCALE, cs.z - 0);
+      if (distToSpeedTrap < 9.5 && speedKmh > 20) {
         const now = performance.now();
         if (now - lastSpeedTrapTrigger.current > 4000) {
           lastSpeedTrapTrigger.current = now;
@@ -1921,6 +2010,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       remoteCarMeshesRef.current.clear();
       cityData.dispose?.();
       trafficEngine.dispose?.();
+      rivalsEngine.dispose?.();
       skyGeo.dispose();
       skyMat.dispose();
       markerTex.dispose();

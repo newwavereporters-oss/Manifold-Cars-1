@@ -245,7 +245,8 @@ function buildSpanInstancedHardware(
 
       // Dashed lane dividers on each side of median every 8m
       if (config.hasLaneDashes && i % 2 === 0) {
-        [-5.4, 5.4].forEach((latOff) => {
+        const laneOff = piece.halfWidth * 0.45;
+        [-laneOff, laneOff].forEach((latOff) => {
           dummy.position.set(cx + rx * latOff, cy + 0.036, cz + rz * latOff);
           dummy.rotation.set(pitch, yaw, 0);
           dummy.updateMatrix();
@@ -331,12 +332,13 @@ function buildSpanInstancedHardware(
 }
 
 /**
- * 1. THIRD MAINLAND BRIDGE (22m Wide 4-Lane Dual Carriageway Across Lagos Lagoon)
+ * 1. THIRD MAINLAND BRIDGE (28m Wide 4-Lane Dual Carriageway Across Lagos Lagoon)
  */
 export function createThirdMainlandBridge(options: BridgeBuildOptions = {}): THREE.Group {
   const trackGeo = options.trackGeo ?? (<T extends THREE.BufferGeometry>(g: T): T => g);
   const mats = createSharedMats(options);
   const span = ELEVATED_SPANS.find((s) => s.id === 'TMB')!;
+  const mainPiece = span.pieces[1];
 
   const group = new THREE.Group();
   group.name = 'ThirdMainlandBridge';
@@ -355,15 +357,23 @@ export function createThirdMainlandBridge(options: BridgeBuildOptions = {}): THR
     hasLaneDashes: true,
   });
 
-  // Instanced Concrete Piers & Water Pile Caps along Main Span (z = -205 .. -555)
+  // Instanced Concrete Piers & Water Pile Caps along Main Span
   const dummy = new THREE.Object3D();
+  const zStart = Math.max(mainPiece.z0, mainPiece.z1);
+  const zEnd = Math.min(mainPiece.z0, mainPiece.z1);
+  const spanLen = Math.abs(zStart - zEnd);
+  const pierCount = Math.max(10, Math.round(spanLen / 34) + 1);
   const pierZs: number[] = [];
-  for (let z = -205; z >= -555; z -= 25) {
-    pierZs.push(z);
+  for (let i = 0; i < pierCount; i++) {
+    const t = pierCount > 1 ? i / (pierCount - 1) : 0;
+    pierZs.push(zStart - t * spanLen);
   }
-  const colGeo = trackGeo(new THREE.CylinderGeometry(1.0, 1.2, 8.0, 12));
-  const capGeo = trackGeo(new THREE.BoxGeometry(20.2, 1.15, 2.5));
-  const pileGeo = trackGeo(new THREE.BoxGeometry(19.4, 1.4, 2.9));
+
+  const deckWidth = mainPiece.halfWidth * 2;
+  const colOffX = mainPiece.halfWidth - 4.4;
+  const colGeo = trackGeo(new THREE.CylinderGeometry(1.05, 1.25, 8.0, 12));
+  const capGeo = trackGeo(new THREE.BoxGeometry(deckWidth - 1.8, 1.15, 2.6));
+  const pileGeo = trackGeo(new THREE.BoxGeometry(deckWidth - 2.6, 1.4, 3.0));
 
   const colInst = new THREE.InstancedMesh(colGeo, mats.concretePierMat, pierZs.length * 2);
   const capInst = new THREE.InstancedMesh(capGeo, mats.concretePierMat, pierZs.length);
@@ -371,7 +381,7 @@ export function createThirdMainlandBridge(options: BridgeBuildOptions = {}): THR
   colInst.castShadow = true;
 
   pierZs.forEach((z, idx) => {
-    [-6.6, 6.6].forEach((px, sIdx) => {
+    [-colOffX, colOffX].forEach((px, sIdx) => {
       dummy.position.set(px, 1.2, z);
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(1, 1, 1);
@@ -392,15 +402,15 @@ export function createThirdMainlandBridge(options: BridgeBuildOptions = {}): THR
   pileInst.computeBoundingSphere();
   group.add(colInst, capInst, pileInst);
 
-  // Steel Expansion Joints every 32m along Main Span
-  const jointGeo = trackGeo(new THREE.BoxGeometry(20.6, 0.04, 0.35));
+  // Steel Expansion Joints every ~38m along Main Span
+  const jointGeo = trackGeo(new THREE.BoxGeometry(deckWidth - 1.4, 0.04, 0.35));
   const jointZs: number[] = [];
-  for (let z = -220; z >= -540; z -= 32) {
+  for (let z = zStart - 16; z >= zEnd + 16; z -= 38) {
     jointZs.push(z);
   }
   const jointInst = new THREE.InstancedMesh(jointGeo, mats.steelDarkMat, jointZs.length);
   jointZs.forEach((z, idx) => {
-    dummy.position.set(0, 6.02, z);
+    dummy.position.set(0, mainPiece.y0 + 0.02, z);
     dummy.rotation.set(0, 0, 0);
     dummy.updateMatrix();
     jointInst.setMatrixAt(idx, dummy.matrix);
@@ -429,18 +439,18 @@ export function createAdekunleRamp(options: BridgeBuildOptions = {}): THREE.Grou
     });
   });
 
-  // Skip parapet right inside the TMB gore splice (t < 0.09)
+  // Skip parapet right inside the TMB gore splice (t < 0.08)
   buildSpanInstancedHardware(group, span, mats, trackGeo, {
     hasMedianBarrier: false,
     hasLaneDashes: false,
-    skipStartT: 0.09,
+    skipStartT: 0.08,
   });
 
   // Concrete Viaduct Support Columns along the ramp over lagoon shoreline
   const piece = span.pieces[0];
-  const dummy = new THREE.Object3D();
-  const pierTs = [0.18, 0.36, 0.54, 0.72];
+  const pierTs = [0.16, 0.32, 0.48, 0.64, 0.8];
   const yaw = Math.atan2(-(piece.x1 - piece.x0), -(piece.z1 - piece.z0));
+  const capWidth = piece.halfWidth * 2 - 2.6;
 
   pierTs.forEach((t) => {
     const px = piece.x0 + (piece.x1 - piece.x0) * t;
@@ -449,14 +459,14 @@ export function createAdekunleRamp(options: BridgeBuildOptions = {}): THREE.Grou
     const h = py + 1.2;
 
     const col = new THREE.Mesh(
-      trackGeo(new THREE.CylinderGeometry(0.85, 1.05, h, 10)),
+      trackGeo(new THREE.CylinderGeometry(0.88, 1.08, h, 10)),
       mats.concretePierMat
     );
     col.position.set(px, py / 2 - 0.6, pz);
     col.castShadow = true;
 
     const cap = new THREE.Mesh(
-      trackGeo(new THREE.BoxGeometry(12.6, 0.75, 1.9)),
+      trackGeo(new THREE.BoxGeometry(capWidth, 0.75, 2.0)),
       mats.concretePierMat
     );
     cap.position.set(px, py - 0.95, pz);
@@ -464,7 +474,6 @@ export function createAdekunleRamp(options: BridgeBuildOptions = {}): THREE.Grou
     group.add(col, cap);
   });
 
-  void dummy;
   return group;
 }
 
@@ -475,6 +484,7 @@ export function createIkoyiLinkBridge(options: BridgeBuildOptions = {}): THREE.G
   const trackGeo = options.trackGeo ?? (<T extends THREE.BufferGeometry>(g: T): T => g);
   const mats = createSharedMats(options);
   const span = ELEVATED_SPANS.find((s) => s.id === 'IKOYI_LINK')!;
+  const mainPiece = span.pieces[1];
 
   const group = new THREE.Group();
   group.name = 'IkoyiLinkBridge';
@@ -491,12 +501,21 @@ export function createIkoyiLinkBridge(options: BridgeBuildOptions = {}): THREE.G
     hasLaneDashes: true,
   });
 
-  // Twin Lagoon Piers along Ikoyi Link span (x = 460..580, z = -20)
+  // Twin Lagoon Piers along Ikoyi Link span
   const dummy = new THREE.Object3D();
-  const pierXs = [460, 490, 520, 550, 580];
-  const colGeo = trackGeo(new THREE.CylinderGeometry(0.95, 1.15, 8.8, 12));
-  const capGeo = trackGeo(new THREE.BoxGeometry(2.4, 1.1, 20.2));
-  const pileGeo = trackGeo(new THREE.BoxGeometry(2.8, 1.4, 19.4));
+  const xMin = Math.min(mainPiece.x0, mainPiece.x1);
+  const xMax = Math.max(mainPiece.x0, mainPiece.x1);
+  const mainSpanLen = xMax - xMin;
+  const pierCount = 7;
+  const pierXs: number[] = [];
+  for (let i = 0; i < pierCount; i++) {
+    pierXs.push(xMin + (mainSpanLen * i) / (pierCount - 1));
+  }
+  const deckWidth = mainPiece.halfWidth * 2;
+  const colOffZ = mainPiece.halfWidth - 4.4;
+  const colGeo = trackGeo(new THREE.CylinderGeometry(1.0, 1.2, 8.8, 12));
+  const capGeo = trackGeo(new THREE.BoxGeometry(2.5, 1.1, deckWidth - 1.8));
+  const pileGeo = trackGeo(new THREE.BoxGeometry(2.9, 1.4, deckWidth - 2.6));
 
   const colInst = new THREE.InstancedMesh(colGeo, mats.concretePierMat, pierXs.length * 2);
   const capInst = new THREE.InstancedMesh(capGeo, mats.concretePierMat, pierXs.length);
@@ -504,17 +523,17 @@ export function createIkoyiLinkBridge(options: BridgeBuildOptions = {}): THREE.G
   colInst.castShadow = true;
 
   pierXs.forEach((x, idx) => {
-    [-6.6, 6.6].forEach((pz, sIdx) => {
-      dummy.position.set(x, 1.6, -20 + pz);
+    [-colOffZ, colOffZ].forEach((pz, sIdx) => {
+      dummy.position.set(x, 1.6, mainPiece.z0 + pz);
       dummy.rotation.set(0, 0, 0);
       dummy.updateMatrix();
       colInst.setMatrixAt(idx * 2 + sIdx, dummy.matrix);
     });
-    dummy.position.set(x, 5.65, -20);
+    dummy.position.set(x, 5.65, mainPiece.z0);
     dummy.updateMatrix();
     capInst.setMatrixAt(idx, dummy.matrix);
 
-    dummy.position.set(x, -1.5, -20);
+    dummy.position.set(x, -1.5, mainPiece.z0);
     dummy.updateMatrix();
     pileInst.setMatrixAt(idx, dummy.matrix);
   });
@@ -523,54 +542,58 @@ export function createIkoyiLinkBridge(options: BridgeBuildOptions = {}): THREE.G
   pileInst.computeBoundingSphere();
   group.add(colInst, capInst, pileInst);
 
-  // Iconic Central White Cable-Stayed Pylon Tower at (x = 520, z = -20)
-  const pylonBaseX = 520;
-  const pylonZ = -20;
-  const pylonTopY = 38.0;
+  // Iconic Central White Cable-Stayed Pylon Tower centered on main span
+  const pylonBaseX = (xMin + xMax) * 0.5;
+  const pylonZ = mainPiece.z0;
+  const pylonTopY = 44.0;
 
   // Center tapered concrete-white mast standing on median island
   const lowerPedestal = new THREE.Mesh(
-    trackGeo(new THREE.BoxGeometry(3.2, 8.6, 2.2)),
+    trackGeo(new THREE.BoxGeometry(3.4, 8.6, 2.4)),
     mats.pylonWhiteMat
   );
   lowerPedestal.position.set(pylonBaseX, 4.3, pylonZ);
 
   const upperTower = new THREE.Mesh(
-    trackGeo(new THREE.CylinderGeometry(0.75, 1.35, 31.5, 12)),
+    trackGeo(new THREE.CylinderGeometry(0.82, 1.45, 37.5, 12)),
     mats.pylonWhiteMat
   );
-  upperTower.position.set(pylonBaseX, 7.0 + 15.75, pylonZ);
+  upperTower.position.set(pylonBaseX, 7.0 + 18.75, pylonZ);
   upperTower.castShadow = true;
 
-  // Sculptural golden/blue crown ring on pylon tip
+  // Sculptural blue crown ring on pylon tip
   const pylonCrown = new THREE.Mesh(
-    trackGeo(new THREE.CylinderGeometry(0.95, 0.95, 2.2, 12)),
+    trackGeo(new THREE.CylinderGeometry(1.05, 1.05, 2.4, 12)),
     mats.archBlueMat
   );
   pylonCrown.position.set(pylonBaseX, pylonTopY, pylonZ);
   group.add(lowerPedestal, upperTower, pylonCrown);
 
-  // Fanning Diagonal Steel Stay Cables (10 each side along X)
-  const cableOffsets = [10, 18, 26, 34, 42, 50, 58];
+  // Fanning Diagonal Steel Stay Cables (9 each side along extended X span)
+  const cableCount = 9;
+  const maxReach = mainSpanLen * 0.48;
+  const minReach = 14;
   const cableMat = mats.steelSilverMat;
-  cableOffsets.forEach((dxAbs, idx) => {
+  for (let idx = 0; idx < cableCount; idx++) {
+    const frac = cableCount > 1 ? idx / (cableCount - 1) : 0;
+    const dxAbs = minReach + frac * (maxReach - minReach);
     [-1, 1].forEach((dir) => {
       const anchorX = pylonBaseX + dir * dxAbs;
       const anchorY = 7.35;
-      const topY = pylonTopY - 1.5 - idx * 1.45;
+      const topY = pylonTopY - 1.6 - idx * 1.45;
       const cDx = anchorX - pylonBaseX;
       const cDy = anchorY - topY;
       const cableLen = Math.hypot(cDx, cDy);
 
       const cable = new THREE.Mesh(
-        trackGeo(new THREE.CylinderGeometry(0.09, 0.09, cableLen, 6)),
+        trackGeo(new THREE.CylinderGeometry(0.095, 0.095, cableLen, 6)),
         cableMat
       );
       cable.position.set((pylonBaseX + anchorX) / 2, (topY + anchorY) / 2, pylonZ);
       cable.rotation.z = Math.atan2(-cDx, -cDy);
       group.add(cable);
     });
-  });
+  }
 
   return group;
 }
@@ -582,6 +605,7 @@ export function createAjahFlyover(options: BridgeBuildOptions = {}): THREE.Group
   const trackGeo = options.trackGeo ?? (<T extends THREE.BufferGeometry>(g: T): T => g);
   const mats = createSharedMats(options);
   const span = ELEVATED_SPANS.find((s) => s.id === 'AJAH_FLYOVER')!;
+  const mainPiece = span.pieces[1];
 
   const group = new THREE.Group();
   group.name = 'AjahFlyover';
@@ -598,24 +622,33 @@ export function createAjahFlyover(options: BridgeBuildOptions = {}): THREE.Group
     hasLaneDashes: true,
   });
 
-  // Portal bents positioned strictly OUTSIDE the 22m-wide ground crossroad at x = 1135
-  // Leaves a clear 34m wide x 5.25m high underpass beneath the flyover!
-  const pierXs = [1098, 1117, 1153, 1172];
+  // Portal bents positioned strictly OUTSIDE the 27.6m-wide ground crossroad at centerX
+  const centerX = (mainPiece.x0 + mainPiece.x1) * 0.5;
+  const halfMain = Math.abs(mainPiece.x1 - mainPiece.x0) * 0.5;
+  const pierXs = [
+    centerX - halfMain + 3,
+    centerX - 24,
+    centerX + 24,
+    centerX + halfMain - 3,
+  ];
+  const colOffZ = mainPiece.halfWidth - 2.9;
+  const capDepth = mainPiece.halfWidth * 2 - 1.4;
+
   pierXs.forEach((px) => {
-    [-6.2, 6.2].forEach((pz) => {
+    [-colOffZ, colOffZ].forEach((pz) => {
       const col = new THREE.Mesh(
-        trackGeo(new THREE.CylinderGeometry(0.72, 0.85, 5.4, 10)),
+        trackGeo(new THREE.CylinderGeometry(0.76, 0.9, 5.4, 10)),
         mats.concretePierMat
       );
-      col.position.set(px, 2.7, 100 + pz);
+      col.position.set(px, 2.7, mainPiece.z0 + pz);
       col.castShadow = true;
       group.add(col);
     });
     const cap = new THREE.Mesh(
-      trackGeo(new THREE.BoxGeometry(1.9, 0.85, 16.5)),
+      trackGeo(new THREE.BoxGeometry(2.0, 0.85, capDepth)),
       mats.concretePierMat
     );
-    cap.position.set(px, 5.15, 100);
+    cap.position.set(px, 5.15, mainPiece.z0);
     group.add(cap);
   });
 
@@ -629,6 +662,7 @@ export function createEpeBridge(options: BridgeBuildOptions = {}): THREE.Group {
   const trackGeo = options.trackGeo ?? (<T extends THREE.BufferGeometry>(g: T): T => g);
   const mats = createSharedMats(options);
   const span = ELEVATED_SPANS.find((s) => s.id === 'EPE_BRIDGE')!;
+  const mainPiece = span.pieces[1];
 
   const group = new THREE.Group();
   group.name = 'EpeBridge';
@@ -645,56 +679,63 @@ export function createEpeBridge(options: BridgeBuildOptions = {}): THREE.Group {
     hasLaneDashes: true,
   });
 
-  // Twin Lagoon Piers in Epe Creek (x = 1360..1415, z = 100)
-  [1360, 1388, 1415].forEach((px) => {
-    [-6.6, 6.6].forEach((pz) => {
+  // Twin Lagoon Piers in Epe Creek
+  const xMin = Math.min(mainPiece.x0, mainPiece.x1);
+  const xMax = Math.max(mainPiece.x0, mainPiece.x1);
+  const pierXs = [xMin, xMin + (xMax - xMin) * 0.33, xMin + (xMax - xMin) * 0.67, xMax];
+  const colOffZ = mainPiece.halfWidth - 4.4;
+  const capDepth = mainPiece.halfWidth * 2 - 1.8;
+
+  pierXs.forEach((px) => {
+    [-colOffZ, colOffZ].forEach((pz) => {
       const col = new THREE.Mesh(
-        trackGeo(new THREE.CylinderGeometry(0.9, 1.1, 7.6, 12)),
+        trackGeo(new THREE.CylinderGeometry(0.95, 1.15, 7.6, 12)),
         mats.concretePierMat
       );
-      col.position.set(px, 1.3, 100 + pz);
+      col.position.set(px, 1.3, mainPiece.z0 + pz);
       col.castShadow = true;
       group.add(col);
     });
     const cap = new THREE.Mesh(
-      trackGeo(new THREE.BoxGeometry(2.2, 1.0, 19.5)),
+      trackGeo(new THREE.BoxGeometry(2.3, 1.0, capDepth)),
       mats.concretePierMat
     );
-    cap.position.set(px, 4.6, 100);
+    cap.position.set(px, 4.6, mainPiece.z0);
     group.add(cap);
   });
 
-  // Twin Coastal Tied-Arch Blue Steel Ribs Spanning Main Creek Section (1360..1415)
-  const archSpan = 55;
-  const archCenter = 1387.5;
-  const segs = 14;
-  [-9.9, 9.9].forEach((rz) => {
+  // Twin Coastal Tied-Arch Blue Steel Ribs Spanning Main Creek Section
+  const archSpan = xMax - xMin;
+  const archCenter = (xMin + xMax) * 0.5;
+  const segs = 18;
+  const archZ = mainPiece.halfWidth - 1.15;
+  [-archZ, archZ].forEach((rz) => {
     for (let i = 0; i < segs; i++) {
       const t0 = i / segs;
       const t1 = (i + 1) / segs;
       const x0 = archCenter - archSpan / 2 + t0 * archSpan;
       const x1 = archCenter - archSpan / 2 + t1 * archSpan;
-      const y0 = 5.8 + 11.5 * Math.sin(t0 * Math.PI);
-      const y1 = 5.8 + 11.5 * Math.sin(t1 * Math.PI);
+      const y0 = mainPiece.y0 + 14.5 * Math.sin(t0 * Math.PI);
+      const y1 = mainPiece.y0 + 14.5 * Math.sin(t1 * Math.PI);
       const segLen = Math.hypot(x1 - x0, y1 - y0);
 
       const rib = new THREE.Mesh(
-        trackGeo(new THREE.BoxGeometry(segLen + 0.25, 0.85, 0.75)),
+        trackGeo(new THREE.BoxGeometry(segLen + 0.3, 0.9, 0.78)),
         mats.archBlueMat
       );
-      rib.position.set((x0 + x1) / 2, (y0 + y1) / 2, 100 + rz);
+      rib.position.set((x0 + x1) / 2, (y0 + y1) / 2, mainPiece.z0 + rz);
       rib.rotation.z = Math.atan2(y1 - y0, x1 - x0);
       rib.castShadow = true;
       group.add(rib);
 
       // Vertical hanger cables from arch down to deck parapet
       if (i > 0 && i % 2 === 0) {
-        const hH = y0 - 5.8;
+        const hH = y0 - mainPiece.y0;
         const hanger = new THREE.Mesh(
-          trackGeo(new THREE.CylinderGeometry(0.08, 0.08, hH, 6)),
+          trackGeo(new THREE.CylinderGeometry(0.085, 0.085, hH, 6)),
           mats.steelSilverMat
         );
-        hanger.position.set(x0, 5.8 + hH / 2, 100 + rz);
+        hanger.position.set(x0, mainPiece.y0 + hH / 2, mainPiece.z0 + rz);
         group.add(hanger);
       }
     }

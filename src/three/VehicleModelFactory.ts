@@ -24,6 +24,7 @@ import {
   type WheelStyleSpec,
 } from './vehicleSurfaceBuilder';
 import { buildDetailedInteriorAndDriver } from './driverAndInteriorBuilder';
+import { createVehicleContactShadowMesh, markDeformable } from './vehicleDamage';
 
 const UNDERGLOW_HEX: Record<string, string> = {
   NONE: '#000000',
@@ -648,7 +649,7 @@ export class VehicleModelFactory {
     });
 
     const bodyGeo = computeSmoothBodyNormals(buildSculptedCarBodyGeometry(stations), 40);
-    const bodyMesh = new THREE.Mesh(bodyGeo, mats.paintMat);
+    const bodyMesh = markDeformable(new THREE.Mesh(bodyGeo, mats.paintMat), 1.15);
     bodyMesh.castShadow = true;
     bodyMesh.receiveShadow = true;
     chassisGroup.add(bodyMesh);
@@ -670,13 +671,13 @@ export class VehicleModelFactory {
 
     // 3. Carbon Aero Kit (Undertray, Front Splitter, Side Skirts, Rear Diffuser, Quad Titanium Exhausts)
     addBox(chassisGroup, 1.54, 0.06, 4.1, mats.trimBlackMat, 0, 0.16, 0.02);
-    addBox(chassisGroup, 1.84, 0.035, 0.38, mats.carbonMat, 0, 0.165, 2.04, 0.03);
+    markDeformable(addBox(chassisGroup, 1.84, 0.035, 0.38, mats.carbonMat, 0, 0.165, 2.04, 0.03), 1.0);
     [-0.93, 0.93].forEach((sx) => {
-      addBox(chassisGroup, 0.09, 0.045, 1.72, mats.carbonMat, sx, 0.17, 0.02);
+      markDeformable(addBox(chassisGroup, 0.09, 0.045, 1.72, mats.carbonMat, sx, 0.17, 0.02), 0.9);
       // Carbon side intake gill scoop
       addBox(chassisGroup, 0.045, 0.19, 0.16, mats.meshGrilleMat, sx * 1.0, 0.56, 0.72);
     });
-    addBox(chassisGroup, 1.66, 0.14, 0.28, mats.carbonMat, 0, 0.23, -2.02, -0.1);
+    markDeformable(addBox(chassisGroup, 1.66, 0.14, 0.28, mats.carbonMat, 0, 0.23, -2.02, -0.1), 1.0);
     [-0.48, -0.24, 0, 0.24, 0.48].forEach((fx) => {
       addBox(chassisGroup, 0.024, 0.13, 0.26, mats.carbonMat, fx, 0.22, -2.08);
     });
@@ -686,11 +687,11 @@ export class VehicleModelFactory {
     });
 
     // 4. Sculpted Hood Power Dome & Vents + Honeycomb Grille
-    addBox(chassisGroup, 0.56, 0.045, 0.92, mats.paintMat, 0, 0.878, 1.32, 0.08);
+    markDeformable(addBox(chassisGroup, 0.56, 0.045, 0.92, mats.paintMat, 0, 0.878, 1.32, 0.08), 1.1);
     [-0.36, 0.36].forEach((vx) => {
       addBox(chassisGroup, 0.18, 0.022, 0.28, mats.carbonMat, vx, 0.865, 1.35, 0.08);
     });
-    addBox(chassisGroup, 1.04, 0.24, 0.07, mats.meshGrilleMat, 0, 0.36, 2.175, 0.08);
+    markDeformable(addBox(chassisGroup, 1.04, 0.24, 0.07, mats.meshGrilleMat, 0, 0.36, 2.175, 0.08), 0.9);
     addBox(chassisGroup, 1.08, 0.024, 0.08, mats.chromeMat, 0, 0.37, 2.185);
     [-0.66, 0.66].forEach((ix) => {
       addBox(chassisGroup, 0.32, 0.18, 0.08, mats.meshGrilleMat, ix, 0.34, 2.12, 0, ix > 0 ? -0.22 : 0.22);
@@ -698,7 +699,7 @@ export class VehicleModelFactory {
 
     // 5. Bowed Fastback Greenhouse (Curved Windshield, Bowed Roof, Fastback Rear Glass, Tube Pillars, Flush Side Glass)
     const windshield = buildCurvedPanelMesh(0.79, 0.81, 0.72, 0.67, 1.17, 0.06, 0.1, 0.02, mats.glassMat, 14, 6);
-    const roofPanel = buildCurvedPanelMesh(0.67, 1.17, 0.06, 0.65, 1.17, -0.78, 0.02, 0.035, mats.paintMat, 12, 6, true);
+    const roofPanel = markDeformable(buildCurvedPanelMesh(0.67, 1.17, 0.06, 0.65, 1.17, -0.78, 0.02, 0.035, mats.paintMat, 12, 6, true), 0.85);
     const rearGlass = buildCurvedPanelMesh(0.65, 1.17, -0.78, 0.77, 0.87, -1.56, -0.07, 0.02, mats.glassMat, 12, 6);
     chassisGroup.add(windshield, roofPanel, rearGlass);
 
@@ -796,6 +797,8 @@ export class VehicleModelFactory {
       'Y_SPLIT_5'
     );
 
+    carGroup.add(createVehicleContactShadowMesh(2.38, 4.9, 0.015));
+
     return {
       carGroup,
       chassisGroup,
@@ -886,7 +889,7 @@ export class VehicleModelFactory {
     });
 
     const bodyGeo = computeSmoothBodyNormals(buildSculptedCarBodyGeometry(stations), 42);
-    const bodyMesh = new THREE.Mesh(bodyGeo, mats.paintMat);
+    const bodyMesh = markDeformable(new THREE.Mesh(bodyGeo, mats.paintMat), 1.15);
     bodyMesh.castShadow = true;
     bodyMesh.receiveShadow = true;
     chassisGroup.add(bodyMesh);
@@ -908,10 +911,10 @@ export class VehicleModelFactory {
 
     // Chassis Underbody, Skid Plates & Aluminum Running Boards
     addBox(chassisGroup, 1.72, 0.1, 4.5, mats.trimBlackMat, 0, 0.27, 0.0);
-    addBox(chassisGroup, 1.24, 0.065, 0.26, mats.chromeMat, 0, 0.29, 2.33, 0.18);
-    addBox(chassisGroup, 1.44, 0.08, 0.25, mats.matteCladdingMat, 0, 0.31, -2.32, -0.14);
+    markDeformable(addBox(chassisGroup, 1.24, 0.065, 0.26, mats.chromeMat, 0, 0.29, 2.33, 0.18), 0.9);
+    markDeformable(addBox(chassisGroup, 1.44, 0.08, 0.25, mats.matteCladdingMat, 0, 0.31, -2.32, -0.14), 0.95);
     [-1.02, 1.02].forEach((sx) => {
-      addBox(chassisGroup, 0.16, 0.05, 1.88, mats.chromeMat, sx, 0.28, 0.02);
+      markDeformable(addBox(chassisGroup, 0.16, 0.05, 1.88, mats.chromeMat, sx, 0.28, 0.02), 0.85);
     });
     [-0.68, 0.68].forEach((ex) => {
       addBox(chassisGroup, 0.18, 0.085, 0.14, mats.chromeMat, ex, 0.34, -2.38);
@@ -920,9 +923,9 @@ export class VehicleModelFactory {
 
     // Sculpted Clamshell Hood Creases & Vertical-Slat Chrome Grille
     [-0.44, 0.44].forEach((rx) => {
-      addBox(chassisGroup, 0.18, 0.032, 1.15, mats.paintMat, rx, 1.165, 1.62, 0.03);
+      markDeformable(addBox(chassisGroup, 0.18, 0.032, 1.15, mats.paintMat, rx, 1.165, 1.62, 0.03), 1.05);
     });
-    addBox(chassisGroup, 1.14, 0.42, 0.08, mats.meshGrilleMat, 0, 0.78, 2.385);
+    markDeformable(addBox(chassisGroup, 1.14, 0.42, 0.08, mats.meshGrilleMat, 0, 0.78, 2.385), 0.9);
     addBox(chassisGroup, 1.18, 0.46, 0.03, mats.chromeMat, 0, 0.78, 2.355);
     for (let gx = -0.44; gx <= 0.44; gx += 0.11) {
       addBox(chassisGroup, 0.024, 0.38, 0.05, mats.chromeMat, gx, 0.78, 2.415);
@@ -930,10 +933,10 @@ export class VehicleModelFactory {
 
     // Upright Panoramic Greenhouse + Roof Rails + Rear Tailgate Glass
     const windshield = buildCurvedPanelMesh(0.88, 1.13, 0.96, 0.77, 1.69, 0.28, 0.09, 0.02, mats.glassMat, 14, 6);
-    const roofPanel = buildCurvedPanelMesh(0.77, 1.69, 0.28, 0.74, 1.68, -2.02, 0.02, 0.03, mats.paintMat, 12, 8, true);
+    const roofPanel = markDeformable(buildCurvedPanelMesh(0.77, 1.69, 0.28, 0.74, 1.68, -2.02, 0.02, 0.03, mats.paintMat, 12, 8, true), 0.85);
     const panoGlass = buildCurvedPanelMesh(0.56, 1.71, -0.05, 0.55, 1.71, -1.55, 0.01, 0.02, mats.glassMat, 10, 6);
     const rearGlass = buildCurvedPanelMesh(0.74, 1.68, -2.02, 0.85, 1.21, -2.35, -0.05, 0.02, mats.glassMat, 12, 6);
-    const tailgateLower = buildCurvedPanelMesh(0.85, 1.21, -2.35, 0.92, 0.8, -2.38, -0.04, 0.02, mats.paintMat, 12, 4, true);
+    const tailgateLower = markDeformable(buildCurvedPanelMesh(0.85, 1.21, -2.35, 0.92, 0.8, -2.38, -0.04, 0.02, mats.paintMat, 12, 4, true), 1.05);
     chassisGroup.add(windshield, roofPanel, panoGlass, rearGlass, tailgateLower);
 
     // Anodized Roof Rails + Rear Spoiler Lip
@@ -1019,6 +1022,8 @@ export class VehicleModelFactory {
       0.29,
       'TWIN_5'
     );
+
+    carGroup.add(createVehicleContactShadowMesh(2.55, 5.25, 0.015));
 
     return {
       carGroup,
@@ -1110,7 +1115,7 @@ export class VehicleModelFactory {
     });
 
     const bodyGeo = computeSmoothBodyNormals(buildSculptedCarBodyGeometry(stations), 40);
-    const bodyMesh = new THREE.Mesh(bodyGeo, mats.paintMat);
+    const bodyMesh = markDeformable(new THREE.Mesh(bodyGeo, mats.paintMat), 1.15);
     bodyMesh.castShadow = true;
     bodyMesh.receiveShadow = true;
     chassisGroup.add(bodyMesh);
@@ -1132,16 +1137,16 @@ export class VehicleModelFactory {
     // Chrome Rocker Moldings, Rear Valance & Dual Exhausts
     addBox(chassisGroup, 1.56, 0.07, 4.4, mats.trimBlackMat, 0, 0.2, 0.02);
     [-0.92, 0.92].forEach((sx) => {
-      addBox(chassisGroup, 0.05, 0.035, 1.88, mats.chromeMat, sx, 0.22, 0.02);
+      markDeformable(addBox(chassisGroup, 0.05, 0.035, 1.88, mats.chromeMat, sx, 0.22, 0.02), 0.85);
       addBox(chassisGroup, 0.026, 0.026, 1.92, mats.chromeMat, sx, 0.9, -0.2);
     });
-    addBox(chassisGroup, 1.66, 0.14, 0.24, mats.trimBlackMat, 0, 0.26, -2.22);
+    markDeformable(addBox(chassisGroup, 1.66, 0.14, 0.24, mats.trimBlackMat, 0, 0.26, -2.22), 1.0);
     [-0.6, 0.6].forEach((ex) => {
       addCyl(chassisGroup, 0.054, 0.054, 0.15, 12, mats.chromeMat, ex, 0.27, -2.33, Math.PI / 2);
     });
 
     // Multi-Slat Chrome Executive Grille + Hood Crest Line
-    addBox(chassisGroup, 0.98, 0.3, 0.08, mats.meshGrilleMat, 0, 0.57, 2.33);
+    markDeformable(addBox(chassisGroup, 0.98, 0.3, 0.08, mats.meshGrilleMat, 0, 0.57, 2.33), 0.9);
     addBox(chassisGroup, 1.02, 0.34, 0.03, mats.chromeMat, 0, 0.57, 2.3);
     [-0.08, 0, 0.08].forEach((gy) => {
       addBox(chassisGroup, 0.92, 0.02, 0.04, mats.chromeMat, 0, 0.57 + gy, 2.36);
@@ -1149,7 +1154,7 @@ export class VehicleModelFactory {
 
     // Bowed 3-Box Executive Greenhouse + Shark-Fin Antenna
     const windshield = buildCurvedPanelMesh(0.81, 0.91, 0.85, 0.7, 1.35, 0.2, 0.09, 0.02, mats.glassMat, 14, 6);
-    const roofPanel = buildCurvedPanelMesh(0.7, 1.35, 0.2, 0.68, 1.35, -0.82, 0.02, 0.032, mats.paintMat, 12, 6, true);
+    const roofPanel = markDeformable(buildCurvedPanelMesh(0.7, 1.35, 0.2, 0.68, 1.35, -0.82, 0.02, 0.032, mats.paintMat, 12, 6, true), 0.85);
     const rearGlass = buildCurvedPanelMesh(0.68, 1.35, -0.82, 0.78, 0.94, -1.56, -0.06, 0.02, mats.glassMat, 12, 6);
     chassisGroup.add(windshield, roofPanel, rearGlass);
     addBox(chassisGroup, 0.045, 0.085, 0.17, mats.trimBlackMat, 0, 1.4, -0.75, -0.32);
@@ -1232,6 +1237,8 @@ export class VehicleModelFactory {
       0.265,
       'TURBINE_10'
     );
+
+    carGroup.add(createVehicleContactShadowMesh(2.38, 5.1, 0.015));
 
     return {
       carGroup,
@@ -1323,7 +1330,7 @@ export class VehicleModelFactory {
     });
 
     const bodyGeo = computeSmoothBodyNormals(buildSculptedCarBodyGeometry(stations), 36);
-    const bodyMesh = new THREE.Mesh(bodyGeo, mats.paintMat);
+    const bodyMesh = markDeformable(new THREE.Mesh(bodyGeo, mats.paintMat), 1.15);
     bodyMesh.castShadow = true;
     bodyMesh.receiveShadow = true;
     chassisGroup.add(bodyMesh);
@@ -1345,23 +1352,23 @@ export class VehicleModelFactory {
 
     // Ladder-frame underbody, front bash plate, rock sliders & recovery tow hooks
     addBox(chassisGroup, 1.66, 0.14, 4.35, mats.matteCladdingMat, 0, 0.38, 0);
-    addBox(chassisGroup, 1.24, 0.08, 0.42, mats.chromeMat, 0, 0.39, 2.26, 0.38);
+    markDeformable(addBox(chassisGroup, 1.24, 0.08, 0.42, mats.chromeMat, 0, 0.39, 2.26, 0.38), 0.9);
     [-1.04, 1.04].forEach((sx) => {
       addCyl(chassisGroup, 0.045, 0.045, 1.84, 10, mats.matteCladdingMat, sx, 0.39, 0.02, Math.PI / 2);
       // Diamond chequer hood armor plates
-      addBox(chassisGroup, 0.28, 0.022, 1.02, mats.matteCladdingMat, sx * 0.72, 1.32, 1.62, 0.04);
+      markDeformable(addBox(chassisGroup, 0.28, 0.022, 1.02, mats.matteCladdingMat, sx * 0.72, 1.32, 1.62, 0.04), 0.9);
     });
 
     // Heavy Steel Expedition Bull Bar + Winch Drum
-    addBox(chassisGroup, 1.98, 0.19, 0.22, mats.matteCladdingMat, 0, 0.66, 2.4, 0.04);
-    addBox(chassisGroup, 0.88, 0.06, 0.06, mats.matteCladdingMat, 0, 1.02, 2.42);
+    markDeformable(addBox(chassisGroup, 1.98, 0.19, 0.22, mats.matteCladdingMat, 0, 0.66, 2.4, 0.04), 1.0);
+    markDeformable(addBox(chassisGroup, 0.88, 0.06, 0.06, mats.matteCladdingMat, 0, 1.02, 2.42), 0.9);
     [-0.44, 0.44].forEach((bx) => {
-      addBox(chassisGroup, 0.055, 0.36, 0.06, mats.matteCladdingMat, bx, 0.84, 2.41);
+      markDeformable(addBox(chassisGroup, 0.055, 0.36, 0.06, mats.matteCladdingMat, bx, 0.84, 2.41), 0.9);
     });
     addCyl(chassisGroup, 0.065, 0.065, 0.36, 12, mats.chromeMat, 0, 0.72, 2.38, 0, 0, Math.PI / 2);
 
     // Slatted Overland Grille
-    addBox(chassisGroup, 1.04, 0.34, 0.09, mats.meshGrilleMat, 0, 1.03, 2.305);
+    markDeformable(addBox(chassisGroup, 1.04, 0.34, 0.09, mats.meshGrilleMat, 0, 1.03, 2.305), 0.85);
     [-0.08, 0, 0.08].forEach((gy) => {
       addBox(chassisGroup, 0.96, 0.028, 0.05, mats.chromeMat, 0, 1.03 + gy, 2.345);
     });
@@ -1373,9 +1380,9 @@ export class VehicleModelFactory {
 
     // Upright Overland Greenhouse + Roof Expedition Rack + 4 Auxiliary Rally Light Pods
     const windshield = buildCurvedPanelMesh(0.86, 1.29, 0.94, 0.78, 1.87, 0.56, 0.06, 0.018, mats.glassMat, 14, 5);
-    const roofPanel = buildCurvedPanelMesh(0.78, 1.87, 0.56, 0.77, 1.87, -2.14, 0.02, 0.025, mats.paintMat, 12, 8, true);
+    const roofPanel = markDeformable(buildCurvedPanelMesh(0.78, 1.87, 0.56, 0.77, 1.87, -2.14, 0.02, 0.025, mats.paintMat, 12, 8, true), 0.85);
     const rearGlass = buildCurvedPanelMesh(0.77, 1.87, -2.14, 0.85, 1.38, -2.26, -0.03, 0.015, mats.glassMat, 12, 4);
-    const tailgateLower = buildCurvedPanelMesh(0.85, 1.38, -2.26, 0.92, 0.88, -2.26, -0.02, 0.015, mats.paintMat, 12, 4, true);
+    const tailgateLower = markDeformable(buildCurvedPanelMesh(0.85, 1.38, -2.26, 0.92, 0.88, -2.26, -0.02, 0.015, mats.paintMat, 12, 4, true), 1.0);
     chassisGroup.add(windshield, roofPanel, rearGlass, tailgateLower);
 
     // Expedition Roof Rack + Rally Light Bar + Side Recovery Traction Boards
@@ -1424,7 +1431,7 @@ export class VehicleModelFactory {
     spareWheel.steerGroup.rotation.y = -Math.PI / 2;
     spareWheel.steerGroup.position.set(0, 1.15, -2.44);
     chassisGroup.add(spareWheel.steerGroup);
-    addBox(chassisGroup, 0.9, 0.14, 0.14, mats.matteCladdingMat, 0, 0.58, -2.28);
+    markDeformable(addBox(chassisGroup, 0.9, 0.14, 0.14, mats.matteCladdingMat, 0, 0.58, -2.28), 0.9);
     addCyl(chassisGroup, 0.055, 0.055, 0.14, 12, mats.chromeMat, -0.64, 0.45, -2.26, Math.PI / 2);
 
     // Mirrors, Wipers, Handles & Plates
@@ -1482,6 +1489,8 @@ export class VehicleModelFactory {
       'OFFROAD_6',
       true
     );
+
+    carGroup.add(createVehicleContactShadowMesh(2.6, 5.1, 0.015));
 
     return {
       carGroup,

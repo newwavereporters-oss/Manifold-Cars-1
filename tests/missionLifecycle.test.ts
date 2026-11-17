@@ -733,8 +733,8 @@ async function runTests() {
 
       // Trigger same checkpoint via service concurrently -> should call RPC once
       const [cpA, cpB] = await Promise.all([
-        missionService.reportCheckpoint({ missionId: def.id, runToken, checkpointIndex: 0, x: 105, z: 0 }),
-        missionService.reportCheckpoint({ missionId: def.id, runToken, checkpointIndex: 0, x: 105, z: 0 }),
+        missionService.reportCheckpoint({ missionId: def.id, runToken, checkpointIndex: 0, x: def.checkpoints[0].x, z: def.checkpoints[0].z }),
+        missionService.reportCheckpoint({ missionId: def.id, runToken, checkpointIndex: 0, x: def.checkpoints[0].x, z: def.checkpoints[0].z }),
       ]);
       assert(cpA.recorded && cpB.recorded, 'both callers receive recorded result');
       assertEqual(

@@ -91,23 +91,88 @@ export interface SignalizedIntersectionDef {
   phaseOffsetSec: number;
 }
 
+export type BarricadeKind =
+  | 'GUARDRAIL'
+  | 'MEDIAN'
+  | 'WALL'
+  | 'SEAWALL'
+  | 'TOLL_BOOTH'
+  | 'SHELTER'
+  | 'GANTRY_PILLAR';
+
+export interface BarricadeCollider {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  halfW: number;
+  halfD: number;
+  angle: number;
+  kind: BarricadeKind;
+}
+
+export interface InstancedPropPart {
+  mesh: {
+    setMatrixAt: (index: number, matrix: any) => void;
+    instanceMatrix: { needsUpdate: boolean };
+  };
+  index: number;
+  /** 4x4 column-major transform relative to the prop ground base (p.x, p.y, p.z) */
+  localMatrix: number[];
+}
+
+export type DynamicPropKind = 'STREETLIGHT' | 'UTILITY_POLE' | 'PALM_TREE' | 'SHADE_TREE';
+
+export interface DynamicPropCollider {
+  id: string;
+  kind: DynamicPropKind;
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+  height: number;
+  parts: InstancedPropPart[];
+  state: 'STANDING' | 'FALLING' | 'FALLEN';
+  fallAngle: number;
+  fallVel: number;
+  fallAxisX: number;
+  fallAxisZ: number;
+}
+
+export interface BarrierHitResult {
+  hit: boolean;
+  impactVelocity: number;
+  normalX: number;
+  normalZ: number;
+  hitX: number;
+  hitZ: number;
+  kind: 'PARAPET' | 'SEAWALL' | 'BOUNDARY';
+}
+
 export type SignalColor = 'GREEN' | 'AMBER' | 'RED';
+
+/**
+ * Horizontal XZ expansion multiplier extending every road straight & bridge span
+ * for smoother high-speed driving and cleaner corner approaches.
+ */
+export const WORLD_XZ_SCALE = 1.65;
 
 // World geographic bounds for map & collision clamp
 export const WORLD_BOUNDS = {
-  minX: -1020,
-  maxX: 1620,
-  minZ: -960,
-  maxZ: 280,
-  lagoonSouthZ: -165,
-  lagoonNorthZ: -585,
-  ikoyiChannelMinX: 445,
-  ikoyiChannelMaxX: 595,
-  epeCreekMinX: 1350,
-  epeCreekMaxX: 1425,
-  epeBayMinX: 1600,
+  minX: Math.round(-1020 * WORLD_XZ_SCALE),
+  maxX: Math.round(1620 * WORLD_XZ_SCALE),
+  minZ: Math.round(-960 * WORLD_XZ_SCALE),
+  maxZ: Math.round(280 * WORLD_XZ_SCALE),
+  lagoonSouthZ: -165 * WORLD_XZ_SCALE,
+  lagoonNorthZ: -585 * WORLD_XZ_SCALE,
+  ikoyiChannelMinX: 445 * WORLD_XZ_SCALE,
+  ikoyiChannelMaxX: 595 * WORLD_XZ_SCALE,
+  epeCreekMinX: 1350 * WORLD_XZ_SCALE,
+  epeCreekMaxX: 1425 * WORLD_XZ_SCALE,
+  epeBayMinX: 1600 * WORLD_XZ_SCALE,
+  southOceanZ: 250 * WORLD_XZ_SCALE,
   bridgeDeckHeight: 6.0,
-  bridgeHalfWidth: 11.0,
+  bridgeHalfWidth: 14.0,
 };
 
 // =========================================================================
@@ -119,39 +184,39 @@ export const ELEVATED_SPANS: ElevatedSpanDef[] = [
     name: 'Third Mainland Bridge',
     pieces: [
       {
-        // South Island Approach Ramp: z = -145 (y=0) -> z = -205 (y=6.0)
-        // Right/East parapet leaves clean exit opening around z in [-196, -172] for Adekunle Ramp
+        // South Island Approach Ramp: y=0 -> y=6.0
+        // Right/East parapet leaves clean exit opening around t in [0.42, 0.86] for Adekunle Ramp
         x0: 0,
         y0: 0,
-        z0: -145,
+        z0: -145 * WORLD_XZ_SCALE,
         x1: 0,
         y1: 6.0,
-        z1: -205,
-        halfWidth: 11.0,
-        parapetHalfWidth: 9.8,
+        z1: -205 * WORLD_XZ_SCALE,
+        halfWidth: 14.0,
+        parapetHalfWidth: 12.8,
         exitGapRightT: [0.42, 0.86],
       },
       {
-        // Main Elevated Lagoon Span: z = -205 -> -555 at y = 6.0
+        // Main Elevated Lagoon Span at y = 6.0
         x0: 0,
         y0: 6.0,
-        z0: -205,
+        z0: -205 * WORLD_XZ_SCALE,
         x1: 0,
         y1: 6.0,
-        z1: -555,
-        halfWidth: 11.0,
-        parapetHalfWidth: 9.8,
+        z1: -555 * WORLD_XZ_SCALE,
+        halfWidth: 14.0,
+        parapetHalfWidth: 12.8,
       },
       {
-        // North Iyana-Oworo Descent Ramp: z = -555 (y=6.0) -> z = -615 (y=0)
+        // North Iyana-Oworo Descent Ramp: y=6.0 -> y=0
         x0: 0,
         y0: 6.0,
-        z0: -555,
+        z0: -555 * WORLD_XZ_SCALE,
         x1: 0,
         y1: 0,
-        z1: -615,
-        halfWidth: 11.0,
-        parapetHalfWidth: 9.8,
+        z1: -615 * WORLD_XZ_SCALE,
+        halfWidth: 14.0,
+        parapetHalfWidth: 12.8,
       },
     ],
   },
@@ -160,15 +225,15 @@ export const ELEVATED_SPANS: ElevatedSpanDef[] = [
     name: 'Adekunle Ramp',
     pieces: [
       {
-        // Sloped connector ramp flush with TMB East shoulder (10.5, 3.84, -183.4) down to Adekunle (160, 0, -130)
-        x0: 10.5,
+        // Sloped connector ramp flush with widened TMB East shoulder (13.5, 3.84, -183.4*S) down to Adekunle (160*S, 0, -130*S)
+        x0: 13.5,
         y0: 3.84,
-        z0: -183.4,
-        x1: 160,
+        z0: -183.4 * WORLD_XZ_SCALE,
+        x1: 160 * WORLD_XZ_SCALE,
         y1: 0,
-        z1: -130,
-        halfWidth: 7.8,
-        parapetHalfWidth: 6.8,
+        z1: -130 * WORLD_XZ_SCALE,
+        halfWidth: 9.8,
+        parapetHalfWidth: 8.7,
       },
     ],
   },
@@ -177,37 +242,37 @@ export const ELEVATED_SPANS: ElevatedSpanDef[] = [
     name: 'Ikoyi-Lekki Link Bridge',
     pieces: [
       {
-        // West Approach Ramp (Ikoyi side): x = 415 (y=0) -> x = 460 (y=7.0)
-        x0: 415,
+        // West Approach Ramp (Ikoyi side)
+        x0: 415 * WORLD_XZ_SCALE,
         y0: 0,
-        z0: -20,
-        x1: 460,
+        z0: -20 * WORLD_XZ_SCALE,
+        x1: 460 * WORLD_XZ_SCALE,
         y1: 7.0,
-        z1: -20,
-        halfWidth: 11.0,
-        parapetHalfWidth: 9.8,
+        z1: -20 * WORLD_XZ_SCALE,
+        halfWidth: 14.0,
+        parapetHalfWidth: 12.8,
       },
       {
-        // Cable-Stayed Elevated Main Span over Ikoyi-Lekki Channel: x = 460 -> 580 at y = 7.0
-        x0: 460,
+        // Cable-Stayed Elevated Main Span over Ikoyi-Lekki Channel
+        x0: 460 * WORLD_XZ_SCALE,
         y0: 7.0,
-        z0: -20,
-        x1: 580,
+        z0: -20 * WORLD_XZ_SCALE,
+        x1: 580 * WORLD_XZ_SCALE,
         y1: 7.0,
-        z1: -20,
-        halfWidth: 11.0,
-        parapetHalfWidth: 9.8,
+        z1: -20 * WORLD_XZ_SCALE,
+        halfWidth: 14.0,
+        parapetHalfWidth: 12.8,
       },
       {
-        // East Approach Ramp (Lekki side): x = 580 (y=7.0) -> x = 625 (y=0)
-        x0: 580,
+        // East Approach Ramp (Lekki side)
+        x0: 580 * WORLD_XZ_SCALE,
         y0: 7.0,
-        z0: -20,
-        x1: 625,
+        z0: -20 * WORLD_XZ_SCALE,
+        x1: 625 * WORLD_XZ_SCALE,
         y1: 0,
-        z1: -20,
-        halfWidth: 11.0,
-        parapetHalfWidth: 9.8,
+        z1: -20 * WORLD_XZ_SCALE,
+        halfWidth: 14.0,
+        parapetHalfWidth: 12.8,
       },
     ],
   },
@@ -216,37 +281,37 @@ export const ELEVATED_SPANS: ElevatedSpanDef[] = [
     name: 'Ajah Express Flyover',
     pieces: [
       {
-        // West Flyover Ramp: x = 1055 (y=0) -> x = 1100 (y=6.2)
-        x0: 1055,
+        // West Flyover Ramp
+        x0: 1055 * WORLD_XZ_SCALE,
         y0: 0,
-        z0: 100,
-        x1: 1100,
+        z0: 100 * WORLD_XZ_SCALE,
+        x1: 1100 * WORLD_XZ_SCALE,
         y1: 6.2,
-        z1: 100,
-        halfWidth: 9.0,
-        parapetHalfWidth: 8.1,
+        z1: 100 * WORLD_XZ_SCALE,
+        halfWidth: 11.5,
+        parapetHalfWidth: 10.5,
       },
       {
-        // Elevated Flyover Deck above Ajah Ground Crossroad (x=1135): y = 6.2m (5.25m underpass clearance)
-        x0: 1100,
+        // Elevated Flyover Deck above Ajah Ground Crossroad
+        x0: 1100 * WORLD_XZ_SCALE,
         y0: 6.2,
-        z0: 100,
-        x1: 1170,
+        z0: 100 * WORLD_XZ_SCALE,
+        x1: 1170 * WORLD_XZ_SCALE,
         y1: 6.2,
-        z1: 100,
-        halfWidth: 9.0,
-        parapetHalfWidth: 8.1,
+        z1: 100 * WORLD_XZ_SCALE,
+        halfWidth: 11.5,
+        parapetHalfWidth: 10.5,
       },
       {
-        // East Flyover Ramp: x = 1170 (y=6.2) -> x = 1215 (y=0)
-        x0: 1170,
+        // East Flyover Ramp
+        x0: 1170 * WORLD_XZ_SCALE,
         y0: 6.2,
-        z0: 100,
-        x1: 1215,
+        z0: 100 * WORLD_XZ_SCALE,
+        x1: 1215 * WORLD_XZ_SCALE,
         y1: 0,
-        z1: 100,
-        halfWidth: 9.0,
-        parapetHalfWidth: 8.1,
+        z1: 100 * WORLD_XZ_SCALE,
+        halfWidth: 11.5,
+        parapetHalfWidth: 10.5,
       },
     ],
   },
@@ -255,37 +320,37 @@ export const ELEVATED_SPANS: ElevatedSpanDef[] = [
     name: 'Epe Lagoon Bridge',
     pieces: [
       {
-        // West Ramp over Epe Creek bank: x = 1325 (y=0) -> x = 1360 (y=5.8)
-        x0: 1325,
+        // West Ramp over Epe Creek bank
+        x0: 1325 * WORLD_XZ_SCALE,
         y0: 0,
-        z0: 100,
-        x1: 1360,
+        z0: 100 * WORLD_XZ_SCALE,
+        x1: 1360 * WORLD_XZ_SCALE,
         y1: 5.8,
-        z1: 100,
-        halfWidth: 11.0,
-        parapetHalfWidth: 9.8,
+        z1: 100 * WORLD_XZ_SCALE,
+        halfWidth: 14.0,
+        parapetHalfWidth: 12.8,
       },
       {
-        // Main Span across Epe Creek: x = 1360 -> 1415 at y = 5.8
-        x0: 1360,
+        // Main Span across Epe Creek
+        x0: 1360 * WORLD_XZ_SCALE,
         y0: 5.8,
-        z0: 100,
-        x1: 1415,
+        z0: 100 * WORLD_XZ_SCALE,
+        x1: 1415 * WORLD_XZ_SCALE,
         y1: 5.8,
-        z1: 100,
-        halfWidth: 11.0,
-        parapetHalfWidth: 9.8,
+        z1: 100 * WORLD_XZ_SCALE,
+        halfWidth: 14.0,
+        parapetHalfWidth: 12.8,
       },
       {
-        // East Ramp into Epe Town: x = 1415 (y=5.8) -> x = 1450 (y=0)
-        x0: 1415,
+        // East Ramp into Epe Town
+        x0: 1415 * WORLD_XZ_SCALE,
         y0: 5.8,
-        z0: 100,
-        x1: 1450,
+        z0: 100 * WORLD_XZ_SCALE,
+        x1: 1450 * WORLD_XZ_SCALE,
         y1: 0,
-        z1: 100,
-        halfWidth: 11.0,
-        parapetHalfWidth: 9.8,
+        z1: 100 * WORLD_XZ_SCALE,
+        halfWidth: 14.0,
+        parapetHalfWidth: 12.8,
       },
     ],
   },
@@ -305,7 +370,7 @@ interface SpanCandidate {
   uz: number;
 }
 
-function getSpanCandidatesAt(x: number, z: number): SpanCandidate[] {
+function getSpanCandidatesAt(x: number, z: number, latMargin = 0.5): SpanCandidate[] {
   const candidates: SpanCandidate[] = [];
   for (let i = 0; i < ELEVATED_SPANS.length; i++) {
     const span = ELEVATED_SPANS[i];
@@ -327,7 +392,7 @@ function getSpanCandidatesAt(x: number, z: number): SpanCandidate[] {
       const signedLat = (x - piece.x0) * rx + (z - piece.z0) * rz;
       const absLat = Math.abs(signedLat);
 
-      if (absLat <= piece.halfWidth + 0.5) {
+      if (absLat <= piece.halfWidth + latMargin) {
         const tc = Math.max(0, Math.min(1, t));
         const y = piece.y0 + tc * (piece.y1 - piece.y0);
         const dyPerM = (piece.y1 - piece.y0) / len;
@@ -350,8 +415,13 @@ function getSpanCandidatesAt(x: number, z: number): SpanCandidate[] {
   return candidates;
 }
 
-function selectActiveSurface(x: number, z: number, currentY = 0): SpanCandidate | null {
-  const candidates = getSpanCandidatesAt(x, z);
+function selectActiveSurface(
+  x: number,
+  z: number,
+  currentY = 0,
+  latMargin = 0.5
+): SpanCandidate | null {
+  const candidates = getSpanCandidatesAt(x, z, latMargin);
   if (candidates.length === 0) return null;
 
   const overWater = isOverOpenWater(x, z);
@@ -449,12 +519,20 @@ export function getBridgePitchAt(
 
 export function isOverOpenWater(x: number, z: number): boolean {
   if (z < WORLD_BOUNDS.lagoonSouthZ && z > WORLD_BOUNDS.lagoonNorthZ) return true;
-  if (x > WORLD_BOUNDS.ikoyiChannelMinX && x < WORLD_BOUNDS.ikoyiChannelMaxX && z >= WORLD_BOUNDS.lagoonSouthZ)
+  if (
+    x > WORLD_BOUNDS.ikoyiChannelMinX &&
+    x < WORLD_BOUNDS.ikoyiChannelMaxX &&
+    z >= WORLD_BOUNDS.lagoonSouthZ
+  )
     return true;
-  if (x > WORLD_BOUNDS.epeCreekMinX && x < WORLD_BOUNDS.epeCreekMaxX && z >= WORLD_BOUNDS.lagoonSouthZ)
+  if (
+    x > WORLD_BOUNDS.epeCreekMinX &&
+    x < WORLD_BOUNDS.epeCreekMaxX &&
+    z >= WORLD_BOUNDS.lagoonSouthZ
+  )
     return true;
   if (x > WORLD_BOUNDS.epeBayMinX) return true;
-  if (z > 250) return true;
+  if (z > WORLD_BOUNDS.southOceanZ) return true;
   return false;
 }
 
@@ -469,12 +547,14 @@ export function isOnBridgeCorridor(x: number, z: number, currentY = 0): boolean 
 /**
  * Enforces elevated bridge parapet guardrails and coastal seawall shorelines
  * without blocking vehicles driving underneath flyovers at ground level.
+ * Returns structured hit details when a hard barrier impact occurs (for car denting & audio).
  */
 export function enforceBridgeAndWaterBarriers(
   cs: { x: number; z: number; speed: number },
-  currentY: number
-): void {
-  const active = selectActiveSurface(cs.x, cs.z, currentY);
+  currentY: number,
+  carHalfWidth = 0.95
+): BarrierHitResult | null {
+  const active = selectActiveSurface(cs.x, cs.z, currentY, currentY > 1.5 ? 4.5 : 0.5);
 
   if (active && (active.y > 0.35 || isOverOpenWater(cs.x, cs.z))) {
     const piece = active.piece;
@@ -486,56 +566,139 @@ export function enforceBridgeAndWaterBarriers(
     // Lateral right-normal vector (F x Up = (-uz, ux))
     const rx = -active.uz;
     const rz = active.ux;
-    const maxLat = active.piece.parapetHalfWidth;
+    const maxLat = Math.max(2.0, active.piece.parapetHalfWidth - carHalfWidth * 0.45);
 
     if (active.signedLat > maxLat && !inExitGapRight) {
       const excess = active.signedLat - maxLat;
+      const impactVel = Math.abs(cs.speed);
       cs.x -= rx * excess;
       cs.z -= rz * excess;
-      cs.speed *= 0.65;
+      cs.speed *= 0.62;
+      return {
+        hit: true,
+        impactVelocity: impactVel,
+        normalX: -rx,
+        normalZ: -rz,
+        hitX: cs.x + rx * carHalfWidth,
+        hitZ: cs.z + rz * carHalfWidth,
+        kind: 'PARAPET',
+      };
     } else if (active.signedLat < -maxLat) {
       const excess = active.signedLat + maxLat; // negative
+      const impactVel = Math.abs(cs.speed);
       cs.x -= rx * excess;
       cs.z -= rz * excess;
-      cs.speed *= 0.65;
+      cs.speed *= 0.62;
+      return {
+        hit: true,
+        impactVelocity: impactVel,
+        normalX: rx,
+        normalZ: rz,
+        hitX: cs.x - rx * carHalfWidth,
+        hitZ: cs.z - rz * carHalfWidth,
+        kind: 'PARAPET',
+      };
     }
-    return;
+    return null;
   }
 
   // Ground-level coastal seawall water clamps (only when NOT on a bridge deck)
-  // 1. Main North/South Lagoon channel (z in [-585, -165])
-  if (cs.z < -160 && cs.z > -590) {
-    const distSouth = Math.abs(cs.z - -160);
-    const distNorth = Math.abs(cs.z - -590);
-    cs.z = distSouth < distNorth ? -160 : -590;
-    cs.speed = -cs.speed * 0.25;
+  const lagSouthGuard = WORLD_BOUNDS.lagoonSouthZ + 5;
+  const lagNorthGuard = WORLD_BOUNDS.lagoonNorthZ - 5;
+  if (cs.z < lagSouthGuard && cs.z > lagNorthGuard) {
+    const distSouth = Math.abs(cs.z - lagSouthGuard);
+    const distNorth = Math.abs(cs.z - lagNorthGuard);
+    const impactVel = Math.abs(cs.speed);
+    const pushNorth = distSouth < distNorth;
+    cs.z = pushNorth ? lagSouthGuard : lagNorthGuard;
+    cs.speed = -cs.speed * 0.32;
+    return {
+      hit: true,
+      impactVelocity: impactVel,
+      normalX: 0,
+      normalZ: pushNorth ? 1 : -1,
+      hitX: cs.x,
+      hitZ: cs.z + (pushNorth ? -carHalfWidth : carHalfWidth),
+      kind: 'SEAWALL',
+    };
   }
 
-  // 2. Ikoyi-Lekki Lagoon Channel (x in [445, 595], z >= -165)
-  if (cs.z >= -165 && cs.x > 440 && cs.x < 600) {
-    const dWest = Math.abs(cs.x - 440);
-    const dEast = Math.abs(cs.x - 600);
-    cs.x = dWest < dEast ? 440 : 600;
-    cs.speed = -cs.speed * 0.25;
+  // 2. Ikoyi-Lekki Lagoon Channel
+  const ikMin = WORLD_BOUNDS.ikoyiChannelMinX - 5;
+  const ikMax = WORLD_BOUNDS.ikoyiChannelMaxX + 5;
+  if (cs.z >= WORLD_BOUNDS.lagoonSouthZ && cs.x > ikMin && cs.x < ikMax) {
+    const dWest = Math.abs(cs.x - ikMin);
+    const dEast = Math.abs(cs.x - ikMax);
+    const impactVel = Math.abs(cs.speed);
+    const pushWest = dWest < dEast;
+    cs.x = pushWest ? ikMin : ikMax;
+    cs.speed = -cs.speed * 0.32;
+    return {
+      hit: true,
+      impactVelocity: impactVel,
+      normalX: pushWest ? -1 : 1,
+      normalZ: 0,
+      hitX: cs.x + (pushWest ? carHalfWidth : -carHalfWidth),
+      hitZ: cs.z,
+      kind: 'SEAWALL',
+    };
   }
 
-  // 3. Epe Creek Channel (x in [1350, 1425], z >= -165)
-  if (cs.z >= -165 && cs.x > 1345 && cs.x < 1430) {
-    const dWest = Math.abs(cs.x - 1345);
-    const dEast = Math.abs(cs.x - 1430);
-    cs.x = dWest < dEast ? 1345 : 1430;
-    cs.speed = -cs.speed * 0.25;
+  // 3. Epe Creek Channel
+  const epMin = WORLD_BOUNDS.epeCreekMinX - 5;
+  const epMax = WORLD_BOUNDS.epeCreekMaxX + 5;
+  if (cs.z >= WORLD_BOUNDS.lagoonSouthZ && cs.x > epMin && cs.x < epMax) {
+    const dWest = Math.abs(cs.x - epMin);
+    const dEast = Math.abs(cs.x - epMax);
+    const impactVel = Math.abs(cs.speed);
+    const pushWest = dWest < dEast;
+    cs.x = pushWest ? epMin : epMax;
+    cs.speed = -cs.speed * 0.32;
+    return {
+      hit: true,
+      impactVelocity: impactVel,
+      normalX: pushWest ? -1 : 1,
+      normalZ: 0,
+      hitX: cs.x + (pushWest ? carHalfWidth : -carHalfWidth),
+      hitZ: cs.z,
+      kind: 'SEAWALL',
+    };
   }
 
   // 4. Eastern Epe Bay / Southern Ocean boundary
-  if (cs.x > 1595) {
-    cs.x = 1595;
-    cs.speed = -cs.speed * 0.25;
+  const eastBayGuard = WORLD_BOUNDS.epeBayMinX - 5;
+  if (cs.x > eastBayGuard) {
+    const impactVel = Math.abs(cs.speed);
+    cs.x = eastBayGuard;
+    cs.speed = -cs.speed * 0.32;
+    return {
+      hit: true,
+      impactVelocity: impactVel,
+      normalX: -1,
+      normalZ: 0,
+      hitX: cs.x + carHalfWidth,
+      hitZ: cs.z,
+      kind: 'SEAWALL',
+    };
   }
-  if (cs.z > 245) {
-    cs.z = 245;
-    cs.speed = -cs.speed * 0.25;
+
+  const southGuard = WORLD_BOUNDS.southOceanZ - 5;
+  if (cs.z > southGuard) {
+    const impactVel = Math.abs(cs.speed);
+    cs.z = southGuard;
+    cs.speed = -cs.speed * 0.32;
+    return {
+      hit: true,
+      impactVelocity: impactVel,
+      normalX: 0,
+      normalZ: -1,
+      hitX: cs.x,
+      hitZ: cs.z + carHalfWidth,
+      kind: 'SEAWALL',
+    };
   }
+
+  return null;
 }
 
 // =========================================================================
@@ -1535,6 +1698,20 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
   },
 };
 
+// Apply horizontal road/bridge extension cleanly while preserving exact Adekunle Ramp splice
+for (const [id, node] of Object.entries(LAGOS_ROAD_NODES)) {
+  if (id === 'N_ADEKUNLE_EXIT') {
+    node.x = 14.0;
+    node.z = -183.4 * WORLD_XZ_SCALE;
+  } else if (id === 'N_ADEKUNLE_RAMP') {
+    node.x = (14.0 + 160 * WORLD_XZ_SCALE) * 0.5;
+    node.z = (-183.4 * WORLD_XZ_SCALE + -130 * WORLD_XZ_SCALE) * 0.5;
+  } else {
+    node.x *= WORLD_XZ_SCALE;
+    node.z *= WORLD_XZ_SCALE;
+  }
+}
+
 // =========================================================================
 // 2. CITY DISTRICTS & MEANINGFUL INTERACTIVE LANDMARKS (15+ REGIONS)
 // =========================================================================
@@ -1859,6 +2036,12 @@ export const CITY_LANDMARKS: CityLandmark[] = [
   },
 ];
 
+for (const lm of CITY_LANDMARKS) {
+  lm.x *= WORLD_XZ_SCALE;
+  lm.z *= WORLD_XZ_SCALE;
+  lm.radius = Math.max(lm.radius, 14);
+}
+
 // 3. Street Race Circuit Checkpoints (For Mission B: City Rival Challenge - Preserved)
 export interface RaceCheckpoint {
   id: number;
@@ -1869,16 +2052,16 @@ export interface RaceCheckpoint {
 }
 
 export const RIVAL_RACE_CHECKPOINTS: RaceCheckpoint[] = [
-  { id: 1, x: -50, z: -130, name: 'Starting Grid / Sector 1', radius: 10 },
-  { id: 2, x: 0, z: -130, name: 'Yaba Tech Apex Turn', radius: 11 },
-  { id: 3, x: 105, z: -130, name: 'Tech Blvd Sweeper', radius: 12 },
-  { id: 4, x: 105, z: 0, name: 'Bank Row Chicane', radius: 11 },
-  { id: 5, x: 105, z: 100, name: 'Commercial Sector South', radius: 11 },
-  { id: 6, x: 0, z: 100, name: 'Marketplace Boulevard', radius: 11 },
-  { id: 7, x: -55, z: 100, name: 'Depot S-Bend', radius: 11 },
-  { id: 8, x: -110, z: 0, name: 'Surulere Express Straightaway', radius: 12 },
-  { id: 9, x: -110, z: -130, name: 'Expressway Final Hairpin', radius: 12 },
-  { id: 10, x: -50, z: -130, name: 'Finish Line Gantry', radius: 10 },
+  { id: 1, x: -50 * WORLD_XZ_SCALE, z: -130 * WORLD_XZ_SCALE, name: 'Starting Grid / Sector 1', radius: 12 },
+  { id: 2, x: 0, z: -130 * WORLD_XZ_SCALE, name: 'Yaba Tech Apex Turn', radius: 13 },
+  { id: 3, x: 105 * WORLD_XZ_SCALE, z: -130 * WORLD_XZ_SCALE, name: 'Tech Blvd Sweeper', radius: 14 },
+  { id: 4, x: 105 * WORLD_XZ_SCALE, z: 0, name: 'Bank Row Chicane', radius: 13 },
+  { id: 5, x: 105 * WORLD_XZ_SCALE, z: 100 * WORLD_XZ_SCALE, name: 'Commercial Sector South', radius: 13 },
+  { id: 6, x: 0, z: 100 * WORLD_XZ_SCALE, name: 'Marketplace Boulevard', radius: 13 },
+  { id: 7, x: -55 * WORLD_XZ_SCALE, z: 100 * WORLD_XZ_SCALE, name: 'Depot S-Bend', radius: 13 },
+  { id: 8, x: -110 * WORLD_XZ_SCALE, z: 0, name: 'Surulere Express Straightaway', radius: 14 },
+  { id: 9, x: -110 * WORLD_XZ_SCALE, z: -130 * WORLD_XZ_SCALE, name: 'Expressway Final Hairpin', radius: 14 },
+  { id: 10, x: -50 * WORLD_XZ_SCALE, z: -130 * WORLD_XZ_SCALE, name: 'Finish Line Gantry', radius: 12 },
 ];
 
 // 4. Core Island Urban Buildings (Additional regional buildings registered in lagosRegionBuilders.ts)
@@ -2023,6 +2206,11 @@ export const LAGOS_BUILDINGS: BuildingBox[] = [
   },
 ];
 
+for (const b of LAGOS_BUILDINGS) {
+  b.x *= WORLD_XZ_SCALE;
+  b.z *= WORLD_XZ_SCALE;
+}
+
 // Helper: picks nearest connected road node respecting lagoon channels & current elevation level
 function findNearestNodeId(pos: { x: number; z: number }, currentY = 0): string {
   let bestId = 'N_SHOWROOM';
@@ -2040,12 +2228,32 @@ function findNearestNodeId(pos: { x: number; z: number }, currentY = 0): string 
       if (onSouthLand && node.z < WORLD_BOUNDS.lagoonNorthZ) continue;
 
       // Prevent snapping straight across Ikoyi-Lekki channel without using bridge
-      if (pos.x <= 445 && node.x >= 595 && pos.z >= -165) continue;
-      if (pos.x >= 595 && node.x <= 445 && pos.z >= -165) continue;
+      if (
+        pos.x <= WORLD_BOUNDS.ikoyiChannelMinX &&
+        node.x >= WORLD_BOUNDS.ikoyiChannelMaxX &&
+        pos.z >= WORLD_BOUNDS.lagoonSouthZ
+      )
+        continue;
+      if (
+        pos.x >= WORLD_BOUNDS.ikoyiChannelMaxX &&
+        node.x <= WORLD_BOUNDS.ikoyiChannelMinX &&
+        pos.z >= WORLD_BOUNDS.lagoonSouthZ
+      )
+        continue;
 
       // Prevent snapping straight across Epe Creek without using Epe Bridge
-      if (pos.x <= 1350 && node.x >= 1425 && pos.z >= -165) continue;
-      if (pos.x >= 1425 && node.x <= 1350 && pos.z >= -165) continue;
+      if (
+        pos.x <= WORLD_BOUNDS.epeCreekMinX &&
+        node.x >= WORLD_BOUNDS.epeCreekMaxX &&
+        pos.z >= WORLD_BOUNDS.lagoonSouthZ
+      )
+        continue;
+      if (
+        pos.x >= WORLD_BOUNDS.epeCreekMaxX &&
+        node.x <= WORLD_BOUNDS.epeCreekMinX &&
+        pos.z >= WORLD_BOUNDS.lagoonSouthZ
+      )
+        continue;
     }
 
     const horizDist = Math.hypot(node.x - pos.x, node.z - pos.z);

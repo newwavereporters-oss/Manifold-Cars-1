@@ -1108,9 +1108,9 @@ INSERT INTO public.game_missions (
     'High-Priority ECU Component Delivery',
     'Transport prototype ECU hardware from Yaba Innovation Hub to Mainland Express Depot in Surulere. Avoid heavy collisions to protect cargo integrity.',
     'DELIVERY', 'NEAR',
-    'Yaba Innovation Hub', 0, -125,
-    'Mainland Express Cargo Terminal', -55, 100, 15,
-    '[]'::jsonb, 480, 2, 500, 150, NULL, 95,
+    'Yaba Innovation Hub', 0, -206.25,
+    'Mainland Express Cargo Terminal', -90.75, 165, 15,
+    '[]'::jsonb, 792, 2, 500, 150, NULL, 138,
     'Easy', 60, false, false, true, 10
   ),
   (
@@ -1119,9 +1119,9 @@ INSERT INTO public.game_missions (
     'Commercial Row Courier Dispatch',
     'Deliver urgent vehicle registration documents from Herbert Macaulay North through Bank Row into Obalende Commercial Terminal.',
     'DELIVERY', 'NEAR',
-    'Herbert Macaulay North', 0, -80,
-    'Obalende Market & Terminal', 160, 30, 16,
-    '[{"x":105,"z":0,"radius":14,"name":"Bank Row Junction"}]'::jsonb, 420, 2, 450, 120, NULL, 90,
+    'Herbert Macaulay North', 0, -132,
+    'Obalende Market & Terminal', 264, 49.5, 16,
+    '[{"x":173.25,"z":0,"radius":14,"name":"Bank Row Junction"}]'::jsonb, 693, 2, 450, 120, NULL, 131,
     'Easy', 60, false, false, true, 20
   ),
   (
@@ -1130,9 +1130,9 @@ INSERT INTO public.game_missions (
     'Marketplace Pickup & Lounge Transfer',
     'Pick up an executive client at the Grand Marketplace Portal and chauffeur them smoothly to the VIP Concierge & Dealer Lounge.',
     'PASSENGER', 'NEAR',
-    'Showroom Esplanade', 0, 10,
-    'VIP Dealer Lounge', 56, 16, 12,
-    '[{"x":0,"z":100,"radius":14,"name":"Grand Marketplace Gate"}]'::jsonb, 340, 1, 550, 160, NULL, 85,
+    'Showroom Esplanade', 0, 16.5,
+    'VIP Dealer Lounge', 92.4, 26.4, 12,
+    '[{"x":0,"z":165,"radius":14,"name":"Grand Marketplace Gate"}]'::jsonb, 561, 1, 550, 160, NULL, 123,
     'Easy', 60, false, false, true, 30
   ),
   (
@@ -1141,9 +1141,9 @@ INSERT INTO public.game_missions (
     'Park-Gear Inspection Challenge',
     'Drive cleanly from Commercial Avenue into the central MANIFOLD Showroom bay, stop inside the zone, and shift into P (Park) gear.',
     'PARKING', 'NEAR',
-    'Bank Row Junction', 105, 0,
-    'MANIFOLD Showroom Bay', 0, -35, 11,
-    '[]'::jsonb, 260, 1, 420, 140, NULL, 70,
+    'Bank Row Junction', 173.25, 0,
+    'MANIFOLD Showroom Bay', 0, -57.75, 11,
+    '[]'::jsonb, 429, 1, 420, 140, NULL, 102,
     'Easy', 60, false, true, true, 40
   ),
   (
@@ -1152,10 +1152,10 @@ INSERT INTO public.game_missions (
     'Mainland Grand Prix Street Race',
     'Line up against Tariq, Chidi, and Amara across the 10-checkpoint Surulere and Yaba street circuit.',
     'STREET_RACE', 'NEAR',
-    'Surulere Grid Start', -50, -130,
-    'Mainland Grand Prix Finish', -50, -130, 12,
-    '[{"x":-50,"z":-130,"radius":10,"name":"Starting Grid / Sector 1"},{"x":0,"z":-130,"radius":11,"name":"Yaba Tech Apex Turn"},{"x":105,"z":-130,"radius":12,"name":"Tech Blvd Sweeper"},{"x":105,"z":0,"radius":11,"name":"Bank Row Chicane"},{"x":105,"z":100,"radius":11,"name":"Commercial Sector South"},{"x":0,"z":100,"radius":11,"name":"Marketplace Boulevard"},{"x":-55,"z":100,"radius":11,"name":"Depot S-Bend"},{"x":-110,"z":0,"radius":12,"name":"Surulere Express Straightaway"},{"x":-110,"z":-130,"radius":12,"name":"Expressway Final Hairpin"},{"x":-50,"z":-130,"radius":10,"name":"Finish Line Gantry"}]'::jsonb,
-    780, 2, 1000, 300, 'Mainland Circuit Participant', 180,
+    'Surulere Grid Start', -82.5, -214.5,
+    'Mainland Grand Prix Finish', -82.5, -214.5, 12,
+    '[{"x":-82.5,"z":-214.5,"radius":10,"name":"Starting Grid / Sector 1"},{"x":0,"z":-214.5,"radius":11,"name":"Yaba Tech Apex Turn"},{"x":173.25,"z":-214.5,"radius":12,"name":"Tech Blvd Sweeper"},{"x":173.25,"z":0,"radius":11,"name":"Bank Row Chicane"},{"x":173.25,"z":165,"radius":11,"name":"Commercial Sector South"},{"x":0,"z":165,"radius":11,"name":"Marketplace Boulevard"},{"x":-90.75,"z":165,"radius":11,"name":"Depot S-Bend"},{"x":-181.5,"z":0,"radius":12,"name":"Surulere Express Straightaway"},{"x":-181.5,"z":-214.5,"radius":12,"name":"Expressway Final Hairpin"},{"x":-82.5,"z":-214.5,"radius":10,"name":"Finish Line Gantry"}]'::jsonb,
+    1287, 2, 1000, 300, 'Mainland Circuit Participant', 261,
     'Medium', 90, false, false, true, 50
   ),
   (
@@ -1164,9 +1164,9 @@ INSERT INTO public.game_missions (
     'Zero-Collision Executive Run',
     'Transport diplomatic guests via Adekunle Interchange straight to Bourdillon Towers in Ikoyi. Fixed participation credits/XP apply.',
     'PASSENGER', 'FAR',
-    'Showroom Esplanade', 0, 10,
-    'Ikoyi Bourdillon Towers', 365, -130, 16,
-    '[{"x":160,"z":-130,"radius":16,"name":"Adekunle Interchange"}]'::jsonb, 1050, 3, 1200, 340, NULL, 135,
+    'Showroom Esplanade', 0, 16.5,
+    'Ikoyi Bourdillon Towers', 602.25, -214.5, 16,
+    '[{"x":264,"z":-214.5,"radius":16,"name":"Adekunle Interchange"}]'::jsonb, 1733, 3, 1200, 340, NULL, 196,
     'Medium', 120, true, false, true, 60
   ),
   (
@@ -1175,9 +1175,9 @@ INSERT INTO public.game_missions (
     'Cross-Channel High-Priority Run',
     'Race from Obalende Terminal across the cable-stayed Ikoyi-Lekki Link Bridge into Lekki Phase 1 Admiralty Hub.',
     'SHOWROOM', 'FAR',
-    'Obalende Terminal', 160, 30,
-    'Lekki Phase 1 Admiralty Hub', 660, -20, 16,
-    '[{"x":365,"z":-20,"radius":16,"name":"Ikoyi Link Bridgehead"},{"x":520,"z":-20,"radius":18,"name":"Cable Pylon Crest"}]'::jsonb, 1180, 3, 1300, 360, NULL, 140,
+    'Obalende Terminal', 264, 49.5,
+    'Lekki Phase 1 Admiralty Hub', 1089, -33, 16,
+    '[{"x":602.25,"z":-33,"radius":16,"name":"Ikoyi Link Bridgehead"},{"x":858,"z":-33,"radius":18,"name":"Cable Pylon Crest"}]'::jsonb, 1947, 3, 1300, 360, NULL, 203,
     'Medium', 120, false, false, true, 70
   ),
   (
@@ -1186,9 +1186,9 @@ INSERT INTO public.game_missions (
     'Multi-Checkpoint Bridge Time Trial',
     'Blast north across Third Mainland Bridge through Iyana-Oworo all the way to Ikeja Central Business District before the timer expires.',
     'CHECKPOINT', 'FAR',
-    'Yaba Bridge South Approach', 0, -130,
-    'Ikeja Central Business District', 0, -880, 16,
-    '[{"x":0,"z":-320,"radius":18,"name":"TMB Center South"},{"x":0,"z":-555,"radius":18,"name":"TMB North Deck"},{"x":0,"z":-640,"radius":18,"name":"Iyana-Oworo Interchange"}]'::jsonb, 1450, 2, 1450, 420, 'Bridge Sprinter', 125,
+    'Yaba Bridge South Approach', 0, -214.5,
+    'Ikeja Central Business District', 0, -1452, 16,
+    '[{"x":0,"z":-528,"radius":18,"name":"TMB Center South"},{"x":0,"z":-915.75,"radius":18,"name":"TMB North Deck"},{"x":0,"z":-1056,"radius":18,"name":"Iyana-Oworo Interchange"}]'::jsonb, 2393, 2, 1450, 420, 'Bridge Sprinter', 181,
     'Hard', 120, false, false, true, 80
   ),
   (
@@ -1197,9 +1197,9 @@ INSERT INTO public.game_missions (
     'Mainland Freight & Terminal Park',
     'Haul commercial dealership equipment from Ikeja CBD via Ikeja West and Dopemu to Oshodi Interchange and lock P (Park) gear on arrival.',
     'PARKING', 'FAR',
-    'Ikeja Central Business District', 0, -880,
-    'Oshodi Transport Interchange', -260, -640, 16,
-    '[{"x":-130,"z":-880,"radius":16,"name":"Ikeja Along"},{"x":-260,"z":-760,"radius":16,"name":"Dopemu Bridge Link"}]'::jsonb, 1120, 3, 1250, 350, NULL, 150,
+    'Ikeja Central Business District', 0, -1452,
+    'Oshodi Transport Interchange', -429, -1056, 16,
+    '[{"x":-214.5,"z":-1452,"radius":16,"name":"Ikeja Along"},{"x":-429,"z":-1254,"radius":16,"name":"Dopemu Bridge Link"}]'::jsonb, 1848, 3, 1250, 350, NULL, 218,
     'Medium', 120, false, true, true, 90
   ),
   (
@@ -1208,9 +1208,9 @@ INSERT INTO public.game_missions (
     'Long-Range Eastern Coastal Logistics',
     'Complete a flagship long-haul delivery from MANIFOLD Showroom through Ikoyi, Lekki Phase 1, and Ajah Flyover to Epe Waterfront Marina.',
     'DELIVERY', 'VERY_FAR',
-    'MANIFOLD Showroom', 0, -35,
-    'Epe Waterfront Marina', 1565, 100, 18,
-    '[{"x":260,"z":-20,"radius":18,"name":"Ikoyi Estates Blvd"},{"x":660,"z":-20,"radius":18,"name":"Lekki Phase 1"},{"x":1135,"z":100,"radius":18,"name":"Ajah Express Overpass"},{"x":1388,"z":100,"radius":18,"name":"Epe Lagoon Bridge"}]'::jsonb, 3150, 5, 2800, 750, 'Epe Voyager', 260,
+    'MANIFOLD Showroom', 0, -57.75,
+    'Epe Waterfront Marina', 2582.25, 165, 18,
+    '[{"x":429,"z":-33,"radius":18,"name":"Ikoyi Estates Blvd"},{"x":1089,"z":-33,"radius":18,"name":"Lekki Phase 1"},{"x":1872.75,"z":165,"radius":18,"name":"Ajah Express Overpass"},{"x":2290.2,"z":165,"radius":18,"name":"Epe Lagoon Bridge"}]'::jsonb, 5198, 5, 2800, 750, 'Epe Voyager', 377,
     'Expert', 180, false, false, true, 100
   ),
   (
@@ -1219,9 +1219,9 @@ INSERT INTO public.game_missions (
     'Inter-District Endurance Run',
     'Drive across Lagos Lagoon via Third Mainland Bridge, navigate Oshodi and Igando corridors, and reach LASU Academic Quad in Ojo.',
     'ENDURANCE', 'VERY_FAR',
-    'Showroom Esplanade', 0, 10,
-    'LASU Academic Quad', -875, -660, 18,
-    '[{"x":0,"z":-640,"radius":18,"name":"Iyana-Oworo"},{"x":-260,"z":-640,"radius":18,"name":"Oshodi Terminal"},{"x":-550,"z":-790,"radius":18,"name":"Igando Transit Hub"}]'::jsonb, 3400, 5, 3200, 850, 'LASU Express Legend', 290,
+    'Showroom Esplanade', 0, 16.5,
+    'LASU Academic Quad', -1443.75, -1089, 18,
+    '[{"x":0,"z":-1056,"radius":18,"name":"Iyana-Oworo"},{"x":-429,"z":-1056,"radius":18,"name":"Oshodi Terminal"},{"x":-907.5,"z":-1303.5,"radius":18,"name":"Igando Transit Hub"}]'::jsonb, 5610, 5, 3200, 850, 'LASU Express Legend', 421,
     'Expert', 180, false, false, true, 110
   ),
   (
@@ -1230,17 +1230,46 @@ INSERT INTO public.game_missions (
     'Master Cross-Region Precision Endurance',
     'Traverse the full width of MANIFOLD Lagos from Epe Town Gateway through VGC, Ikoyi Link Bridge, Yaba, and Mainland to LASU Gate — then engage P gear!',
     'ENDURANCE', 'VERY_FAR',
-    'Epe Town Gateway', 1495, 100,
-    'LASU Main Entrance Gate', -790, -660, 18,
-    '[{"x":1015,"z":100,"radius":18,"name":"VGC Interchange"},{"x":520,"z":-20,"radius":18,"name":"Ikoyi-Lekki Bridge"},{"x":0,"z":-130,"radius":18,"name":"Yaba Approach"},{"x":0,"z":-640,"radius":18,"name":"Iyana-Oworo"}]'::jsonb, 4450, 6, 4500, 1200, 'Trans-Lagos Sovereign', 360,
+    'Epe Town Gateway', 2466.75, 165,
+    'LASU Main Entrance Gate', -1303.5, -1089, 18,
+    '[{"x":1674.75,"z":165,"radius":18,"name":"VGC Interchange"},{"x":858,"z":-33,"radius":18,"name":"Ikoyi-Lekki Bridge"},{"x":0,"z":-214.5,"radius":18,"name":"Yaba Approach"},{"x":0,"z":-1056,"radius":18,"name":"Iyana-Oworo"}]'::jsonb, 7343, 6, 4500, 1200, 'Trans-Lagos Sovereign', 522,
     'Master', 240, false, true, true, 120
   )
 ON CONFLICT (id) DO NOTHING;
 
--- Backfill MISSION_B_RACE checkpoints & replace telemetry-gated exclusive badges idempotently
+-- Upgrade pre-existing unscaled mission coordinates idempotently (preserving rewards, badges, and is_active)
 UPDATE public.game_missions
 SET
-  checkpoints = '[{"x":-50,"z":-130,"radius":10,"name":"Starting Grid / Sector 1"},{"x":0,"z":-130,"radius":11,"name":"Yaba Tech Apex Turn"},{"x":105,"z":-130,"radius":12,"name":"Tech Blvd Sweeper"},{"x":105,"z":0,"radius":11,"name":"Bank Row Chicane"},{"x":105,"z":100,"radius":11,"name":"Commercial Sector South"},{"x":0,"z":100,"radius":11,"name":"Marketplace Boulevard"},{"x":-55,"z":100,"radius":11,"name":"Depot S-Bend"},{"x":-110,"z":0,"radius":12,"name":"Surulere Express Straightaway"},{"x":-110,"z":-130,"radius":12,"name":"Expressway Final Hairpin"},{"x":-50,"z":-130,"radius":10,"name":"Finish Line Gantry"}]'::jsonb,
+  start_x = v.sx,
+  start_z = v.sz,
+  dest_x = v.dx,
+  dest_z = v.dz,
+  checkpoints = v.cps::jsonb,
+  distance_meters = v.dist,
+  time_limit_seconds = v.tlim,
+  updated_at = pg_catalog.now()
+FROM (
+  VALUES
+    ('MISSION_A_DELIVERY', 480, 0::DOUBLE PRECISION, -206.25::DOUBLE PRECISION, -90.75::DOUBLE PRECISION, 165::DOUBLE PRECISION, '[]', 792, 138),
+    ('NEAR_OBALENDE_PARCEL', 420, 0::DOUBLE PRECISION, -132::DOUBLE PRECISION, 264::DOUBLE PRECISION, 49.5::DOUBLE PRECISION, '[{"x":173.25,"z":0,"radius":14,"name":"Bank Row Junction"}]', 693, 131),
+    ('NEAR_DEALER_VIP_PICKUP', 340, 0::DOUBLE PRECISION, 16.5::DOUBLE PRECISION, 92.4::DOUBLE PRECISION, 26.4::DOUBLE PRECISION, '[{"x":0,"z":165,"radius":14,"name":"Grand Marketplace Gate"}]', 561, 123),
+    ('NEAR_PRECISION_PARK', 260, 173.25::DOUBLE PRECISION, 0::DOUBLE PRECISION, 0::DOUBLE PRECISION, -57.75::DOUBLE PRECISION, '[]', 429, 102),
+    ('MISSION_B_RACE', 780, -82.5::DOUBLE PRECISION, -214.5::DOUBLE PRECISION, -82.5::DOUBLE PRECISION, -214.5::DOUBLE PRECISION, '[{"x":-82.5,"z":-214.5,"radius":10,"name":"Starting Grid / Sector 1"},{"x":0,"z":-214.5,"radius":11,"name":"Yaba Tech Apex Turn"},{"x":173.25,"z":-214.5,"radius":12,"name":"Tech Blvd Sweeper"},{"x":173.25,"z":0,"radius":11,"name":"Bank Row Chicane"},{"x":173.25,"z":165,"radius":11,"name":"Commercial Sector South"},{"x":0,"z":165,"radius":11,"name":"Marketplace Boulevard"},{"x":-90.75,"z":165,"radius":11,"name":"Depot S-Bend"},{"x":-181.5,"z":0,"radius":12,"name":"Surulere Express Straightaway"},{"x":-181.5,"z":-214.5,"radius":12,"name":"Expressway Final Hairpin"},{"x":-82.5,"z":-214.5,"radius":10,"name":"Finish Line Gantry"}]', 1287, 261),
+    ('FAR_IKOYI_CLEAN_TRANSFER', 1050, 0::DOUBLE PRECISION, 16.5::DOUBLE PRECISION, 602.25::DOUBLE PRECISION, -214.5::DOUBLE PRECISION, '[{"x":264,"z":-214.5,"radius":16,"name":"Adekunle Interchange"}]', 1733, 196),
+    ('FAR_LEKKI_COURIER', 1180, 264::DOUBLE PRECISION, 49.5::DOUBLE PRECISION, 1089::DOUBLE PRECISION, -33::DOUBLE PRECISION, '[{"x":602.25,"z":-33,"radius":16,"name":"Ikoyi Link Bridgehead"},{"x":858,"z":-33,"radius":18,"name":"Cable Pylon Crest"}]', 1947, 203),
+    ('FAR_TMB_CHECKPOINT_SPRINT', 1450, 0::DOUBLE PRECISION, -214.5::DOUBLE PRECISION, 0::DOUBLE PRECISION, -1452::DOUBLE PRECISION, '[{"x":0,"z":-528,"radius":18,"name":"TMB Center South"},{"x":0,"z":-915.75,"radius":18,"name":"TMB North Deck"},{"x":0,"z":-1056,"radius":18,"name":"Iyana-Oworo Interchange"}]', 2393, 181),
+    ('FAR_OSHODI_FREIGHT', 1120, 0::DOUBLE PRECISION, -1452::DOUBLE PRECISION, -429::DOUBLE PRECISION, -1056::DOUBLE PRECISION, '[{"x":-214.5,"z":-1452,"radius":16,"name":"Ikeja Along"},{"x":-429,"z":-1254,"radius":16,"name":"Dopemu Bridge Link"}]', 1848, 218),
+    ('VFAR_ISLAND_TO_EPE', 3150, 0::DOUBLE PRECISION, -57.75::DOUBLE PRECISION, 2582.25::DOUBLE PRECISION, 165::DOUBLE PRECISION, '[{"x":429,"z":-33,"radius":18,"name":"Ikoyi Estates Blvd"},{"x":1089,"z":-33,"radius":18,"name":"Lekki Phase 1"},{"x":1872.75,"z":165,"radius":18,"name":"Ajah Express Overpass"},{"x":2290.2,"z":165,"radius":18,"name":"Epe Lagoon Bridge"}]', 5198, 377),
+    ('VFAR_MAINLAND_TO_LASU', 3400, 0::DOUBLE PRECISION, 16.5::DOUBLE PRECISION, -1443.75::DOUBLE PRECISION, -1089::DOUBLE PRECISION, '[{"x":0,"z":-1056,"radius":18,"name":"Iyana-Oworo"},{"x":-429,"z":-1056,"radius":18,"name":"Oshodi Terminal"},{"x":-907.5,"z":-1303.5,"radius":18,"name":"Igando Transit Hub"}]', 5610, 421),
+    ('VFAR_EPE_TO_LASU_GRAND_TOUR', 4450, 2466.75::DOUBLE PRECISION, 165::DOUBLE PRECISION, -1303.5::DOUBLE PRECISION, -1089::DOUBLE PRECISION, '[{"x":1674.75,"z":165,"radius":18,"name":"VGC Interchange"},{"x":858,"z":-33,"radius":18,"name":"Ikoyi-Lekki Bridge"},{"x":0,"z":-214.5,"radius":18,"name":"Yaba Approach"},{"x":0,"z":-1056,"radius":18,"name":"Iyana-Oworo"}]', 7343, 522)
+) AS v(id, old_dist, sx, sz, dx, dz, cps, dist, tlim)
+WHERE public.game_missions.id = v.id
+  AND public.game_missions.distance_meters = v.old_dist;
+
+-- Backfill MISSION_B_RACE checkpoints (scaled) & replace telemetry-gated exclusive badges idempotently
+UPDATE public.game_missions
+SET
+  checkpoints = '[{"x":-82.5,"z":-214.5,"radius":10,"name":"Starting Grid / Sector 1"},{"x":0,"z":-214.5,"radius":11,"name":"Yaba Tech Apex Turn"},{"x":173.25,"z":-214.5,"radius":12,"name":"Tech Blvd Sweeper"},{"x":173.25,"z":0,"radius":11,"name":"Bank Row Chicane"},{"x":173.25,"z":165,"radius":11,"name":"Commercial Sector South"},{"x":0,"z":165,"radius":11,"name":"Marketplace Boulevard"},{"x":-90.75,"z":165,"radius":11,"name":"Depot S-Bend"},{"x":-181.5,"z":0,"radius":12,"name":"Surulere Express Straightaway"},{"x":-181.5,"z":-214.5,"radius":12,"name":"Expressway Final Hairpin"},{"x":-82.5,"z":-214.5,"radius":10,"name":"Finish Line Gantry"}]'::jsonb,
   updated_at = NOW()
 WHERE id = 'MISSION_B_RACE'
   AND (checkpoints IS NULL OR jsonb_array_length(checkpoints) <> 10);

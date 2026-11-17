@@ -56,6 +56,7 @@ import { GameBillboardItem } from '../../services/billboardService';
 import {
   LAGOS_ROAD_NODES,
   CITY_LANDMARKS,
+  WORLD_BOUNDS,
   findShortestRoadPathDetailed,
 } from './lagosCityData';
 import type { WebGLQualityMode } from '../../utils/webglPerformance';
@@ -296,7 +297,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
     return bestName;
   }, [Math.round(carPosition.x / 10), Math.round(carPosition.z / 10)]);
 
-  const radarHalfSpan = 140;
+  const radarHalfSpan = 200;
   const vbLeft = carPosition.x - radarHalfSpan;
   const vbTop = carPosition.z - radarHalfSpan;
   const vbSize = radarHalfSpan * 2;
@@ -1276,11 +1277,46 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             title="Click to open Full Lagos Metro GPS Map [M]"
           >
             <svg viewBox={`${vbLeft} ${vbTop} ${vbSize} ${vbSize}`} className="w-full h-full">
-              <rect x={-1200} y={-585} width={3050} height={420} fill="#0b3b59" fillOpacity="0.65" />
-              <rect x={445} y={-165} width={150} height={420} fill="#0b3b59" fillOpacity="0.65" />
-              <rect x={1350} y={-165} width={75} height={420} fill="#0b3b59" fillOpacity="0.65" />
-              <rect x={1600} y={-165} width={450} height={420} fill="#0b3b59" fillOpacity="0.6" />
-              <rect x={-1200} y={250} width={3250} height={260} fill="#0b3b59" fillOpacity="0.6" />
+              <rect
+                x={WORLD_BOUNDS.minX - 250}
+                y={WORLD_BOUNDS.lagoonNorthZ}
+                width={WORLD_BOUNDS.maxX - WORLD_BOUNDS.minX + 600}
+                height={WORLD_BOUNDS.lagoonSouthZ - WORLD_BOUNDS.lagoonNorthZ}
+                fill="#0b3b59"
+                fillOpacity="0.65"
+              />
+              <rect
+                x={WORLD_BOUNDS.ikoyiChannelMinX}
+                y={WORLD_BOUNDS.lagoonSouthZ}
+                width={WORLD_BOUNDS.ikoyiChannelMaxX - WORLD_BOUNDS.ikoyiChannelMinX}
+                height={WORLD_BOUNDS.southOceanZ - WORLD_BOUNDS.lagoonSouthZ + 120}
+                fill="#0b3b59"
+                fillOpacity="0.65"
+              />
+              <rect
+                x={WORLD_BOUNDS.epeCreekMinX}
+                y={WORLD_BOUNDS.lagoonSouthZ}
+                width={WORLD_BOUNDS.epeCreekMaxX - WORLD_BOUNDS.epeCreekMinX}
+                height={WORLD_BOUNDS.southOceanZ - WORLD_BOUNDS.lagoonSouthZ + 120}
+                fill="#0b3b59"
+                fillOpacity="0.65"
+              />
+              <rect
+                x={WORLD_BOUNDS.epeBayMinX}
+                y={WORLD_BOUNDS.lagoonSouthZ}
+                width={WORLD_BOUNDS.maxX - WORLD_BOUNDS.epeBayMinX + 450}
+                height={WORLD_BOUNDS.southOceanZ - WORLD_BOUNDS.lagoonSouthZ + 120}
+                fill="#0b3b59"
+                fillOpacity="0.6"
+              />
+              <rect
+                x={WORLD_BOUNDS.minX - 250}
+                y={WORLD_BOUNDS.southOceanZ}
+                width={WORLD_BOUNDS.maxX - WORLD_BOUNDS.minX + 700}
+                height={350}
+                fill="#0b3b59"
+                fillOpacity="0.6"
+              />
 
               {radarRoadEdges.map((e) => (
                 <line
@@ -1290,7 +1326,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                   x2={e.x2}
                   y2={e.z2}
                   stroke={e.isBridge ? '#38bdf8' : e.isDual ? '#64748b' : '#475569'}
-                  strokeWidth={e.isDual ? 13 : 9}
+                  strokeWidth={e.isDual ? 15 : 10}
                   strokeLinecap="round"
                 />
               ))}
