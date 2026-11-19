@@ -1515,7 +1515,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
         return false;
       if (x > WORLD_BOUNDS.epeBayMinX - 8) return false;
       if (z > WORLD_BOUNDS.southOceanZ - 12) return false;
-      if (distToNearestRoad(x, z) < 17.5) return false;
+      if (distToNearestRoad(x, z) < 18.5) return false;
       for (let i = 0; i < allCollidableBuildings.length; i++) {
         const b = allCollidableBuildings[i];
         if (Math.abs(x - b.x) < b.width / 2 + 4.5 && Math.abs(z - b.z) < b.depth / 2 + 4.5) {

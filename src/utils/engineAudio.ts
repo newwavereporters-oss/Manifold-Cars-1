@@ -110,6 +110,7 @@ class EngineAudioSystem {
   }
 
   public init() {
+    if (typeof window === 'undefined') return;
     if (this.isInitialized && this.ctx) {
       if (this.ctx.state === 'suspended' && (typeof document === 'undefined' || !document.hidden)) {
         this.ctx.resume().catch(() => {});
@@ -772,6 +773,117 @@ class EngineAudioSystem {
       } else {
         this.isHornPlaying = false;
       }
+    }
+  }
+
+  /**
+   * Loud, multi-layered procedural car collision & metal/debris impact synthesizer.
+   * Uses a dedicated DynamicsCompressor + destination bus scaled by masterVolume so
+   * crashes punch unmistakably through engine and road noise.
+   */
+  public playCollisionCrash(
+    impactVelocity: number,
+    category: 'VEHICLE' | 'BARRIER' | 'PROP' = 'VEHICLE'
+  ) {
+    this.init();
+    if (!this.ctx || this.isMuted) return;
+
+    const absVel = Math.max(0, impactVelocity);
+    if (absVel < 2.0) return;
+
+    try {
+      const ctx = this.ctx;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const now = ctx.currentTime;
+      const intensity = Math.max(0.28, Math.min(1.0, (absVel - 1.5) / 22.0));
+      const catBoost = category === 'VEHICLE' ? 1.15 : category === 'BARRIER' ? 1.0 : 0.78;
+      const userVol = Math.max(0.15, Math.min(1.0, this.masterVolume));
+
+      // Dedicated compressor + direct crash bus so impact transients stay punchy without clipping
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.setValueAtTime(-12, now);
+      comp.knee.setValueAtTime(10, now);
+      comp.ratio.setValueAtTime(8, now);
+      comp.attack.setValueAtTime(0.002, now);
+      comp.release.setValueAtTime(0.18, now);
+
+      const crashMaster = ctx.createGain();
+      crashMaster.gain.setValueAtTime((0.48 + intensity * 0.56) * catBoost * userVol, now);
+      crashMaster.connect(comp);
+      comp.connect(ctx.destination);
+
+      // Build transient burst noise buffer (0.65s)
+      const duration = 0.38 + intensity * 0.34;
+      const sampleCount = Math.floor(ctx.sampleRate * duration);
+      const noiseBuf = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
+      const data = noiseBuf.getChannelData(0);
+      for (let i = 0; i < sampleCount; i++) {
+        const env = Math.pow(1 - i / sampleCount, 1.35);
+        data[i] = (Math.random() * 2 - 1) * env;
+      }
+
+      // Layer 1: Heavy sub-bass chassis thud sweep (92Hz -> 24Hz)
+      const thudOsc = ctx.createOscillator();
+      const thudGain = ctx.createGain();
+      thudOsc.type = 'triangle';
+      thudOsc.frequency.setValueAtTime(86 + intensity * 38, now);
+      thudOsc.frequency.exponentialRampToValueAtTime(22, now + 0.22 + intensity * 0.14);
+      thudGain.gain.setValueAtTime(0.95 * (0.5 + intensity * 0.5), now);
+      thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.28 + intensity * 0.14);
+      thudOsc.connect(thudGain);
+      thudGain.connect(crashMaster);
+      thudOsc.start(now);
+      thudOsc.stop(now + 0.45);
+
+      // Layer 2: Waveshaped metallic bodywork crunch & fender crumple
+      const crunchSrc = ctx.createBufferSource();
+      crunchSrc.buffer = noiseBuf;
+      const crunchFilter = ctx.createBiquadFilter();
+      crunchFilter.type = 'bandpass';
+      crunchFilter.frequency.setValueAtTime(category === 'VEHICLE' ? 680 : 460, now);
+      crunchFilter.frequency.exponentialRampToValueAtTime(190, now + duration);
+      crunchFilter.Q.setValueAtTime(1.15, now);
+
+      const crunchShaper = this.createDistortionCurve(26);
+      const crunchGain = ctx.createGain();
+      crunchGain.gain.setValueAtTime(0.85 * (0.45 + intensity * 0.55), now);
+      crunchGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+      crunchSrc.connect(crunchFilter);
+      crunchFilter.connect(crunchShaper);
+      crunchShaper.connect(crunchGain);
+      crunchGain.connect(crashMaster);
+      crunchSrc.start(now);
+      crunchSrc.stop(now + duration);
+
+      // Layer 3: Sharp glass / trim / debris scatter crackle (highpass 2.1kHz-4.8kHz)
+      if (category === 'VEHICLE' || intensity > 0.35) {
+        const shatterSrc = ctx.createBufferSource();
+        shatterSrc.buffer = noiseBuf;
+        const shatterFilter = ctx.createBiquadFilter();
+        shatterFilter.type = 'bandpass';
+        shatterFilter.frequency.setValueAtTime(2850 + intensity * 1600, now);
+        shatterFilter.Q.setValueAtTime(1.8, now);
+
+        const shatterGain = ctx.createGain();
+        shatterGain.gain.setValueAtTime(0.001, now);
+        shatterGain.gain.linearRampToValueAtTime(
+          (category === 'VEHICLE' ? 0.62 : 0.38) * intensity,
+          now + 0.014
+        );
+        shatterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.24 + intensity * 0.28);
+
+        shatterSrc.connect(shatterFilter);
+        shatterFilter.connect(shatterGain);
+        shatterGain.connect(crashMaster);
+        shatterSrc.start(now);
+        shatterSrc.stop(now + duration);
+      }
+    } catch {
+      // Ignore AudioContext restriction errors before user gesture
     }
   }
 

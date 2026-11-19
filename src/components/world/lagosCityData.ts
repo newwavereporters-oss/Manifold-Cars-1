@@ -490,6 +490,39 @@ export function resolveSurfaceY(x: number, z: number, currentY = 0): number {
 }
 
 /**
+ * Signed distance OUTSIDE ground-level elevated bridge/flyover ramp touchdowns (y <= maxDeckY).
+ * Keeps roadside curbs, poles, guardrails, and trees off sloped approach ramps while
+ * preserving the passable ground crossroad underneath tall overpasses (e.g. Ajah Flyover at 6.2m).
+ */
+export function getEdgeDistToElevatedRamps(
+  px: number,
+  pz: number,
+  maxDeckY = 4.2
+): number {
+  let minEdge = Infinity;
+  for (let i = 0; i < ELEVATED_SPANS.length; i++) {
+    const span = ELEVATED_SPANS[i];
+    for (let pIdx = 0; pIdx < span.pieces.length; pIdx++) {
+      const piece = span.pieces[pIdx];
+      if (Math.min(piece.y0, piece.y1) > maxDeckY) continue;
+      const dx = piece.x1 - piece.x0;
+      const dz = piece.z1 - piece.z0;
+      const lenSq = dx * dx + dz * dz;
+      if (lenSq < 1e-6) continue;
+      const rawT = ((px - piece.x0) * dx + (pz - piece.z0) * dz) / lenSq;
+      const tc = Math.max(0, Math.min(1, rawT));
+      const yAtT = piece.y0 + tc * (piece.y1 - piece.y0);
+      if (yAtT > maxDeckY) continue;
+      const projX = piece.x0 + tc * dx;
+      const projZ = piece.z0 + tc * dz;
+      const d = Math.hypot(px - projX, pz - projZ) - piece.halfWidth;
+      if (d < minEdge) minEdge = d;
+    }
+  }
+  return minEdge;
+}
+
+/**
  * Backward-compatible elevation query at (x, z) (prefers upper bridge deck when called without currentY).
  */
 export function getRoadSurfaceY(x: number, z: number): number {
@@ -573,6 +606,7 @@ export function enforceBridgeAndWaterBarriers(
     const rx = -active.uz;
     const rz = active.ux;
     const maxLat = Math.max(2.0, active.piece.parapetHalfWidth - carHalfWidth * 0.45);
+    let hitResult: BarrierHitResult | null = null;
 
     if (active.signedLat > maxLat && !inExitGapRight) {
       const excess = active.signedLat - maxLat;
@@ -580,7 +614,7 @@ export function enforceBridgeAndWaterBarriers(
       cs.x -= rx * excess;
       cs.z -= rz * excess;
       cs.speed *= 0.62;
-      return {
+      hitResult = {
         hit: true,
         impactVelocity: impactVel,
         normalX: -rx,
@@ -595,7 +629,7 @@ export function enforceBridgeAndWaterBarriers(
       cs.x -= rx * excess;
       cs.z -= rz * excess;
       cs.speed *= 0.62;
-      return {
+      hitResult = {
         hit: true,
         impactVelocity: impactVel,
         normalX: rx,
@@ -605,7 +639,35 @@ export function enforceBridgeAndWaterBarriers(
         kind: 'PARAPET',
       };
     }
-    return null;
+
+    // Solid Central Concrete Jersey Divider on all 4-lane elevated bridges (matches 0.76m visual divider)
+    const hasCenterMedian = active.spanId !== 'ADEKUNLE_RAMP' && active.y > 0.25;
+    if (hasCenterMedian) {
+      const medianHalfW = 0.38;
+      const minAbsLat = medianHalfW + carHalfWidth * 0.48;
+      const absLat = Math.abs(active.signedLat);
+      if (absLat < minAbsLat) {
+        const sideSign = active.signedLat >= 0 ? 1 : -1;
+        const pushOut = minAbsLat - absLat;
+        const impactVel = Math.abs(cs.speed);
+        cs.x += rx * sideSign * pushOut;
+        cs.z += rz * sideSign * pushOut;
+        cs.speed *= 0.62;
+        if (!hitResult || impactVel > hitResult.impactVelocity) {
+          hitResult = {
+            hit: true,
+            impactVelocity: impactVel,
+            normalX: rx * sideSign,
+            normalZ: rz * sideSign,
+            hitX: cs.x - rx * sideSign * carHalfWidth,
+            hitZ: cs.z - rz * sideSign * carHalfWidth,
+            kind: 'PARAPET',
+          };
+        }
+      }
+    }
+
+    return hitResult;
   }
 
   // Ground-level coastal seawall water clamps (only when NOT on a bridge deck)

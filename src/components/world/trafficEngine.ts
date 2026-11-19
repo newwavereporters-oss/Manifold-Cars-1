@@ -1048,12 +1048,16 @@ export class TrafficEngine {
       const fwdX = Math.sin(heading);
       const fwdZ = Math.cos(heading);
 
-      // Decay any collision displacement smoothly as the traffic driver recovers lane control
-      if (Math.abs(car.knockX) > 0.005 || Math.abs(car.knockZ) > 0.005) {
-        const decay = Math.exp(-dt * 1.4);
+      const pDx = playerX - car.x;
+      const pDz = playerZ - car.z;
+      const distToPlayer = Math.hypot(pDx, pDz);
+
+      // Decay collision displacement smoothly only once clear of the colliding player vehicle
+      if ((Math.abs(car.knockX) > 0.005 || Math.abs(car.knockZ) > 0.005) && distToPlayer > 4.8) {
+        const decay = Math.exp(-dt * 1.15);
         car.knockX *= decay;
         car.knockZ *= decay;
-      } else {
+      } else if (Math.abs(car.knockX) <= 0.005 && Math.abs(car.knockZ) <= 0.005) {
         car.knockX = 0;
         car.knockZ = 0;
       }
@@ -1061,11 +1065,8 @@ export class TrafficEngine {
         car.stunTimer = Math.max(0, car.stunTimer - dt);
       }
 
-      // 1. Check distance to player ahead in same lane/elevation
-      let obstacleAhead = car.stunTimer > 0.35;
-      const pDx = playerX - car.x;
-      const pDz = playerZ - car.z;
-      const distToPlayer = Math.hypot(pDx, pDz);
+      // 1. Check distance to player ahead in same lane/elevation or close impact contact
+      let obstacleAhead = car.stunTimer > 0.35 || distToPlayer < 4.5;
       if (!obstacleAhead && distToPlayer < 16) {
         const dotFwd = pDx * fwdX + pDz * fwdZ;
         const dotSide = Math.abs(pDx * rightX + pDz * rightZ);

@@ -174,6 +174,7 @@ function buildSpanInstancedHardware(
     hasMedianBarrier: boolean;
     hasLaneDashes: boolean;
     skipStartT?: number;
+    skipEndT?: number;
   }
 ) {
   const step = 4.0;
@@ -202,6 +203,7 @@ function buildSpanInstancedHardware(
     for (let i = 0; i < count; i++) {
       const t = (i + 0.5) / count;
       if (pIdx === 0 && config.skipStartT && t < config.skipStartT) continue;
+      if (pIdx === span.pieces.length - 1 && config.skipEndT && t > config.skipEndT) continue;
 
       const cx = piece.x0 + dx * t;
       const cy = piece.y0 + dy * t;
@@ -439,11 +441,12 @@ export function createAdekunleRamp(options: BridgeBuildOptions = {}): THREE.Grou
     });
   });
 
-  // Skip parapet right inside the TMB gore splice (t < 0.08)
+  // Skip parapets inside TMB gore splice (t < 0.10) and inside N_ADEKUNLE touchdown intersection (t > 0.90)
   buildSpanInstancedHardware(group, span, mats, trackGeo, {
     hasMedianBarrier: false,
     hasLaneDashes: false,
-    skipStartT: 0.08,
+    skipStartT: 0.10,
+    skipEndT: 0.90,
   });
 
   // Concrete Viaduct Support Columns along the ramp over lagoon shoreline

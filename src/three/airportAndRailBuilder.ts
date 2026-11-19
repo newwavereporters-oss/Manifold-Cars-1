@@ -616,11 +616,12 @@ export function buildAirportMarinaAndRail(ctx: AirportAndRailContext): AirportAn
         { x: 242 * S, z: -1225 * S, yaw: Math.PI * 0.12, livery: jetNavyMat },
         { x: 242 * S, z: -1265 * S, yaw: Math.PI * 0.12, livery: jetRedMat },
       ];
-      jetStands.forEach((js) => {
+      jetStands.forEach((js, jIdx) => {
         const { plane } = buildAircraftMesh('BIZJET', js.livery);
         plane.position.set(js.x, 0, js.z);
         plane.rotation.y = js.yaw;
         cityGroup.add(plane);
+        addBarricade(`MMIA_BIZJET_${jIdx}`, js.x, 0, js.z, 7.2, 8.5, js.yaw, 'SHELTER');
       });
     }
 
@@ -1119,7 +1120,7 @@ export function buildAirportMarinaAndRail(ctx: AirportAndRailContext): AirportAn
       const pt = railCurve.getPointAt(u);
       const tan = railCurve.getTangentAt(u);
       // Skip piers on ground roads
-      if (distToNearestRoad(pt.x, pt.z) < 16.5) continue;
+      if (distToNearestRoad(pt.x, pt.z) < 18.5) continue;
       pierPositions.push({ x: pt.x, z: pt.z, yaw: Math.atan2(tan.x, tan.z) });
     }
 
@@ -1147,6 +1148,7 @@ export function buildAirportMarinaAndRail(ctx: AirportAndRailContext): AirportAn
         pd.updateMatrix();
         pierInst.setMatrixAt(i, pd.matrix);
         capInst.setMatrixAt(i, pd.matrix);
+        addBarricade(`BLUE_LINE_PIER_${i}`, pp.x, 0, pp.z, 1.4, 1.4, pp.yaw, 'GANTRY_PILLAR');
       });
       pierInst.computeBoundingSphere();
       capInst.computeBoundingSphere();
@@ -1381,6 +1383,18 @@ export function buildAirportMarinaAndRail(ctx: AirportAndRailContext): AirportAn
         rCol.setHex(roofPalette[(h.colorIdx + 1) % roofPalette.length]);
         wallInst.setColorAt(i, wCol);
         roofInst.setColorAt(i, rCol);
+
+        // Make every Iyanoba residential house 100% solid
+        addBarricade(
+          `IYANOBA_HOUSE_${i}`,
+          h.x,
+          0,
+          h.z,
+          4.85 * h.scaleX,
+          4.2 * h.scaleZ,
+          h.yaw,
+          'WALL'
+        );
       });
 
       wallInst.computeBoundingSphere();

@@ -23,7 +23,7 @@ export interface VehicleColliderBox {
 
 export interface CollisionEvent {
   type: 'VEHICLE' | 'BUILDING' | 'PERIMETER' | 'BARRICADE' | 'PROP';
-  otherKind?: 'TRAFFIC' | 'RIVAL' | 'BUILDING' | 'BARRICADE' | 'PROP';
+  otherKind?: 'TRAFFIC' | 'RIVAL' | 'PLAYER' | 'BUILDING' | 'BARRICADE' | 'PROP';
   otherId: string;
   impactVelocity: number;
   pushbackX: number;
@@ -209,7 +209,8 @@ export class CollisionEngine {
     trafficBoxes: VehicleColliderBox[] = [],
     rivalBoxes: VehicleColliderBox[] = [],
     barricades: BarricadeCollider[] = [],
-    dynamicProps: DynamicPropCollider[] = []
+    dynamicProps: DynamicPropCollider[] = [],
+    remotePlayerBoxes: VehicleColliderBox[] = []
   ): FrameCollisionResult {
     const now = performance.now();
     const playerY = carState.y ?? 0;
@@ -266,7 +267,7 @@ export class CollisionEngine {
         }
       }
 
-      this.triggerImpactAudio(now, impactVel);
+      this.triggerImpactAudio(now, impactVel, 'BARRIER');
 
       recordPrimary({
         type: evType,
@@ -335,10 +336,10 @@ export class CollisionEngine {
       }
     }
 
-    // 3. Hardened Vehicle-to-Vehicle Collisions (Traffic + Rivals)
+    // 3. Hardened Vehicle-to-Vehicle Collisions (Traffic + Rivals + Online Players)
     const resolveVehicleList = (
       list: VehicleColliderBox[],
-      otherKind: 'TRAFFIC' | 'RIVAL'
+      otherKind: 'TRAFFIC' | 'RIVAL' | 'PLAYER'
     ) => {
       for (let i = 0; i < list.length; i++) {
         const v = list[i];
@@ -409,7 +410,7 @@ export class CollisionEngine {
             carState.speed *= 0.85;
           }
 
-          this.triggerImpactAudio(now, impactVel);
+          this.triggerImpactAudio(now, impactVel, 'VEHICLE');
 
           const ev: CollisionEvent = {
             type: 'VEHICLE',
@@ -433,6 +434,7 @@ export class CollisionEngine {
 
     resolveVehicleList(trafficBoxes, 'TRAFFIC');
     resolveVehicleList(rivalBoxes, 'RIVAL');
+    resolveVehicleList(remotePlayerBoxes, 'PLAYER');
 
     // 4. Knockable Streetlights, Utility Poles & Trees (OBB vs Circle)
     if (dynamicProps.length > 0) {
@@ -481,7 +483,7 @@ export class CollisionEngine {
             prop.kind === 'SHADE_TREE' ? 0.72 : prop.kind === 'PALM_TREE' ? 0.78 : 0.86;
           carState.speed *= speedRetain;
 
-          this.triggerImpactAudio(now, absSpeed);
+          this.triggerImpactAudio(now, absSpeed, 'PROP');
 
           const ev: CollisionEvent = {
             type: 'PROP',
@@ -521,7 +523,8 @@ export class CollisionEngine {
     trafficBoxes: VehicleColliderBox[] = [],
     rivalBoxes: VehicleColliderBox[] = [],
     barricades: BarricadeCollider[] = [],
-    dynamicProps: DynamicPropCollider[] = []
+    dynamicProps: DynamicPropCollider[] = [],
+    remotePlayerBoxes: VehicleColliderBox[] = []
   ): CollisionEvent | null {
     return this.resolveWorldCollisions(
       carState,
@@ -531,16 +534,20 @@ export class CollisionEngine {
       trafficBoxes,
       rivalBoxes,
       barricades,
-      dynamicProps
+      dynamicProps,
+      remotePlayerBoxes
     ).primaryHit;
   }
 
-  private triggerImpactAudio(now: number, speed: number) {
-    if (now - this.lastImpactTime > 320 && speed > 3.5) {
+  private triggerImpactAudio(
+    now: number,
+    speed: number,
+    category: 'VEHICLE' | 'BARRIER' | 'PROP' = 'VEHICLE'
+  ) {
+    if (now - this.lastImpactTime > 150 && speed > 2.2) {
       this.lastImpactTime = now;
       try {
-        engineAudio.playHorn(true);
-        setTimeout(() => engineAudio.playHorn(false), 85);
+        engineAudio.playCollisionCrash(speed, category);
       } catch {
         // Ignore audio context restriction errors before user gesture
       }

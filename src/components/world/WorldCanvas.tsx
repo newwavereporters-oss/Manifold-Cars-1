@@ -19,7 +19,11 @@ import { resolveSafeCameraPosition, isTargetOccludedByBuildings } from '../../ut
 import { buildLagosCityDistrict, LagosCityResult } from './lagosCityBuilder';
 import { TrafficEngine } from './trafficEngine';
 import { RivalsEngine } from './rivalsEngine';
-import { CollisionEngine } from './collisionEngine';
+import { CollisionEngine, VehicleColliderBox } from './collisionEngine';
+import {
+  findFreeSharedSpawnPose,
+  isSpawnPoseClear,
+} from './spawnUtils';
 import {
   findShortestRoadPath,
   RIVAL_RACE_CHECKPOINTS,
@@ -318,10 +322,14 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         vehicle: Vehicle3DResult;
         wheelSpinAngle: number;
         modelKey: string;
+        paintColor: string;
+        width: number;
+        length: number;
         x: number;
         y: number;
         z: number;
         heading: number;
+        speed: number;
         nickname: string;
         vehicleModel: VehicleModelType;
         worldRegion: string;
@@ -331,6 +339,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     >
   >(new Map());
   const lastRemoteProjTime = useRef<number>(0);
+  const relocatedSpawnRef = useRef<boolean>(false);
+  const impactJoltRef = useRef<{ intensity: number; dirX: number; dirZ: number }>({
+    intensity: 0,
+    dirX: 0,
+    dirZ: 1,
+  });
 
   // Vehicle Physics & Dynamics State
   const carState = useRef({
@@ -731,23 +745,43 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       else if (k === '4') onSelectGearRef.current?.('D1');
       else if (k === '5') onSelectGearRef.current?.('R');
 
-      // Vehicle Recovery / Reset on 'R'
+      // Vehicle Recovery / Reset on 'R' (places vehicle in nearest clear shared slot)
       if (k === 'r') {
         const cs = carState.current;
+        const spec = vehicleSpecRef.current;
+        const isRace = activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE';
+        const occupied = [
+          ...Array.from(remoteCarMeshesRef.current.values()).map((r) => ({
+            x: r.x,
+            y: r.y,
+            z: r.z,
+            width: r.width,
+            length: r.length,
+            rotation: r.heading,
+          })),
+          ...(trafficEngineRef.current?.getTrafficBoundingBoxes() ?? []),
+          ...(rivalsEngineRef.current?.isRaceActive
+            ? rivalsEngineRef.current.getRivalsBoundingBoxes()
+            : []),
+        ];
+        const freePose = findFreeSharedSpawnPose({
+          baseX: isRace ? -50 * WORLD_XZ_SCALE : 0,
+          baseZ: isRace ? -130 * WORLD_XZ_SCALE : 10 * WORLD_XZ_SCALE,
+          rotation: isRace ? Math.PI / 2 : Math.PI,
+          carHalfWidth: spec.bodyWidth * 0.5,
+          carHalfLength: spec.bodyLength * 0.5,
+          occupiedVehicles: occupied,
+          buildings: cityDataRef.current?.collidableBuildings ?? [],
+          barricades: cityDataRef.current?.barricades ?? [],
+        });
         cs.speed = 0;
         cs.steeringAngle = 0;
-        cs.y = 0;
-        if (activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE') {
-          cs.x = -50 * WORLD_XZ_SCALE;
-          cs.z = -130 * WORLD_XZ_SCALE;
-          cs.rotation = Math.PI / 2;
-        } else {
-          cs.x = 0;
-          cs.z = 10 * WORLD_XZ_SCALE;
-          cs.rotation = Math.PI;
-        }
+        cs.x = freePose.x;
+        cs.y = freePose.y;
+        cs.z = freePose.z;
+        cs.rotation = freePose.rotation;
         if (playerCarGroupRef.current) {
-          playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
+          playerCarGroupRef.current.position.set(cs.x, cs.y, cs.z);
           playerCarGroupRef.current.rotation.y = cs.rotation;
           playerCarGroupRef.current.rotation.x = 0;
           resetVehicleDamage(playerCarGroupRef.current);
@@ -793,21 +827,41 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   useEffect(() => {
     if (!resetVehicleTrigger) return;
     const cs = carState.current;
+    const spec = vehicleSpecRef.current;
+    const isRace = activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE';
+    const occupied = [
+      ...Array.from(remoteCarMeshesRef.current.values()).map((r) => ({
+        x: r.x,
+        y: r.y,
+        z: r.z,
+        width: r.width,
+        length: r.length,
+        rotation: r.heading,
+      })),
+      ...(trafficEngineRef.current?.getTrafficBoundingBoxes() ?? []),
+      ...(rivalsEngineRef.current?.isRaceActive
+        ? rivalsEngineRef.current.getRivalsBoundingBoxes()
+        : []),
+    ];
+    const freePose = findFreeSharedSpawnPose({
+      baseX: isRace ? -50 * WORLD_XZ_SCALE : 0,
+      baseZ: isRace ? -130 * WORLD_XZ_SCALE : 10 * WORLD_XZ_SCALE,
+      rotation: isRace ? Math.PI / 2 : Math.PI,
+      carHalfWidth: spec.bodyWidth * 0.5,
+      carHalfLength: spec.bodyLength * 0.5,
+      occupiedVehicles: occupied,
+      buildings: cityDataRef.current?.collidableBuildings ?? [],
+      barricades: cityDataRef.current?.barricades ?? [],
+    });
     cs.speed = 0;
     cs.steeringAngle = 0;
-    cs.y = 0;
-    if (activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE') {
-      cs.x = -50 * WORLD_XZ_SCALE;
-      cs.z = -130 * WORLD_XZ_SCALE;
-      cs.rotation = Math.PI / 2;
-    } else {
-      cs.x = 0;
-      cs.z = 10 * WORLD_XZ_SCALE;
-      cs.rotation = Math.PI;
-    }
+    cs.x = freePose.x;
+    cs.y = freePose.y;
+    cs.z = freePose.z;
+    cs.rotation = freePose.rotation;
     chaseCamRef.current.yaw = cs.rotation;
     if (playerCarGroupRef.current) {
-      playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
+      playerCarGroupRef.current.position.set(cs.x, cs.y, cs.z);
       playerCarGroupRef.current.rotation.y = cs.rotation;
       playerCarGroupRef.current.rotation.x = 0;
       resetVehicleDamage(playerCarGroupRef.current);
@@ -1008,11 +1062,32 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       rearRightWheel: playerCar.rearRightWheel,
     };
 
-    playerCar.carGroup.position.set(0, 0, 10 * WORLD_XZ_SCALE);
-    carState.current.x = 0;
-    carState.current.y = 0;
-    carState.current.z = 10 * WORLD_XZ_SCALE;
-    carState.current.rotation = Math.PI;
+    const initialRemoteOccupied = remotePlayersRef.current.map((p) => {
+      const pSpec = VEHICLE_SPEC_PROFILES[p.vehicleModel] || VEHICLE_SPEC_PROFILES.SPORTS_COUPE;
+      return {
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        width: pSpec.bodyWidth,
+        length: pSpec.bodyLength,
+        rotation: p.heading,
+      };
+    });
+    const initPose = findFreeSharedSpawnPose({
+      baseX: 0,
+      baseZ: 10 * WORLD_XZ_SCALE,
+      rotation: Math.PI,
+      carHalfWidth: vehicleSpecRef.current.bodyWidth * 0.5,
+      carHalfLength: vehicleSpecRef.current.bodyLength * 0.5,
+      occupiedVehicles: [...initialRemoteOccupied, ...trafficEngine.getTrafficBoundingBoxes()],
+      buildings: cityData.collidableBuildings,
+      barricades: cityData.barricades,
+    });
+    playerCar.carGroup.position.set(initPose.x, initPose.y, initPose.z);
+    carState.current.x = initPose.x;
+    carState.current.y = initPose.y;
+    carState.current.z = initPose.z;
+    carState.current.rotation = initPose.rotation;
 
     // Floating Interactive 3D Holographic Marker Above Marketplace Gate [0, 100 * S]
     const markerCanvas = document.createElement('canvas');
@@ -1070,12 +1145,180 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     missionBeaconGroup.add(beaconPillar);
     scene.add(missionBeaconGroup);
 
+    // Zero-GC Pooled 3D Car-Part Debris Splash & Friction Sparks System
+    const MAX_DEBRIS = 96;
+    const MAX_SPARKS = 48;
+    const debrisGeo = new THREE.BoxGeometry(0.32, 0.13, 0.22);
+    const debrisMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.42,
+      metalness: 0.38,
+    });
+    const debrisInst = new THREE.InstancedMesh(debrisGeo, debrisMat, MAX_DEBRIS);
+    debrisInst.frustumCulled = false;
+    debrisInst.castShadow = false;
+
+    const sparkGeo = new THREE.BoxGeometry(0.06, 0.06, 0.36);
+    const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const sparkInst = new THREE.InstancedMesh(sparkGeo, sparkMat, MAX_SPARKS);
+    sparkInst.frustumCulled = false;
+
+    const debrisDummy = new THREE.Object3D();
+    const tmpDebrisColor = new THREE.Color(0xffffff);
+    debrisDummy.scale.set(0, 0, 0);
+    debrisDummy.updateMatrix();
+    for (let i = 0; i < MAX_DEBRIS; i++) {
+      debrisInst.setMatrixAt(i, debrisDummy.matrix);
+      debrisInst.setColorAt(i, tmpDebrisColor);
+    }
+    debrisInst.instanceMatrix.needsUpdate = true;
+    if (debrisInst.instanceColor) debrisInst.instanceColor.needsUpdate = true;
+    for (let i = 0; i < MAX_SPARKS; i++) {
+      sparkInst.setMatrixAt(i, debrisDummy.matrix);
+      sparkInst.setColorAt(i, tmpDebrisColor);
+    }
+    sparkInst.instanceMatrix.needsUpdate = true;
+    if (sparkInst.instanceColor) sparkInst.instanceColor.needsUpdate = true;
+    scene.add(debrisInst, sparkInst);
+
+    const debrisPool = Array.from({ length: MAX_DEBRIS }, () => ({
+      active: false,
+      x: 0,
+      y: 0,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      rx: 0,
+      ry: 0,
+      rz: 0,
+      vrx: 0,
+      vry: 0,
+      vrz: 0,
+      scaleX: 1,
+      scaleY: 1,
+      scaleZ: 1,
+      age: 0,
+      maxLife: 1.4,
+      colorHex: 0xffffff,
+    }));
+    const sparkPool = Array.from({ length: MAX_SPARKS }, () => ({
+      active: false,
+      x: 0,
+      y: 0,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      age: 0,
+      maxLife: 0.45,
+      colorHex: 0xfacc15,
+    }));
+    let debrisCursor = 0;
+    let sparkCursor = 0;
+    let lastSplashTime = 0;
+
+    const parseHexColor = (val: string | number | undefined, fallback: number): number => {
+      if (typeof val === 'number' && Number.isFinite(val)) return val;
+      if (typeof val === 'string') {
+        const clean = val.trim().replace('#', '');
+        const parsed = parseInt(clean, 16);
+        if (!Number.isNaN(parsed)) return parsed;
+      }
+      return fallback;
+    };
+
+    const spawnCrashSplash = (
+      hitX: number,
+      hitY: number,
+      hitZ: number,
+      normalX: number,
+      normalZ: number,
+      impactSpeed: number,
+      primaryHex: string | number,
+      secondaryHex?: string | number
+    ) => {
+      const nowMs = performance.now();
+      if (impactSpeed < 2.6 || nowMs - lastSplashTime < 75) return;
+      lastSplashTime = nowMs;
+
+      const cPrimary = parseHexColor(primaryHex, 0xef233c);
+      const cSecondary = parseHexColor(secondaryHex, 0x1e293b);
+      const shardCount = Math.min(24, Math.max(10, Math.round(impactSpeed * 0.9)));
+      const sparkCount = Math.min(14, Math.max(6, Math.round(impactSpeed * 0.55)));
+      const speedScale = Math.max(5.5, Math.min(20, impactSpeed * 0.72));
+
+      // Trigger camera impact jolt
+      impactJoltRef.current.intensity = Math.min(0.62, impactSpeed * 0.025);
+      impactJoltRef.current.dirX = normalX;
+      impactJoltRef.current.dirZ = normalZ;
+
+      for (let i = 0; i < shardCount; i++) {
+        const p = debrisPool[debrisCursor];
+        debrisCursor = (debrisCursor + 1) % MAX_DEBRIS;
+
+        const spread = (Math.random() - 0.5) * 2.1;
+        const perpX = -normalZ;
+        const perpZ = normalX;
+        const ejectSpeed = speedScale * (0.45 + Math.random() * 0.75);
+
+        p.active = true;
+        p.x = hitX + (Math.random() - 0.5) * 0.55;
+        p.y = hitY + 0.35 + Math.random() * 0.45;
+        p.z = hitZ + (Math.random() - 0.5) * 0.55;
+        p.vx = (normalX * 0.65 + perpX * spread) * ejectSpeed + (Math.random() - 0.5) * 3.5;
+        p.vy = 4.2 + Math.random() * (4.0 + speedScale * 0.42);
+        p.vz = (normalZ * 0.65 + perpZ * spread) * ejectSpeed + (Math.random() - 0.5) * 3.5;
+        p.rx = Math.random() * Math.PI * 2;
+        p.ry = Math.random() * Math.PI * 2;
+        p.rz = Math.random() * Math.PI * 2;
+        p.vrx = (Math.random() - 0.5) * 14;
+        p.vry = (Math.random() - 0.5) * 14;
+        p.vrz = (Math.random() - 0.5) * 14;
+        p.scaleX = 0.65 + Math.random() * 1.15;
+        p.scaleY = 0.55 + Math.random() * 0.9;
+        p.scaleZ = 0.7 + Math.random() * 1.25;
+        p.age = 0;
+        p.maxLife = 1.15 + Math.random() * 0.85;
+
+        const rCol = Math.random();
+        p.colorHex =
+          rCol < 0.42
+            ? cPrimary
+            : rCol < 0.76
+            ? cSecondary
+            : rCol < 0.9
+            ? 0x334155
+            : 0xdc2626;
+      }
+
+      for (let i = 0; i < sparkCount; i++) {
+        const sp = sparkPool[sparkCursor];
+        sparkCursor = (sparkCursor + 1) % MAX_SPARKS;
+        const spread = (Math.random() - 0.5) * 2.6;
+        const perpX = -normalZ;
+        const perpZ = normalX;
+        const spVel = speedScale * (0.75 + Math.random() * 0.85);
+        sp.active = true;
+        sp.x = hitX + (Math.random() - 0.5) * 0.4;
+        sp.y = hitY + 0.4 + Math.random() * 0.35;
+        sp.z = hitZ + (Math.random() - 0.5) * 0.4;
+        sp.vx = (normalX * 0.4 + perpX * spread) * spVel;
+        sp.vy = 2.8 + Math.random() * 7.5;
+        sp.vz = (normalZ * 0.4 + perpZ * spread) * spVel;
+        sp.age = 0;
+        sp.maxLife = 0.28 + Math.random() * 0.25;
+        sp.colorHex = Math.random() < 0.55 ? 0xfef08a : 0xf97316;
+      }
+    };
+
     // Pre-allocated scratch vectors for zero-GC animation loop
     const tmpPodWorldPos = new THREE.Vector3();
     const tmpLookTarget = new THREE.Vector3();
     const tmpProjVec = new THREE.Vector3();
     const tmpDentHit = new THREE.Vector3();
     const tmpDentDir = new THREE.Vector3();
+    const remoteBoxesScratch: VehicleColliderBox[] = [];
 
     // 6. Animation & Physics Game Loop
     let animationFrameId = 0;
@@ -1299,27 +1542,6 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         onAwardCreditsRef.current?.(25, 'Distance Cruise Bonus');
       }
 
-      // Expanded World Boundaries (Island + Epe + Third Mainland Bridge + Mainland + LASU)
-      let nextX = cs.x + vx;
-      let nextZ = cs.z + vz;
-
-      if (nextX >= WORLD_BOUNDS.minX && nextX <= WORLD_BOUNDS.maxX) {
-        cs.x = nextX;
-      } else {
-        cs.x = Math.max(WORLD_BOUNDS.minX, Math.min(WORLD_BOUNDS.maxX, nextX));
-        cs.speed = -cs.speed * 0.25;
-      }
-
-      if (nextZ >= WORLD_BOUNDS.minZ && nextZ <= WORLD_BOUNDS.maxZ) {
-        cs.z = nextZ;
-      } else {
-        cs.z = Math.max(WORLD_BOUNDS.minZ, Math.min(WORLD_BOUNDS.maxZ, nextZ));
-        cs.speed = -cs.speed * 0.25;
-      }
-
-      // Bridge Parapet Guardrails (respecting Adekunle Exit Gore) & Coastal Seawall Barriers
-      const barrierHit = enforceBridgeAndWaterBarriers(cs, cs.y, baseSpec.bodyWidth * 0.5);
-
       // Autonomous Traffic AI, Rival Racers, Falling Poles/Trees & Live Traffic Signals Update
       trafficEngine.update(
         delta,
@@ -1333,17 +1555,123 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       cityData.updateFallingProps(delta);
       cityData.updateDynamicWorld?.(delta, currentTime / 1000);
 
-      // Hardened Building, Barricade, Traffic, Rival & Falling Prop Collision Resolution
-      const frameCollisions = collisionEngine.resolveWorldCollisions(
-        cs,
-        baseSpec.bodyWidth * 0.5,
-        baseSpec.bodyLength * 0.5,
-        cityData.collidableBuildings,
-        trafficEngine.getTrafficBoundingBoxes(),
-        rivalsEngine.isRaceActive ? rivalsEngine.getRivalsBoundingBoxes() : [],
-        cityData.barricades,
-        cityData.dynamicProps
-      );
+      // Build collider boxes for visible nearby remote online players so no cars ever clip through each other
+      remoteBoxesScratch.length = 0;
+      const remotePool = remoteCarMeshesRef.current;
+      for (const [pid, rEntry] of remotePool.entries()) {
+        if (
+          Math.abs(rEntry.x - cs.x) < 280 &&
+          Math.abs(rEntry.z - cs.z) < 280
+        ) {
+          remoteBoxesScratch.push({
+            id: pid,
+            x: rEntry.x,
+            y: rEntry.y,
+            z: rEntry.z,
+            width: rEntry.width,
+            length: rEntry.length,
+            rotation: rEntry.heading,
+            speed: rEntry.speed,
+            minX: rEntry.x - rEntry.width * 0.5,
+            maxX: rEntry.x + rEntry.width * 0.5,
+            minZ: rEntry.z - rEntry.length * 0.5,
+            maxZ: rEntry.z + rEntry.length * 0.5,
+          });
+        }
+      }
+
+      const trafficBoxes = trafficEngine.getTrafficBoundingBoxes();
+      const rivalBoxes = rivalsEngine.isRaceActive ? rivalsEngine.getRivalsBoundingBoxes() : [];
+
+      // Substepped + Multi-Iteration Physics Loop (prevents tunneling through thin walls, dividers & cars at any speed)
+      const substeps = Math.max(1, Math.min(8, Math.ceil(stepDistance / 0.65)));
+      const subVx = vx / substeps;
+      const subVz = vz / substeps;
+
+      let strongestBarrierHit: ReturnType<typeof enforceBridgeAndWaterBarriers> = null;
+      let strongestStaticHit: ReturnType<CollisionEngine['resolveWorldCollisions']>['primaryHit'] = null;
+      const strongestVehicleHits = new Map<
+        string,
+        ReturnType<CollisionEngine['resolveWorldCollisions']>['vehicleHits'][number]
+      >();
+      const triggeredPropIds = new Set<string>();
+      const collectedPropHits: ReturnType<CollisionEngine['resolveWorldCollisions']>['propHits'] = [];
+      let frameMaxImpactVelocity = 0;
+
+      for (let stepIdx = 0; stepIdx < substeps; stepIdx++) {
+        const nextX = cs.x + subVx;
+        const nextZ = cs.z + subVz;
+
+        if (nextX >= WORLD_BOUNDS.minX && nextX <= WORLD_BOUNDS.maxX) {
+          cs.x = nextX;
+        } else {
+          cs.x = Math.max(WORLD_BOUNDS.minX, Math.min(WORLD_BOUNDS.maxX, nextX));
+          cs.speed = -cs.speed * 0.25;
+        }
+
+        if (nextZ >= WORLD_BOUNDS.minZ && nextZ <= WORLD_BOUNDS.maxZ) {
+          cs.z = nextZ;
+        } else {
+          cs.z = Math.max(WORLD_BOUNDS.minZ, Math.min(WORLD_BOUNDS.maxZ, nextZ));
+          cs.speed = -cs.speed * 0.25;
+        }
+
+        // 2 constraint-solver iterations per substep so sliding into walls + traffic stays 100% solid
+        for (let iter = 0; iter < 2; iter++) {
+          const bHit = enforceBridgeAndWaterBarriers(cs, cs.y, baseSpec.bodyWidth * 0.5);
+          if (bHit) {
+            if (!strongestBarrierHit || bHit.impactVelocity > strongestBarrierHit.impactVelocity) {
+              strongestBarrierHit = bHit;
+            }
+            if (bHit.impactVelocity > frameMaxImpactVelocity) {
+              frameMaxImpactVelocity = bHit.impactVelocity;
+            }
+          }
+
+          const subCol = collisionEngine.resolveWorldCollisions(
+            cs,
+            baseSpec.bodyWidth * 0.5,
+            baseSpec.bodyLength * 0.5,
+            cityData.collidableBuildings,
+            trafficBoxes,
+            rivalBoxes,
+            cityData.barricades,
+            cityData.dynamicProps,
+            remoteBoxesScratch
+          );
+
+          if (subCol.maxImpactVelocity > frameMaxImpactVelocity) {
+            frameMaxImpactVelocity = subCol.maxImpactVelocity;
+          }
+
+          if (
+            subCol.primaryHit &&
+            (subCol.primaryHit.type === 'BUILDING' || subCol.primaryHit.type === 'BARRICADE') &&
+            (!strongestStaticHit ||
+              subCol.primaryHit.impactVelocity > strongestStaticHit.impactVelocity)
+          ) {
+            strongestStaticHit = subCol.primaryHit;
+          }
+
+          for (let vh = 0; vh < subCol.vehicleHits.length; vh++) {
+            const ev = subCol.vehicleHits[vh];
+            const prev = strongestVehicleHits.get(ev.otherId);
+            if (!prev || ev.impactVelocity > prev.impactVelocity) {
+              strongestVehicleHits.set(ev.otherId, ev);
+            }
+          }
+
+          for (let ph = 0; ph < subCol.propHits.length; ph++) {
+            const pEv = subCol.propHits[ph];
+            if (!triggeredPropIds.has(pEv.otherId)) {
+              triggeredPropIds.add(pEv.otherId);
+              collectedPropHits.push(pEv);
+            }
+          }
+
+          cs.y = resolveSurfaceY(cs.x, cs.z, cs.y);
+        }
+      }
 
       // Compute exact level-aware road/bridge/ramp elevation Y and heading-aligned pitch
       const carY = resolveSurfaceY(cs.x, cs.z, cs.y);
@@ -1357,42 +1685,61 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         playerCarGroupRef.current.rotation.x = bridgePitch;
       }
 
-      // Real-Time Car Denting & Physics Consequences (Barriers, Buildings, Vehicles, Falling Poles/Trees)
+      // Real-Time Car Denting, Car-Part Splash Debris & Physics Consequences
       const playerGroup = playerCarGroupRef.current;
-      if (barrierHit && playerGroup) {
-        const bSev = computeImpactSeverity(barrierHit.impactVelocity);
+      const playerPaintHex = currentCustom.paintColor || '#ef233c';
+
+      if (strongestBarrierHit && playerGroup) {
+        const bSev = computeImpactSeverity(strongestBarrierHit.impactVelocity);
         if (bSev > 0) {
-          tmpDentHit.set(barrierHit.hitX, carY + 0.58, barrierHit.hitZ);
-          tmpDentDir.set(barrierHit.normalX, -0.06, barrierHit.normalZ);
+          tmpDentHit.set(strongestBarrierHit.hitX, carY + 0.58, strongestBarrierHit.hitZ);
+          tmpDentDir.set(strongestBarrierHit.normalX, -0.06, strongestBarrierHit.normalZ);
           applyVehicleDent(playerGroup, tmpDentHit, tmpDentDir, bSev);
         }
+        spawnCrashSplash(
+          strongestBarrierHit.hitX,
+          carY,
+          strongestBarrierHit.hitZ,
+          strongestBarrierHit.normalX,
+          strongestBarrierHit.normalZ,
+          strongestBarrierHit.impactVelocity,
+          playerPaintHex,
+          0x64748b
+        );
       }
 
-      if (
-        frameCollisions.primaryHit &&
-        (frameCollisions.primaryHit.type === 'BUILDING' ||
-          frameCollisions.primaryHit.type === 'BARRICADE') &&
-        playerGroup
-      ) {
-        const sHit = frameCollisions.primaryHit;
+      if (strongestStaticHit && playerGroup) {
+        const sHit = strongestStaticHit;
         const sSev = computeImpactSeverity(sHit.impactVelocity);
         if (sSev > 0) {
           tmpDentHit.set(sHit.hitX, carY + 0.58, sHit.hitZ);
           tmpDentDir.set(sHit.normalX, -0.06, sHit.normalZ);
           applyVehicleDent(playerGroup, tmpDentHit, tmpDentDir, sSev);
         }
+        spawnCrashSplash(
+          sHit.hitX,
+          carY,
+          sHit.hitZ,
+          sHit.normalX,
+          sHit.normalZ,
+          sHit.impactVelocity,
+          playerPaintHex,
+          0x475569
+        );
       }
 
-      for (let i = 0; i < frameCollisions.vehicleHits.length; i++) {
-        const vHit = frameCollisions.vehicleHits[i];
+      for (const vHit of strongestVehicleHits.values()) {
         const vSev = computeImpactSeverity(vHit.impactVelocity);
         if (vSev > 0 && playerGroup) {
           tmpDentHit.set(vHit.hitX, carY + 0.58, vHit.hitZ);
           tmpDentDir.set(vHit.normalX, -0.05, vHit.normalZ);
           applyVehicleDent(playerGroup, tmpDentHit, tmpDentDir, vSev);
         }
-        // Apply physical push & dent to the struck traffic/rival vehicle as well
+
+        let otherColor: string | number | undefined = 0x334155;
         if (vHit.otherKind === 'TRAFFIC') {
+          const tCar = trafficEngine.vehicles.find((v) => v.id === vHit.otherId);
+          otherColor = tCar?.color;
           trafficEngine.applyImpactAndDent(
             vHit.otherId,
             vHit.otherPushX ?? 0,
@@ -1402,6 +1749,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             vSev
           );
         } else if (vHit.otherKind === 'RIVAL') {
+          const rCar = rivalsEngine.rivals.find((r) => r.id === vHit.otherId);
+          otherColor = rCar?.paintColor;
           rivalsEngine.applyImpactAndDent(
             vHit.otherId,
             vHit.otherPushX ?? 0,
@@ -1410,11 +1759,35 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             vHit.hitZ,
             vSev
           );
+        } else if (vHit.otherKind === 'PLAYER') {
+          const pEntry = remotePool.get(vHit.otherId);
+          if (pEntry) {
+            otherColor = pEntry.paintColor;
+            pEntry.x += vHit.otherPushX ?? 0;
+            pEntry.z += vHit.otherPushZ ?? 0;
+            pEntry.group.position.set(pEntry.x, pEntry.y, pEntry.z);
+            if (vSev > 0.05) {
+              tmpDentHit.set(vHit.hitX, pEntry.y + 0.58, vHit.hitZ);
+              tmpDentDir.set(-vHit.normalX, -0.05, -vHit.normalZ);
+              applyVehicleDent(pEntry.group, tmpDentHit, tmpDentDir, vSev);
+            }
+          }
         }
+
+        spawnCrashSplash(
+          vHit.hitX,
+          carY,
+          vHit.hitZ,
+          vHit.normalX,
+          vHit.normalZ,
+          Math.max(4.5, vHit.impactVelocity),
+          playerPaintHex,
+          otherColor
+        );
       }
 
-      for (let i = 0; i < frameCollisions.propHits.length; i++) {
-        const pHit = frameCollisions.propHits[i];
+      for (let i = 0; i < collectedPropHits.length; i++) {
+        const pHit = collectedPropHits[i];
         if (pHit.prop) {
           cityData.triggerPropFall(pHit.prop, -pHit.normalX, -pHit.normalZ, pHit.impactVelocity);
         }
@@ -1424,6 +1797,16 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           tmpDentDir.set(pHit.normalX, -0.04, pHit.normalZ);
           applyVehicleDent(playerGroup, tmpDentHit, tmpDentDir, pSev * 0.85);
         }
+        spawnCrashSplash(
+          pHit.hitX,
+          carY,
+          pHit.hitZ,
+          pHit.normalX,
+          pHit.normalZ,
+          pHit.impactVelocity,
+          playerPaintHex,
+          pHit.prop?.kind === 'STREETLIGHT' ? 0x94a3b8 : 0x7c5338
+        );
       }
 
       // Track sun shadow frustum & skyDome to player position (texel-snapped to prevent shimmer)
@@ -1470,10 +1853,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           }
         }
 
-        const maxImpactVel = Math.max(
-          frameCollisions.maxImpactVelocity,
-          barrierHit?.impactVelocity ?? 0
-        );
+        const maxImpactVel = frameMaxImpactVelocity;
         const hasHeavyImpact = maxImpactVel > 6;
         onMissionUpdateRef.current?.(
           delta,
@@ -1832,10 +2212,75 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         camera.lookAt(tmpLookTarget);
       }
 
-      // Remote Active Player Vehicles (Smooth interpolation + projected roof badge coords)
-      const remotePool = remoteCarMeshesRef.current;
+      // Damped camera impact jolt on collisions
+      const jolt = impactJoltRef.current;
+      if (jolt.intensity > 0.004) {
+        const shakeWave = Math.sin(currentTime * 0.065);
+        camera.position.x += jolt.dirX * jolt.intensity * shakeWave;
+        camera.position.y += Math.abs(shakeWave) * jolt.intensity * 0.42;
+        camera.position.z += jolt.dirZ * jolt.intensity * shakeWave;
+        jolt.intensity *= Math.exp(-15 * delta);
+      } else {
+        jolt.intensity = 0;
+      }
+
+      // Remote Active Player Vehicles (Smooth interpolation + collision sizes + anti-stacking spawn relocation)
       const incomingPeers = remotePlayersRef.current;
       const activeIds = new Set(incomingPeers.map((p) => p.playerId));
+
+      // One-shot check upon initial multiplayer presence hydration: if still parked at initial spawn
+      // and overlapping another online driver, slide immediately to a free Showroom Boulevard bay.
+      if (!relocatedSpawnRef.current && incomingPeers.length > 0) {
+        if (cs.distanceDriven < 1.2 && Math.abs(cs.speed) < 0.35) {
+          const peerOcc = incomingPeers.map((p) => {
+            const pSpec = VEHICLE_SPEC_PROFILES[p.vehicleModel] || VEHICLE_SPEC_PROFILES.SPORTS_COUPE;
+            return {
+              x: p.x,
+              y: p.y,
+              z: p.z,
+              width: pSpec.bodyWidth,
+              length: pSpec.bodyLength,
+              rotation: p.heading,
+            };
+          });
+          const clearHere = isSpawnPoseClear(cs.x, cs.z, cs.rotation, {
+            y: cs.y,
+            carHalfWidth: baseSpec.bodyWidth * 0.5,
+            carHalfLength: baseSpec.bodyLength * 0.5,
+            occupiedVehicles: peerOcc,
+            lateralMargin: 0.45,
+            longitudinalMargin: 0.75,
+          });
+          if (!clearHere) {
+            const freePose = findFreeSharedSpawnPose({
+              baseX: 0,
+              baseZ: 10 * WORLD_XZ_SCALE,
+              rotation: Math.PI,
+              carHalfWidth: baseSpec.bodyWidth * 0.5,
+              carHalfLength: baseSpec.bodyLength * 0.5,
+              occupiedVehicles: [...peerOcc, ...trafficBoxes],
+              buildings: cityData.collidableBuildings,
+              barricades: cityData.barricades,
+            });
+            cs.x = freePose.x;
+            cs.y = freePose.y;
+            cs.z = freePose.z;
+            cs.rotation = freePose.rotation;
+            if (playerCarGroupRef.current) {
+              playerCarGroupRef.current.position.set(cs.x, cs.y, cs.z);
+              playerCarGroupRef.current.rotation.y = cs.rotation;
+            }
+            onMotionSampleRef.current?.({
+              x: cs.x,
+              y: cs.y,
+              z: cs.z,
+              heading: cs.rotation,
+              speed: 0,
+            });
+          }
+        }
+        relocatedSpawnRef.current = true;
+      }
 
       for (const [pid, entry] of remotePool.entries()) {
         if (!activeIds.has(pid)) {
@@ -1847,6 +2292,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
       for (const peer of incomingPeers) {
         const mKey = `${peer.vehicleModel}|${peer.paintColor}`;
+        const pSpec = VEHICLE_SPEC_PROFILES[peer.vehicleModel] || VEHICLE_SPEC_PROFILES.SPORTS_COUPE;
         let entry = remotePool.get(peer.playerId);
         if (!entry || entry.modelKey !== mKey) {
           if (entry) {
@@ -1871,10 +2317,14 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             vehicle: remoteModel,
             wheelSpinAngle: 0,
             modelKey: mKey,
+            paintColor: peer.paintColor || '#ef233c',
+            width: pSpec.bodyWidth,
+            length: pSpec.bodyLength,
             x: peer.x,
             y: peer.y,
             z: peer.z,
             heading: peer.heading,
+            speed: peer.speed,
             nickname: peer.nickname,
             vehicleModel: peer.vehicleModel,
             worldRegion: peer.worldRegion,
@@ -1891,6 +2341,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
           entry.heading += angleDiff * lerpAlpha;
           entry.y = resolveSurfaceY(entry.x, entry.z, peer.y);
+          entry.speed = peer.speed;
           entry.distance = peer.distance;
           entry.worldRegion = peer.worldRegion;
           entry.speedKmh = Math.round(Math.abs(peer.speed) * 4.6);
@@ -1909,6 +2360,85 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           entry.group.rotation.y = entry.heading;
           entry.group.rotation.x = getBridgePitchAt(entry.x, entry.z, entry.heading, entry.y);
         }
+      }
+
+      // Advance Pooled 3D Crash Debris & Friction Sparks (zero per-frame heap allocation)
+      let debrisDirty = false;
+      for (let i = 0; i < MAX_DEBRIS; i++) {
+        const p = debrisPool[i];
+        if (!p.active) continue;
+        debrisDirty = true;
+        p.age += delta;
+        if (p.age >= p.maxLife) {
+          p.active = false;
+          debrisDummy.scale.set(0, 0, 0);
+          debrisDummy.updateMatrix();
+          debrisInst.setMatrixAt(i, debrisDummy.matrix);
+          continue;
+        }
+        p.vy -= 24.0 * delta;
+        p.x += p.vx * delta;
+        p.y += p.vy * delta;
+        p.z += p.vz * delta;
+        p.rx += p.vrx * delta;
+        p.ry += p.vry * delta;
+        p.rz += p.vrz * delta;
+
+        const floorY = resolveSurfaceY(p.x, p.z, p.y) + 0.07;
+        if (p.y < floorY) {
+          p.y = floorY;
+          p.vy = Math.abs(p.vy) * 0.42;
+          p.vx *= 0.72;
+          p.vz *= 0.72;
+          p.vrx *= 0.65;
+          p.vry *= 0.65;
+          p.vrz *= 0.65;
+        }
+
+        const lifeFrac = p.age / p.maxLife;
+        const shrink = lifeFrac > 0.7 ? Math.max(0, 1 - (lifeFrac - 0.7) / 0.3) : 1;
+        debrisDummy.position.set(p.x, p.y, p.z);
+        debrisDummy.rotation.set(p.rx, p.ry, p.rz);
+        debrisDummy.scale.set(p.scaleX * shrink, p.scaleY * shrink, p.scaleZ * shrink);
+        debrisDummy.updateMatrix();
+        debrisInst.setMatrixAt(i, debrisDummy.matrix);
+        tmpDebrisColor.setHex(p.colorHex);
+        debrisInst.setColorAt(i, tmpDebrisColor);
+      }
+      if (debrisDirty) {
+        debrisInst.instanceMatrix.needsUpdate = true;
+        if (debrisInst.instanceColor) debrisInst.instanceColor.needsUpdate = true;
+      }
+
+      let sparksDirty = false;
+      for (let i = 0; i < MAX_SPARKS; i++) {
+        const sp = sparkPool[i];
+        if (!sp.active) continue;
+        sparksDirty = true;
+        sp.age += delta;
+        if (sp.age >= sp.maxLife) {
+          sp.active = false;
+          debrisDummy.scale.set(0, 0, 0);
+          debrisDummy.updateMatrix();
+          sparkInst.setMatrixAt(i, debrisDummy.matrix);
+          continue;
+        }
+        sp.vy -= 18.0 * delta;
+        sp.x += sp.vx * delta;
+        sp.y += sp.vy * delta;
+        sp.z += sp.vz * delta;
+        const shrink = Math.max(0, 1 - sp.age / sp.maxLife);
+        debrisDummy.position.set(sp.x, sp.y, sp.z);
+        debrisDummy.rotation.set(0, Math.atan2(sp.vx, sp.vz), 0);
+        debrisDummy.scale.set(shrink, shrink, shrink);
+        debrisDummy.updateMatrix();
+        sparkInst.setMatrixAt(i, debrisDummy.matrix);
+        tmpDebrisColor.setHex(sp.colorHex);
+        sparkInst.setColorAt(i, tmpDebrisColor);
+      }
+      if (sparksDirty) {
+        sparkInst.instanceMatrix.needsUpdate = true;
+        if (sparkInst.instanceColor) sparkInst.instanceColor.needsUpdate = true;
       }
 
       renderer.render(scene, camera);
@@ -2015,6 +2545,13 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       rivalsEngine.dispose?.();
       skyGeo.dispose();
       skyMat.dispose();
+      scene.remove(debrisInst, sparkInst);
+      debrisGeo.dispose();
+      debrisMat.dispose();
+      debrisInst.dispose();
+      sparkGeo.dispose();
+      sparkMat.dispose();
+      sparkInst.dispose();
       markerTex.dispose();
       markerSpriteMat.dispose();
       beaconRingGeo.dispose();
