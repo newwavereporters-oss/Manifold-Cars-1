@@ -1002,15 +1002,78 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         )}
       </div>
 
-      {/* 4. ONLY ON-SCREEN DRIVING CONTROLS: ACCELERATION (GAS/BRAKE) & DIRECTIONS (LEFT/RIGHT) */}
-      {touchControlsEnabled && (
+      {/* 4. ON-SCREEN DRIVING CONTROLS: STEERING, ACCELERATION, TRANSMISSION GEAR & HORN ONLY */}
+      {touchControlsEnabled ? (
         <MobileTouchControls
           onVirtualInput={onVirtualInput || (() => {})}
           virtualInputState={virtualInputState}
           cameraMode={cameraMode}
           selectedGear={selectedGear}
+          onSelectGear={onSelectGear}
+          hornActive={hornActive}
+          onHornDown={onHornDown}
+          onHornUp={onHornUp}
           disabled={showGameMenu || showControlsHelp}
         />
+      ) : (
+        <div
+          className="flex items-center justify-between w-full pointer-events-auto gap-3"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {/* Left: Compact Transmission Gear Strip */}
+          <div
+            className="flex items-center gap-1 bg-[#071A2B]/94 p-1.5 rounded-xl border border-white/15 shadow-xl"
+            role="group"
+            aria-label="Transmission Gear Selector"
+          >
+            {TRANSMISSION_GEAR_ORDER.map((g, idx) => {
+              const prof = TRANSMISSION_GEAR_PROFILES[g];
+              const active = selectedGear === g;
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => onSelectGear(g)}
+                  title={`${prof.label} — ${prof.shortDesc} (Key ${idx + 1})`}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-black font-mono transition-colors cursor-pointer ${
+                    active
+                      ? g === 'D1'
+                        ? 'bg-[#EF233C] text-white shadow'
+                        : g === 'P'
+                        ? 'bg-amber-400 text-slate-950 shadow'
+                        : 'bg-sky-500 text-slate-950 shadow'
+                      : 'text-gray-300 hover:bg-white/10'
+                  }`}
+                >
+                  {g}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right: Compact Horn Button */}
+          <button
+            type="button"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              engineAudio.init();
+              onHornDown();
+            }}
+            onPointerUp={onHornUp}
+            onPointerCancel={onHornUp}
+            onPointerLeave={onHornUp}
+            onLostPointerCapture={onHornUp}
+            className={`px-4 py-2 rounded-xl border-2 flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl transition-colors cursor-pointer ${
+              hornActive
+                ? 'bg-yellow-400 border-yellow-200 text-slate-950'
+                : 'bg-[#071A2B]/94 border-amber-400/45 text-amber-300 hover:bg-[#0b233a]'
+            }`}
+            aria-label="Car Horn"
+          >
+            <Volume2 className="w-4 h-4" />
+            <span>Horn</span>
+          </button>
+        </div>
       )}
     </div>
   );
