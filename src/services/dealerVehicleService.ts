@@ -1,5 +1,23 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../utils/youtube';
+import { resolveDealerApprovalState } from './dealerOnboardingService';
+
+export function getDealerListingBlockReason(
+  accountStatus: unknown,
+  isVerified?: boolean | null,
+  dealerStatus?: unknown
+): string | null {
+  const resolved = resolveDealerApprovalState(accountStatus, isVerified, dealerStatus);
+  if (resolved.isApproved) return null;
+
+  if (resolved.accountStatus === 'suspended') {
+    return 'Your dealership account is currently suspended. Please contact MANIFOLD dealer support.';
+  }
+  if (resolved.approvalStatus === 'disapproved') {
+    return 'Your dealership account is not currently approved for vehicle listing. You still have full access to your dashboard, and listing will unlock once an administrator approves your account.';
+  }
+  return 'Your dealership account is pending admin approval. You can access your dashboard and profile now, and vehicle listing will unlock once an administrator approves your account.';
+}
 
 export interface DealerCarFormInput {
   brand_id?: string;
@@ -160,9 +178,9 @@ class DealerVehicleService {
         .eq('status', 'active')
         .maybeSingle();
 
-      const { data: dealerAcc } = await supabase
+      const { data: dealerAcc, error: dealerAccErr } = await supabase
         .from('dealer_accounts')
-        .select('dealer_id')
+        .select('dealer_id, account_status')
         .eq('user_id', session.user.id)
         .maybeSingle();
 
@@ -170,8 +188,41 @@ class DealerVehicleService {
         return { car: null, error: 'Vehicle listing is available to MANIFOLD dealer accounts.' };
       }
 
-      if (dealerAcc && dealerAcc.dealer_id !== dealerId) {
+      if (dealerAccErr || !dealerAcc) {
+        return { car: null, error: 'A registered dealership account is required to list vehicles.' };
+      }
+
+      if (dealerAcc.dealer_id !== dealerId) {
         return { car: null, error: 'Dealership authorization mismatch.' };
+      }
+
+      // Enforce Admin Approval Gate (dashboard login is allowed when unapproved, car listing is NOT)
+      let dealerVerified: boolean | null = null;
+      let dealerStatusCol: unknown = undefined;
+      const { data: dealerRow } = await supabase
+        .from('dealers')
+        .select('*')
+        .eq('id', dealerId)
+        .maybeSingle();
+
+      if (dealerRow) {
+        if (typeof (dealerRow as any).is_verified === 'boolean') {
+          dealerVerified = (dealerRow as any).is_verified;
+        } else if (typeof (dealerRow as any).verified_partner === 'boolean') {
+          dealerVerified = (dealerRow as any).verified_partner;
+        }
+        if ((dealerRow as any).dealer_status !== undefined && (dealerRow as any).dealer_status !== null) {
+          dealerStatusCol = (dealerRow as any).dealer_status;
+        }
+      }
+
+      const blockReason = getDealerListingBlockReason(
+        dealerAcc.account_status,
+        dealerVerified,
+        dealerStatusCol
+      );
+      if (blockReason) {
+        return { car: null, error: blockReason };
       }
 
       const id = `car-dlr-${Date.now()}`;
@@ -234,6 +285,12 @@ class DealerVehicleService {
       const { error: carError } = await supabase.from('cars').insert(insertPayload);
       if (carError) {
         console.error('Error inserting dealer car into public.cars:', carError);
+        if (carError.code === '42501') {
+          return {
+            car: null,
+            error: 'Your dealership account must be approved by an administrator before listing vehicles.',
+          };
+        }
         return { car: null, error: 'Failed to create vehicle record. Please try again.' };
       }
 
@@ -306,6 +363,47 @@ class DealerVehicleService {
         return { car: null, error: 'Vehicle not found or you do not have permission to modify it.' };
       }
 
+      // Prevent unapproved/disapproved dealers from submitting a vehicle for review
+      if (!isDraft) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+          return { car: null, error: 'Authentication required.' };
+        }
+        const { data: dealerAcc } = await supabase
+          .from('dealer_accounts')
+          .select('dealer_id, account_status')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        let dealerVerified: boolean | null = null;
+        let dealerStatusCol: unknown = undefined;
+        const { data: dealerRow } = await supabase
+          .from('dealers')
+          .select('*')
+          .eq('id', dealerId)
+          .maybeSingle();
+
+        if (dealerRow) {
+          if (typeof (dealerRow as any).is_verified === 'boolean') {
+            dealerVerified = (dealerRow as any).is_verified;
+          } else if (typeof (dealerRow as any).verified_partner === 'boolean') {
+            dealerVerified = (dealerRow as any).verified_partner;
+          }
+          if ((dealerRow as any).dealer_status !== undefined && (dealerRow as any).dealer_status !== null) {
+            dealerStatusCol = (dealerRow as any).dealer_status;
+          }
+        }
+
+        const blockReason = getDealerListingBlockReason(
+          dealerAcc?.account_status ?? 'pending',
+          dealerVerified,
+          dealerStatusCol
+        );
+        if (blockReason) {
+          return { car: null, error: blockReason };
+        }
+      }
+
       const title = `${input.year} ${input.make} ${input.model}${input.trim ? ` ${input.trim}` : ''}`;
       const vidId = input.youtube_url ? extractYouTubeVideoId(input.youtube_url) || '' : '';
       const thumb = vidId ? getYouTubeThumbnailUrl(vidId) : '';
@@ -363,6 +461,12 @@ class DealerVehicleService {
 
       if (carError) {
         console.error('Error updating dealer car in public.cars:', carError);
+        if (carError.code === '42501') {
+          return {
+            car: null,
+            error: 'Your dealership account must be approved by an administrator before submitting vehicles for review.',
+          };
+        }
         return { car: null, error: 'Failed to update vehicle record.' };
       }
 

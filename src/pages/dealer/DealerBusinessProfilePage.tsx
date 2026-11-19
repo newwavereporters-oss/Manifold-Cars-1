@@ -18,7 +18,10 @@ import {
   Phone,
   Mail,
   Info,
+  Clock,
+  XCircle,
 } from 'lucide-react';
+import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
 
 interface DealerBusinessProfilePageProps {
   navigate: (route: string) => void;
@@ -29,6 +32,12 @@ export const DealerBusinessProfilePage: React.FC<DealerBusinessProfilePageProps>
 }) => {
   const { dealerAccount, user } = useDealerAuth();
   const dealerId = dealerAccount?.dealerId;
+  const resolvedApproval = resolveDealerApprovalState(
+    dealerAccount?.accountStatus,
+    dealerAccount?.isVerified
+  );
+  const approvalStatus = dealerAccount?.approvalStatus ?? resolvedApproval.approvalStatus;
+  const isApproved = dealerAccount?.isApproved ?? resolvedApproval.isApproved;
 
   // Form State
   const [businessName, setBusinessName] = useState('');
@@ -165,6 +174,46 @@ export const DealerBusinessProfilePage: React.FC<DealerBusinessProfilePageProps>
           <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-xs text-red-800 animate-in fade-in">
             <AlertCircle className="w-5 h-5 text-[#EF233C] shrink-0" />
             <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {/* DEALER LISTING APPROVAL STATUS */}
+        {dealerAccount?.hasAccount && (
+          <div
+            className={`rounded-2xl p-4 sm:p-5 border flex items-start gap-3.5 ${
+              isApproved
+                ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+                : approvalStatus === 'disapproved'
+                ? 'bg-red-50 border-red-200 text-red-950'
+                : 'bg-amber-50 border-amber-200 text-amber-950'
+            }`}
+          >
+            {isApproved ? (
+              <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            ) : approvalStatus === 'disapproved' ? (
+              <XCircle className="w-5 h-5 text-[#EF233C] shrink-0 mt-0.5" />
+            ) : (
+              <Clock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+            )}
+            <div className="text-xs leading-relaxed">
+              <p className="font-extrabold">
+                {isApproved
+                  ? 'Account Approved for Vehicle Listing'
+                  : approvalStatus === 'disapproved'
+                  ? 'Vehicle Listing Currently Disapproved'
+                  : 'Account Pending Admin Approval for Vehicle Listing'}
+              </p>
+              <p className="mt-0.5 opacity-90">
+                {isApproved
+                  ? 'Your dealership is approved by MANIFOLD Admin to list vehicles and submit them for inspection review.'
+                  : 'You can update your dealership profile and manage your account at any time. Vehicle listing is controlled by Admin approval.'}
+              </p>
+              {dealerAccount?.approvalNotes && (
+                <p className="mt-1 font-semibold">
+                  Admin Note: <span className="font-normal">{dealerAccount.approvalNotes}</span>
+                </p>
+              )}
+            </div>
           </div>
         )}
 

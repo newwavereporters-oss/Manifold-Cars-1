@@ -23,7 +23,10 @@ import {
   Megaphone,
   MessageCircle,
   Loader2,
+  Lock,
+  XCircle,
 } from 'lucide-react';
+import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
 
 interface DealerCarsPageProps {
   navigate: (route: string) => void;
@@ -31,6 +34,12 @@ interface DealerCarsPageProps {
 
 export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
   const { dealerAccount } = useDealerAuth();
+  const resolvedApproval = resolveDealerApprovalState(
+    dealerAccount?.accountStatus,
+    dealerAccount?.isVerified
+  );
+  const approvalStatus = dealerAccount?.approvalStatus ?? resolvedApproval.approvalStatus;
+  const isApproved = dealerAccount?.isApproved ?? resolvedApproval.isApproved;
   const [cars, setCars] = useState<DealerCarRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,12 +141,59 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
 
           <button
             onClick={() => navigate('/dealer/cars/new')}
-            className="px-5 py-3 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-red-900/30 shrink-0"
+            className={`px-5 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shrink-0 ${
+              isApproved
+                ? 'bg-[#EF233C] hover:bg-[#D90429] text-white shadow-lg shadow-red-900/30'
+                : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
+            }`}
           >
-            <PlusCircle className="w-4 h-4" />
-            <span>List a Vehicle</span>
+            {isApproved ? <PlusCircle className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+            <span>{isApproved ? 'List a Vehicle' : 'Listing Locked (Approval Required)'}</span>
           </button>
         </div>
+
+        {/* NON-BLOCKING APPROVAL NOTICE */}
+        {!isApproved && (
+          <div
+            className={`p-4 sm:p-5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+              approvalStatus === 'disapproved'
+                ? 'bg-red-50 border-red-200 text-red-950'
+                : 'bg-amber-50 border-amber-200 text-amber-950'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              {approvalStatus === 'disapproved' ? (
+                <XCircle className="w-5 h-5 text-[#EF233C] shrink-0 mt-0.5" />
+              ) : (
+                <Clock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+              )}
+              <div className="text-xs leading-relaxed">
+                <p className="font-extrabold">
+                  {approvalStatus === 'disapproved'
+                    ? 'Car Listing Disapproved by Admin'
+                    : 'Car Listing Awaits Admin Approval'}
+                </p>
+                <p className="mt-0.5 opacity-90">
+                  {approvalStatus === 'disapproved'
+                    ? 'You still have full access to view and manage your account and existing inventory, but adding new cars or submitting vehicles for review is disabled until re-approved.'
+                    : 'You can browse your dealership dashboard and review existing records now. Adding new cars will unlock as soon as Admin approves your dealership account.'}
+                </p>
+                {dealerAccount?.approvalNotes && (
+                  <p className="mt-1 font-semibold">
+                    Admin Note: <span className="font-normal">{dealerAccount.approvalNotes}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/dealer/business-profile')}
+              className="px-3.5 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 text-xs font-bold shrink-0 hover:bg-gray-50 transition"
+            >
+              Business Profile
+            </button>
+          </div>
+        )}
 
         {/* GAME BILLBOARD QUOTA & WHATSAPP UPGRADE BAR */}
         <div className="bg-[#071A2B] text-white rounded-2xl p-4 sm:p-5 border border-white/10 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -237,13 +293,23 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
                   : 'Try adjusting your search query or status filter.'}
               </p>
               {cars.length === 0 && (
-                <button
-                  onClick={() => navigate('/dealer/cars/new')}
-                  className="mt-2 px-5 py-2.5 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase rounded-xl inline-flex items-center gap-2 transition"
-                >
-                  <PlusCircle className="w-4 h-4" />
-                  <span>List First Vehicle</span>
-                </button>
+                isApproved ? (
+                  <button
+                    onClick={() => navigate('/dealer/cars/new')}
+                    className="mt-2 px-5 py-2.5 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase rounded-xl inline-flex items-center gap-2 transition"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    <span>List First Vehicle</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => navigate('/dealer/dashboard')}
+                    className="mt-2 px-5 py-2.5 bg-[#071A2B] hover:bg-[#0B2239] text-white text-xs font-bold uppercase rounded-xl inline-flex items-center gap-2 transition"
+                  >
+                    <Lock className="w-4 h-4 text-amber-300" />
+                    <span>Return to Dashboard</span>
+                  </button>
+                )
               )}
             </div>
           ) : (

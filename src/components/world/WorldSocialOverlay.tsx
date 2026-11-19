@@ -296,7 +296,7 @@ export const WorldSocialOverlay: React.FC<WorldSocialOverlayProps> = ({
                 className="pointer-events-auto absolute top-0 left-0 px-3 py-1.5 rounded-xl bg-[#071A2B]/96 hover:bg-[#EF233C] border-2 border-emerald-400/90 text-white shadow-2xl transition-colors flex items-center gap-2 cursor-pointer group min-h-[34px]"
                 title={`Tap to interact with ${proj.nickname}`}
               >
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
                 <span className="text-xs sm:text-sm font-black tracking-wide max-w-[175px] truncate drop-shadow">
                   {proj.nickname}
                 </span>

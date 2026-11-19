@@ -23,7 +23,10 @@ import {
   ExternalLink,
   Sparkles,
   Megaphone,
+  Lock,
+  XCircle,
 } from 'lucide-react';
+import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
 
 interface DealerLayoutProps {
   children: React.ReactNode;
@@ -45,7 +48,12 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const businessName = dealerAccount?.businessName || 'MANIFOLD Dealership';
-  const status = dealerAccount?.accountStatus && dealerAccount.accountStatus !== 'pending' ? dealerAccount.accountStatus : 'active';
+  const resolvedApproval = resolveDealerApprovalState(
+    dealerAccount?.accountStatus,
+    dealerAccount?.isVerified
+  );
+  const approvalStatus = dealerAccount?.approvalStatus ?? resolvedApproval.approvalStatus;
+  const isApproved = dealerAccount?.isApproved ?? resolvedApproval.isApproved;
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard, route: '/dealer/dashboard' },
@@ -117,28 +125,43 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
               <span className="text-xs font-bold text-gray-200 tracking-tight leading-tight">
                 {businessName}
               </span>
-              <span className="text-[10px] text-gray-400">Verified Automobile Partner</span>
+              <span className="text-[10px] text-gray-400">
+                {isApproved
+                  ? 'Approved Automobile Partner'
+                  : approvalStatus === 'disapproved'
+                  ? 'Car Listing Disapproved · Dashboard Active'
+                  : approvalStatus === 'suspended'
+                  ? 'Account Suspended'
+                  : 'Pending Admin Approval · Dashboard Active'}
+              </span>
             </div>
           </div>
 
           {/* Right Header: Status Badge, Marketplace Link, Profile & Sign Out */}
           <div className="flex items-center gap-3">
-            {/* Account Status Badge */}
-            {status !== 'suspended' && status !== 'rejected' && (
+            {/* Account Approval Badge */}
+            {approvalStatus === 'approved' && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold uppercase tracking-wider">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>ACTIVE</span>
+                <span>APPROVED</span>
               </div>
             )}
-            {status === 'suspended' && (
+            {approvalStatus === 'pending' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[11px] font-bold uppercase tracking-wider">
+                <Clock className="w-3.5 h-3.5" />
+                <span>PENDING APPROVAL</span>
+              </div>
+            )}
+            {approvalStatus === 'disapproved' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/15 border border-red-400/30 text-red-300 text-[11px] font-bold uppercase tracking-wider">
+                <XCircle className="w-3.5 h-3.5" />
+                <span>DISAPPROVED</span>
+              </div>
+            )}
+            {approvalStatus === 'suspended' && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] font-bold uppercase tracking-wider">
                 <AlertTriangle className="w-3.5 h-3.5" />
                 <span>SUSPENDED</span>
-              </div>
-            )}
-            {status === 'rejected' && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-500/10 border border-gray-500/30 text-gray-400 text-[11px] font-bold uppercase tracking-wider">
-                <span>REJECTED</span>
               </div>
             )}
 
@@ -170,7 +193,14 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
                     <p className="text-xs font-bold text-white truncate">{businessName}</p>
                     <p className="text-[11px] text-gray-400 truncate mt-0.5">{user?.email}</p>
                     <div className="mt-1.5 inline-block text-[10px] font-semibold text-gray-300 bg-white/5 px-2 py-0.5 rounded">
-                      Status: <span className="capitalize text-amber-300">{status}</span>
+                      Listing Status:{' '}
+                      <span
+                        className={`capitalize ${
+                          isApproved ? 'text-emerald-300' : 'text-amber-300'
+                        }`}
+                      >
+                        {approvalStatus}
+                      </span>
                     </div>
                   </div>
 
@@ -200,10 +230,13 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
                         setProfileDropdownOpen(false);
                         navigate('/dealer/cars/new');
                       }}
-                      className="w-full text-left px-4 py-2 text-xs text-gray-200 hover:bg-white/5 flex items-center gap-2"
+                      className="w-full text-left px-4 py-2 text-xs text-gray-200 hover:bg-white/5 flex items-center justify-between gap-2"
                     >
-                      <PlusCircle className="w-3.5 h-3.5 text-gray-400" />
-                      List a New Vehicle
+                      <span className="flex items-center gap-2">
+                        <PlusCircle className="w-3.5 h-3.5 text-gray-400" />
+                        <span>List a New Vehicle</span>
+                      </span>
+                      {!isApproved && <Lock className="w-3 h-3 text-amber-300 shrink-0" />}
                     </button>
                   </div>
 
@@ -245,18 +278,25 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left ${
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left ${
                     isActive
                       ? 'bg-[#071A2B] text-white shadow-sm'
                       : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                   }`}
                 >
-                  <Icon
-                    className={`w-4 h-4 ${
-                      isActive ? 'text-[#EF233C]' : 'text-gray-400 group-hover:text-gray-600'
-                    }`}
-                  />
-                  <span>{item.label}</span>
+                  <span className="flex items-center gap-3 min-w-0">
+                    <Icon
+                      className={`w-4 h-4 shrink-0 ${
+                        isActive ? 'text-[#EF233C]' : 'text-gray-400 group-hover:text-gray-600'
+                      }`}
+                    />
+                    <span className="truncate">{item.label}</span>
+                  </span>
+                  {item.id === 'new-car' && !isApproved && (
+                    <span title="Requires Admin approval" className="shrink-0 flex items-center">
+                      <Lock className="w-3.5 h-3.5 text-amber-500" />
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -307,14 +347,19 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
                     <button
                       key={item.id}
                       onClick={() => handleNavClick(item)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left ${
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left ${
                         isActive
                           ? 'bg-[#071A2B] text-white'
                           : 'text-gray-700 hover:bg-gray-100'
                       }`}
                     >
-                      <Icon className={`w-4 h-4 ${isActive ? 'text-[#EF233C]' : 'text-gray-400'}`} />
-                      <span>{item.label}</span>
+                      <span className="flex items-center gap-3 min-w-0">
+                        <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#EF233C]' : 'text-gray-400'}`} />
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                      {item.id === 'new-car' && !isApproved && (
+                        <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      )}
                     </button>
                   );
                 })}

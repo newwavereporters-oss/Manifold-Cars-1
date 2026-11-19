@@ -209,7 +209,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
     yaw: number,
     title: string,
     subtitle: string,
-    span = 29.6
+    span = 33.6
   ) => {
     const g = new THREE.Group();
     g.position.set(x, y, z);
@@ -290,25 +290,25 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
   };
 
   // Third Mainland Bridge, Adekunle, Obalende, Ikoyi, Lekki, Ajah & Epe Gantries
-  addHighwayGantry(0, 0, -140 * S, 0, 'THIRD MAINLAND BRIDGE ▲', 'IYANA-OWORO • ADEKUNLE • MAINLAND', 29.6);
-  addHighwayGantry(0, 6.0, -225 * S, 0, 'LAGOS ISLAND ▲  |  ADEKUNLE RAMP ▶', 'KEEP RIGHT SOUTHBOUND FOR OBALENDE & IKOYI', 29.2);
-  addHighwayGantry(0, 6.0, -548 * S, 0, 'IYANA-OWORO INTERCHANGE', '◀ OSHODI   |   IKEJA ▲   |   LASU', 29.2);
-  addHighwayGantry(195 * S, 0, -130 * S, Math.PI / 2, 'ADEKUNLE INTERCHANGE', '◀ LAGOS ISLAND   |   IKOYI ▶   |   OBALENDE ▼', 29.6);
-  addHighwayGantry(396 * S, 0, -20 * S, Math.PI / 2, 'IKOYI - LEKKI LINK BRIDGE ▲', 'LEKKI PENINSULA • IKATE • AJAH • EPE', 29.6);
-  addHighwayGantry(692 * S, 0, 100 * S, Math.PI / 2, 'LEKKI - EPE EXPRESSWAY ▲', 'IKATE • ELEGANZA • VGC • AJAH • EPE', 29.6);
-  addHighwayGantry(1042 * S, 0, 100 * S, Math.PI / 2, 'AJAH EXPRESS FLYOVER ▲', 'OVERPASS TO EPE   |   SLIP ROAD: AJAH MARKET', 29.6);
-  addHighwayGantry(1310 * S, 0, 100 * S, Math.PI / 2, 'EPE LAGOON BRIDGE ▲', 'EPE TOWN • WATERFRONT MARINA', 29.6);
+  addHighwayGantry(0, 0, -140 * S, 0, 'THIRD MAINLAND BRIDGE ▲', 'IYANA-OWORO • ADEKUNLE • MAINLAND', 33.6);
+  addHighwayGantry(0, 6.0, -225 * S, 0, 'LAGOS ISLAND ▲  |  ADEKUNLE RAMP ▶', 'KEEP RIGHT SOUTHBOUND FOR OBALENDE & IKOYI', 32.4);
+  addHighwayGantry(0, 6.0, -548 * S, 0, 'IYANA-OWORO INTERCHANGE', '◀ OSHODI   |   IKEJA ▲   |   LASU', 32.4);
+  addHighwayGantry(195 * S, 0, -130 * S, Math.PI / 2, 'ADEKUNLE INTERCHANGE', '◀ LAGOS ISLAND   |   IKOYI ▶   |   OBALENDE ▼', 33.6);
+  addHighwayGantry(396 * S, 0, -20 * S, Math.PI / 2, 'IKOYI - LEKKI LINK BRIDGE ▲', 'LEKKI PENINSULA • IKATE • AJAH • EPE', 33.6);
+  addHighwayGantry(692 * S, 0, 100 * S, Math.PI / 2, 'LEKKI - EPE EXPRESSWAY ▲', 'IKATE • ELEGANZA • VGC • AJAH • EPE', 33.6);
+  addHighwayGantry(1042 * S, 0, 100 * S, Math.PI / 2, 'AJAH EXPRESS FLYOVER ▲', 'OVERPASS TO EPE   |   SLIP ROAD: AJAH MARKET', 33.6);
+  addHighwayGantry(1310 * S, 0, 100 * S, Math.PI / 2, 'EPE LAGOON BRIDGE ▲', 'EPE TOWN • WATERFRONT MARINA', 33.6);
 
   // Mainland & LASU Corridor Gantries
-  addHighwayGantry(-90 * S, 0, -640 * S, Math.PI / 2, '◀ OSHODI   |   IKEJA ▲', 'CONNECTS TO IYANA IPAJA • EGBEDA', 29.6);
-  addHighwayGantry(0, 0, -720 * S, 0, 'IKEJA BUSINESS DISTRICT ▲', 'ALAUSA SECRETARIAT • IKEJA MALL', 29.6);
-  addHighwayGantry(-215 * S, 0, -880 * S, Math.PI / 2, 'IYANA IPAJA JUNCTION', '◀ EGBEDA • IGANDO   |   OSHODI ▼', 29.6);
-  addHighwayGantry(-355 * S, 0, -855 * S, Math.PI * 0.43, 'EGBEDA COMMERCIAL AVE', '◀ IGANDO • AKESAN • LASU CAMPUS', 29.6);
-  addHighwayGantry(-615 * S, 0, -755 * S, Math.PI * 0.36, 'AKESAN & IGANDO EXPRESS', '◀ LASU MAIN GATE   |   EGBEDA ▶', 29.6);
-  addHighwayGantry(55 * S, 0, 185 * S, Math.PI / 2, 'MARINA FINANCIAL DISTRICT', 'UBA • WEMA • UAC TOWERS   |   BLUE LINE RAIL ▼', 29.6);
-  addHighwayGantry(70 * S, 0, -880 * S, Math.PI / 2, 'MURTALA MUHAMMED INTL AIRPORT ▲', 'GATE 1 TERMINAL   |   GATE 2 PRIVATE JETS', 29.6);
-  addHighwayGantry(-355 * S, 0, -630 * S, Math.PI / 2, 'MILE 2 INTERCHANGE & RAIL', 'BLUE LINE STATION   |   FESTAC • LASU • IYANOBA', 29.6);
-  addHighwayGantry(-1095 * S, 0, -640 * S, Math.PI / 2, 'IYANOBA TERMINUS & TOWN', 'BLUE LINE END STATION   |   DANFO & OKADA HUB', 29.6);
+  addHighwayGantry(-90 * S, 0, -640 * S, Math.PI / 2, '◀ OSHODI   |   IKEJA ▲', 'CONNECTS TO IYANA IPAJA • EGBEDA', 33.6);
+  addHighwayGantry(0, 0, -720 * S, 0, 'IKEJA BUSINESS DISTRICT ▲', 'ALAUSA SECRETARIAT • IKEJA MALL', 33.6);
+  addHighwayGantry(-215 * S, 0, -880 * S, Math.PI / 2, 'IYANA IPAJA JUNCTION', '◀ EGBEDA • IGANDO   |   OSHODI ▼', 33.6);
+  addHighwayGantry(-355 * S, 0, -855 * S, Math.PI * 0.43, 'EGBEDA COMMERCIAL AVE', '◀ IGANDO • AKESAN • LASU CAMPUS', 33.6);
+  addHighwayGantry(-615 * S, 0, -755 * S, Math.PI * 0.36, 'AKESAN & IGANDO EXPRESS', '◀ LASU MAIN GATE   |   EGBEDA ▶', 33.6);
+  addHighwayGantry(55 * S, 0, 185 * S, Math.PI / 2, 'MARINA FINANCIAL DISTRICT', 'UBA • WEMA • UAC TOWERS   |   BLUE LINE RAIL ▼', 33.6);
+  addHighwayGantry(70 * S, 0, -880 * S, Math.PI / 2, 'MURTALA MUHAMMED INTL AIRPORT ▲', 'GATE 1 TERMINAL   |   GATE 2 PRIVATE JETS', 33.6);
+  addHighwayGantry(-355 * S, 0, -630 * S, Math.PI / 2, 'MILE 2 INTERCHANGE & RAIL', 'BLUE LINE STATION   |   FESTAC • LASU • IYANOBA', 33.6);
+  addHighwayGantry(-1095 * S, 0, -640 * S, Math.PI / 2, 'IYANOBA TERMINUS & TOWN', 'BLUE LINE END STATION   |   DANFO & OKADA HUB', 33.6);
 
   // Roadside Confirmation Signs
   addRoadsideSign(175 * S, 16 * S, Math.PI / 2, 'OBALENDE', 'COMMERCIAL MARKET & BUS HUB');
@@ -535,7 +535,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
     const vgcGz = 44 * S;
     const vgcGate = new THREE.Group();
     vgcGate.position.set(vgcCx, 0, vgcGz);
-    [-15.2, 15.2].forEach((gx, idx) => {
+    [-16.8, 16.8].forEach((gx, idx) => {
       const tower = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.6, 9.6, 2.8)), texPack.stuccoCreamMat);
       tower.position.set(gx, 4.8, 0);
       tower.castShadow = true;
@@ -544,7 +544,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
       vgcGate.add(tower, cap);
       addBarricade(`VGC_GATE_TOWER_${idx}`, vgcCx + gx, 0, vgcGz, 1.35, 1.45, 0, 'GANTRY_PILLAR');
     });
-    const vgcBeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(33.0, 2.1, 2.4)), lasuEmeraldMat);
+    const vgcBeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(36.4, 2.1, 2.4)), lasuEmeraldMat);
     vgcBeam.position.set(0, 8.2, 0);
     const vgcTex = texPack.createSignTexture(
       'VICTORIA GARDEN CITY (VGC)',
@@ -570,7 +570,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
       cityGroup.add(w, top);
       addBarricade(`VGC_WALL_${vgcWallIdx++}`, wx, 0, wz, lx / 2 + 0.15, lz / 2 + 0.15, 0, 'WALL');
     };
-    const vgcGateHalfClear = 15.6;
+    const vgcGateHalfClear = 17.2;
     const vgcWingSpan = 54 * S - vgcGateHalfClear;
     buildVgcWall(vgcCx - vgcGateHalfClear - vgcWingSpan / 2, vgcGz, vgcWingSpan, 0.65);
     buildVgcWall(vgcCx + vgcGateHalfClear + vgcWingSpan / 2, vgcGz, vgcWingSpan, 0.65);
@@ -606,14 +606,15 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
     tollGroup.position.set(tollX, 0, tollZ);
     tollGroup.rotation.y = Math.PI / 2;
 
-    const canopy = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(33.0, 1.3, 6.4)), greenHwyMat);
+    const canopy = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(36.4, 1.3, 6.4)), greenHwyMat);
     canopy.position.set(0, 6.2, 0);
     canopy.castShadow = true;
 
-    const canopyTrim = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(33.4, 0.35, 6.6)), barrierYellowMat);
+    const canopyTrim = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(36.8, 0.35, 6.6)), barrierYellowMat);
     canopyTrim.position.set(0, 6.85, 0);
 
-    [-14.6, 0, 14.6].forEach((bx, idx) => {
+    // Outer shoulder toll kiosks ONLY — zero center-lane blockade inside the 27.6m expressway
+    [-16.2, 16.2].forEach((bx, idx) => {
       const booth = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.0, 3.2, 4.4)), texPack.stuccoCreamMat);
       booth.position.set(bx, 1.6, 0);
       const pillar = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.65, 6.0, 0.8)), steelDarkMat);
@@ -643,7 +644,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
     const epeGroup = new THREE.Group();
     epeGroup.position.set(epeX, 0, epeZ);
 
-    const plazaSlab = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(18, 0.35, 32)), texPack.sidewalkMat);
+    const plazaSlab = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(18, 0.35, 36)), texPack.sidewalkMat);
     plazaSlab.position.y = 0.15;
     plazaSlab.receiveShadow = true;
 
@@ -653,14 +654,14 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
     boardwalk.receiveShadow = true;
 
     const archL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.4, 8.2, 1.4)), lasuEmeraldMat);
-    archL.position.set(0, 4.1, -11.5);
+    archL.position.set(0, 4.1, -16.4);
     const archR = archL.clone();
-    archR.position.z = 11.5;
-    const archTop = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.8, 1.8, 25)), steelDarkMat);
+    archR.position.z = 16.4;
+    const archTop = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.8, 1.8, 35.4)), steelDarkMat);
     archTop.position.set(0, 8.4, 0);
 
-    addBarricade('EPE_ARCH_L', epeX, 0, epeZ - 11.5, 0.75, 0.75, 0, 'GANTRY_PILLAR');
-    addBarricade('EPE_ARCH_R', epeX, 0, epeZ + 11.5, 0.75, 0.75, 0, 'GANTRY_PILLAR');
+    addBarricade('EPE_ARCH_L', epeX, 0, epeZ - 16.4, 0.75, 0.75, 0, 'GANTRY_PILLAR');
+    addBarricade('EPE_ARCH_R', epeX, 0, epeZ + 16.4, 0.75, 0.75, 0, 'GANTRY_PILLAR');
 
     const epeTex = texPack.createSignTexture('EPE WATERFRONT', 'LAGOON MARINA & RESORT TERMINUS', {
       bg: '#0C4A6E',
@@ -1326,7 +1327,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
     gate.position.set(gateX, 0, gateZ);
     gate.rotation.y = Math.PI / 2;
 
-    [-15.0, 15.0].forEach((gx, idx) => {
+    [-16.8, 16.8].forEach((gx, idx) => {
       const tower = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.6, 11.2, 2.8)), texPack.stuccoCreamMat);
       tower.position.set(gx, 5.6, 0);
       tower.castShadow = true;
@@ -1342,7 +1343,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
       addBarricade(`LASU_GATE_TOWER_${idx}`, gateX, 0, gateZ - gx, 1.45, 1.35, 0, 'GANTRY_PILLAR');
     });
 
-    const portalSpan = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(32.8, 2.4, 2.4)), lasuEmeraldMat);
+    const portalSpan = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(36.4, 2.4, 2.4)), lasuEmeraldMat);
     portalSpan.position.set(0, 9.6, 0);
     portalSpan.castShadow = true;
 
@@ -1386,7 +1387,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
 
     const lasuTopZ = -772 * S;
     const lasuBotZ = -584 * S;
-    const gateGapZ = 15.6;
+    const gateGapZ = 17.2;
     const northWallLenZ = gateZ - gateGapZ - lasuTopZ;
     const southWallLenZ = lasuBotZ - (gateZ + gateGapZ);
     buildPerimeterWall(gateX, lasuTopZ + northWallLenZ / 2, 0.7, northWallLenZ);

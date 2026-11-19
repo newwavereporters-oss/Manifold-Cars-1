@@ -24,9 +24,16 @@ import {
   Info,
   ArrowLeft,
   TrendingUp,
+  Lock,
+  Clock,
+  XCircle,
+  Phone,
+  Building2,
+  LayoutDashboard,
 } from 'lucide-react';
 import { CarBrand, BodyTypeCategory } from '../../types';
 import { commissionService, CommissionCalculationResult } from '../../services/commissionService';
+import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
 
 interface DealerAddCarPageProps {
   navigate: (route: string) => void;
@@ -34,6 +41,15 @@ interface DealerAddCarPageProps {
 
 export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) => {
   const { dealerAccount } = useDealerAuth();
+  const resolvedApproval = resolveDealerApprovalState(
+    dealerAccount?.accountStatus,
+    dealerAccount?.isVerified,
+    dealerAccount?.dealerStatus
+  );
+  const approvalStatus = dealerAccount?.approvalStatus ?? resolvedApproval.approvalStatus;
+  const currentDealerStatus = dealerAccount?.dealerStatus ?? resolvedApproval.dealerStatus;
+  const isApproved =
+    currentDealerStatus === 'approved' && (dealerAccount?.isApproved ?? resolvedApproval.isApproved);
 
   // Dynamic Options Loaded from authoritative Supabase tables
   const [brands, setBrands] = useState<CarBrand[]>([]);
@@ -235,6 +251,10 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
 
   // Section 22: SAVE DRAFT (incomplete information allowed)
   const handleSaveDraft = async () => {
+    if (!isApproved) {
+      setSubmitError('Dealership approval (dealer_status = approved) is required before posting listings.');
+      return;
+    }
     if (!dealerAccount?.dealerId) {
       setSubmitError('Dealer identity not found. Please complete dealership onboarding.');
       return;
@@ -262,6 +282,10 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   // Section 21 & 23: VALIDATE AND OPEN REVIEW SUMMARY
   const handleInitiateReview = () => {
     setSubmitError(null);
+    if (!isApproved) {
+      setSubmitError('Dealership approval (dealer_status = approved) is required before submitting vehicles.');
+      return;
+    }
 
     if (!make.trim()) {
       setSubmitError('Vehicle Brand is required.');
@@ -297,6 +321,10 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
 
   // Section 23: SUBMIT VEHICLE FOR REVIEW
   const handleConfirmSubmitForReview = async () => {
+    if (!isApproved) {
+      setSubmitError('Dealership approval (dealer_status = approved) is required before submitting vehicles.');
+      return;
+    }
     if (!dealerAccount?.dealerId) {
       setSubmitError('Dealership authorization missing.');
       return;
@@ -323,6 +351,102 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
       setShowReviewModal(false);
     }
   };
+
+  if (dealerAccount && !isApproved) {
+    const businessName = dealerAccount.businessName || 'Your Dealership';
+    const isDisapproved = approvalStatus === 'disapproved';
+    return (
+      <DealerLayout currentRoute="/dealer/cars/new" navigate={navigate}>
+        <div className="max-w-2xl mx-auto py-8 space-y-6">
+          <button
+            onClick={() => navigate('/dealer/dashboard')}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 transition"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Dealer Dashboard</span>
+          </button>
+
+          <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-8 sm:p-10 text-center space-y-5">
+            <div
+              className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center border ${
+                isDisapproved
+                  ? 'bg-red-50 border-red-200 text-[#EF233C]'
+                  : 'bg-amber-50 border-amber-200 text-amber-600'
+              }`}
+            >
+              {isDisapproved ? <XCircle className="w-8 h-8" /> : <Clock className="w-8 h-8" />}
+            </div>
+
+            <div className="space-y-2">
+              <div
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider border ${
+                  isDisapproved
+                    ? 'bg-red-50 border-red-200 text-[#EF233C]'
+                    : 'bg-amber-50 border-amber-200 text-amber-800'
+                }`}
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>
+                  {isDisapproved ? 'Listing Disapproved by Admin' : 'Pending Admin Approval'}
+                </span>
+              </div>
+
+              <h1 className="text-2xl font-extrabold text-[#071A2B] tracking-tight">
+                Dealership Approval Required to List Cars
+              </h1>
+
+              <p className="text-xs sm:text-sm text-gray-600 leading-relaxed max-w-lg mx-auto">
+                {isDisapproved
+                  ? `Your dealership account (${businessName}) is currently disapproved for vehicle listing. You still have full access to your dealer dashboard and business profile, and car listing will unlock once an administrator approves your account.`
+                  : `Your dealership account (${businessName}) has dashboard access, but vehicle listing is locked until an administrator reviews and approves your account.`}
+              </p>
+            </div>
+
+            {dealerAccount.approvalNotes && (
+              <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 text-left text-xs text-gray-700 max-w-lg mx-auto">
+                <span className="font-bold uppercase text-[10px] tracking-wider text-gray-500 block mb-1">
+                  Administrator Note
+                </span>
+                <p>{dealerAccount.approvalNotes}</p>
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => navigate('/dealer/dashboard')}
+                className="w-full sm:w-auto px-5 py-3 bg-[#071A2B] hover:bg-[#0B2239] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition inline-flex items-center justify-center gap-2"
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                <span>Return to Dealer Dashboard</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate('/dealer/business-profile')}
+                className="w-full sm:w-auto px-5 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold uppercase tracking-wider rounded-xl transition inline-flex items-center justify-center gap-2"
+              >
+                <Building2 className="w-4 h-4" />
+                <span>Review Business Profile</span>
+              </button>
+
+              <a
+                href={`https://wa.me/2348169664607?text=${encodeURIComponent(
+                  `Hello MANIFOLD Admin, please review dealership approval for ${businessName} so we can list vehicles.`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-5 py-3 bg-[#25D366] hover:bg-[#1ebe5d] text-slate-950 text-xs font-extrabold uppercase tracking-wider rounded-xl transition inline-flex items-center justify-center gap-2"
+              >
+                <Phone className="w-4 h-4" />
+                <span>WhatsApp Admin</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </DealerLayout>
+    );
+  }
 
   return (
     <DealerLayout currentRoute="/dealer/cars/new" navigate={navigate}>

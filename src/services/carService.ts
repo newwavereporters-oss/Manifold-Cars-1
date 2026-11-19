@@ -48,7 +48,7 @@ function mapSupabaseToCar(row: any): Car {
   const dealerObj = row.dealers
     ? {
         id: row.dealers.id || row.dealer_id || 'dlr-partner-01',
-        name: row.dealers.name || row.dealer_name || 'MANIFOLD Verified Partner',
+        name: row.dealers.business_name || row.dealers.name || row.dealer_name || 'MANIFOLD Verified Partner',
         city: row.dealers.city || row.dealer_city || 'Lekki',
         state: row.dealers.state || row.dealer_state || 'Lagos',
         verified_partner: row.dealers.is_verified ?? true,

@@ -9,7 +9,6 @@ import {
   Palette,
   HelpCircle,
   ShoppingBag,
-  Car as CarIcon,
   Navigation,
   Compass,
   Coins,
@@ -29,11 +28,8 @@ import {
   Ban,
   LogOut,
   Building2,
-  ShieldCheck,
   Lightbulb,
   AlertTriangle,
-  ChevronDown,
-  ChevronUp,
   Radio,
   ArrowLeft,
   ArrowRight,
@@ -55,8 +51,6 @@ import { GameBillboardOverlay } from './GameBillboardOverlay';
 import { GameBillboardItem } from '../../services/billboardService';
 import {
   LAGOS_ROAD_NODES,
-  CITY_LANDMARKS,
-  WORLD_BOUNDS,
   findShortestRoadPathDetailed,
 } from './lagosCityData';
 import type { WebGLQualityMode } from '../../utils/webglPerformance';
@@ -207,8 +201,6 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   );
   const [showControlsHelp, setShowControlsHelp] = useState(false);
   const [showGameMenu, setShowGameMenu] = useState(false);
-  const [showPlayerMenu, setShowPlayerMenu] = useState(false);
-  const [showVehiclePanel, setShowVehiclePanel] = useState(false);
   const [touchControlsEnabled, setTouchControlsEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return (
@@ -245,39 +237,6 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
 
   const driveModes: AudioDriveMode[] = ['ECO', 'COMFORT', 'SPORT', 'TRACK', 'DRIFT'];
 
-  // Deduplicated Road Segments for Live Centered Minimap
-  const radarRoadEdges = useMemo(() => {
-    const seen = new Set<string>();
-    const list: {
-      key: string;
-      x1: number;
-      z1: number;
-      x2: number;
-      z2: number;
-      isDual: boolean;
-      isBridge: boolean;
-    }[] = [];
-    Object.values(LAGOS_ROAD_NODES).forEach((node) => {
-      node.neighbors.forEach((nId) => {
-        const nb = LAGOS_ROAD_NODES[nId];
-        if (!nb) return;
-        const key = [node.id, nb.id].sort().join('--');
-        if (seen.has(key)) return;
-        seen.add(key);
-        list.push({
-          key,
-          x1: node.x,
-          z1: node.z,
-          x2: nb.x,
-          z2: nb.z,
-          isDual: Boolean(node.isDualCarriageway && nb.isDualCarriageway),
-          isBridge: Boolean(node.isBridge || nb.isBridge),
-        });
-      });
-    });
-    return list;
-  }, []);
-
   // Live shortest-path GPS route & turn-by-turn guidance
   const gpsRouteInfo = useMemo(() => {
     if (!activeDestination) return null;
@@ -297,69 +256,304 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
     return bestName;
   }, [Math.round(carPosition.x / 10), Math.round(carPosition.z / 10)]);
 
-  const radarHalfSpan = 200;
-  const vbLeft = carPosition.x - radarHalfSpan;
-  const vbTop = carPosition.z - radarHalfSpan;
-  const vbSize = radarHalfSpan * 2;
   const formatDist = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`);
 
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between pt-[max(0.45rem,env(safe-area-inset-top))] px-[max(0.6rem,env(safe-area-inset-left))] pr-[max(0.6rem,env(safe-area-inset-right))] pb-2.5 sm:p-5 select-none z-20">
-      {/* 1. COMPACT TOP HUD BAR + FLOATING VEHICLE STATUS PILL */}
+      {/* 1. MINIMAL TOP CORNER MENU BUTTON + COLLAPSIBLE GAME DRAWER */}
       <div className="flex flex-col gap-1.5 sm:gap-2 w-full">
-        <header className="flex items-center justify-between w-full pointer-events-auto gap-1.5 sm:gap-2">
-          {/* Left: Compact Brand + Game Menu */}
-          <div className="relative flex items-center gap-1.5 sm:gap-2">
-            <div className="flex items-center gap-1.5 bg-[#071A2B]/94 px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg">
-              <CarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#EF233C] shrink-0" />
-              <span className="text-[11px] sm:text-xs font-black tracking-wider text-white">
-                MANIFOLD
+        <header className="flex items-center justify-between w-full pointer-events-auto gap-2">
+          <div className="relative" onPointerDown={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setShowGameMenu((p) => !p)}
+              className="min-h-[40px] flex items-center gap-2 bg-[#071A2B]/96 hover:bg-[#0b233a] px-3 py-1.5 rounded-xl border border-white/15 shadow-lg text-xs font-black uppercase tracking-wider text-white transition-colors cursor-pointer whitespace-nowrap"
+              aria-expanded={showGameMenu}
+              aria-label="Open Game Menu"
+            >
+              {showGameMenu ? (
+                <X className="w-4 h-4 text-[#EF233C]" />
+              ) : (
+                <Menu className="w-4 h-4 text-[#EF233C]" />
+              )}
+              <span>Menu</span>
+              <span className="text-[10px] font-mono font-bold text-slate-300 border-l border-white/15 pl-2 tabular-nums">
+                {speedKmh} KM/H · {selectedGear}
               </span>
-              <span className="hidden md:inline text-[9px] uppercase font-bold tracking-wider text-gray-400 border-l border-white/15 pl-2 truncate max-w-[140px]">
-                {currentProfile.name}
-              </span>
-            </div>
+              {nearbyPlayersCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-black leading-tight">
+                  {nearbyPlayersCount}
+                </span>
+              )}
+            </button>
 
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowGameMenu((p) => !p);
-                  setShowPlayerMenu(false);
-                  setShowVehiclePanel(false);
-                }}
-                className="min-h-[38px] sm:min-h-[40px] flex items-center gap-1.5 bg-[#071A2B]/96 hover:bg-[#0b233a] px-2.5 sm:px-3 py-1.5 rounded-xl border border-white/15 shadow-lg text-[11px] sm:text-xs font-black uppercase tracking-wider text-white transition-colors cursor-pointer whitespace-nowrap"
-              >
-                <Menu className="w-3.5 h-3.5 text-[#EF233C]" />
-                <span>Menu</span>
-                {nearbyPlayersCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-black leading-tight">
-                    {nearbyPlayersCount}
-                  </span>
-                )}
-              </button>
-
-              {showGameMenu && (
-                <div className="absolute top-full left-0 mt-2 w-68 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-140px)] overflow-y-auto bg-[#071A2B]/98 border border-white/15 rounded-2xl shadow-2xl p-2 z-50 space-y-1 text-xs">
-                  {onOpenNearbyDrivers && (
+            {showGameMenu && (
+              <div className="absolute top-full left-0 mt-2 w-80 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-110px)] overflow-y-auto bg-[#071A2B]/98 border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-3 text-xs">
+                {/* Driver Profile, Credits & Live Telemetry */}
+                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <User className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span className="font-black text-white truncate">{playerNickname}</span>
+                    </div>
+                    <span className="text-[10px] font-mono font-black text-amber-400 flex items-center gap-1 shrink-0">
+                      <Coins className="w-3 h-3" />
+                      {playerCredits.toLocaleString()} MC
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-300 font-mono">
+                    <span className="truncate">{currentProfile.name}</span>
+                    <span className="shrink-0">
+                      {speedKmh} KM/H · {rpm} RPM · {gear}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-sky-300 font-semibold">
+                    Area: {nearestAreaLabel}
+                  </div>
+                  {onOpenVehicleConfig && (
                     <button
                       type="button"
                       onClick={() => {
                         setShowGameMenu(false);
-                        onOpenNearbyDrivers();
+                        onOpenVehicleConfig();
                       }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                      className="w-full py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold flex items-center justify-between px-2.5 cursor-pointer"
                     >
-                      <span className="flex items-center gap-2">
-                        <Users className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Nearby Drivers</span>
+                      <span className="flex items-center gap-1.5">
+                        {lockStatus?.isLocked ? (
+                          <Lock className="w-3 h-3 text-amber-400" />
+                        ) : (
+                          <Unlock className="w-3 h-3 text-emerald-400" />
+                        )}
+                        <span>{lockStatus?.isLocked ? 'View Vehicle Lock' : 'Reconfigure Vehicle'}</span>
                       </span>
-                      <span className="text-[10px] font-mono text-emerald-400">
-                        {nearbyPlayersCount} online
+                      <span className="font-mono text-[10px] text-amber-300">
+                        {lockStatus?.isLocked ? lockStatus.hhmmss : 'Unlocked'}
                       </span>
                     </button>
                   )}
+                </div>
 
+                {/* Transmission Gear & Drive Mode */}
+                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-2.5">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1.5">
+                      Transmission Gear [1–5]
+                    </span>
+                    <div className="grid grid-cols-5 gap-1">
+                      {TRANSMISSION_GEAR_ORDER.map((g) => {
+                        const prof = TRANSMISSION_GEAR_PROFILES[g];
+                        const active = selectedGear === g;
+                        return (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() => onSelectGear(g)}
+                            title={`${prof.label} — ${prof.shortDesc}`}
+                            className={`py-1.5 rounded-lg text-[10px] font-black font-mono transition-colors cursor-pointer ${
+                              active
+                                ? g === 'D1'
+                                  ? 'bg-[#EF233C] text-white'
+                                  : g === 'P'
+                                  ? 'bg-amber-400 text-slate-950'
+                                  : 'bg-sky-500 text-slate-950'
+                                : 'bg-white/8 text-gray-300 hover:bg-white/15'
+                            }`}
+                          >
+                            {g}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1.5">
+                      Driving Mode
+                    </span>
+                    <div className="grid grid-cols-5 gap-1">
+                      {driveModes.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => onSelectDriveMode(m)}
+                          className={`py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors cursor-pointer ${
+                            driveMode === m
+                              ? 'bg-[#EF233C] text-white'
+                              : 'bg-white/8 text-gray-300 hover:bg-white/15'
+                          }`}
+                        >
+                          {m === 'COMFORT' ? 'CMFT' : m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Vehicle Systems (Engine, Lights, Indicators, Horn) */}
+                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-black uppercase text-gray-300">
+                    <span className="flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-[#EF233C]" />
+                      <span>Vehicle Systems</span>
+                    </span>
+                    <span className="font-mono text-gray-400">{currentProfile.horsepower} HP</span>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        engineAudio.init();
+                        onToggleEngine();
+                      }}
+                      className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                        isEngineRunning
+                          ? 'bg-red-600/90 border-red-400 text-white'
+                          : 'bg-white/5 border-white/10 text-gray-400'
+                      }`}
+                    >
+                      <Power className="w-3.5 h-3.5" />
+                      <span>{isEngineRunning ? 'Engine' : 'Off'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={onCycleHeadlights}
+                      className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                        headlightState === 'HIGH'
+                          ? 'bg-blue-600 border-blue-400 text-white'
+                          : headlightState === 'LOW'
+                          ? 'bg-emerald-600 border-emerald-400 text-white'
+                          : 'bg-white/5 border-white/10 text-gray-400'
+                      }`}
+                    >
+                      <Lightbulb className="w-3.5 h-3.5" />
+                      <span>{headlightState}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={onToggleHazard}
+                      className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                        hazardLights
+                          ? 'bg-amber-500 border-amber-300 text-slate-950'
+                          : 'bg-white/5 border-white/10 text-gray-400'
+                      }`}
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Hazard</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        engineAudio.init();
+                        onHornDown();
+                      }}
+                      onPointerUp={onHornUp}
+                      onPointerCancel={onHornUp}
+                      onPointerLeave={onHornUp}
+                      className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
+                        hornActive
+                          ? 'bg-yellow-400 border-yellow-200 text-slate-950'
+                          : 'bg-white/5 border-white/10 text-yellow-400'
+                      }`}
+                    >
+                      <Volume2 className="w-3.5 h-3.5" />
+                      <span>Horn</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="text-[10px] font-bold uppercase text-gray-400">Indicators</span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onToggleTurnSignal('LEFT')}
+                        className={`px-2.5 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 cursor-pointer ${
+                          turnSignal === 'LEFT'
+                            ? 'bg-amber-500 text-slate-950 border-amber-300'
+                            : 'bg-white/5 border-white/10 text-gray-300'
+                        }`}
+                      >
+                        <ArrowLeft className="w-3 h-3" />L
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onToggleTurnSignal('RIGHT')}
+                        className={`px-2.5 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 cursor-pointer ${
+                          turnSignal === 'RIGHT'
+                            ? 'bg-amber-500 text-slate-950 border-amber-300'
+                            : 'bg-white/5 border-white/10 text-gray-300'
+                        }`}
+                      >
+                        R<ArrowRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Audio & FM Radio */}
+                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-gray-300">
+                    <button
+                      type="button"
+                      onClick={toggleSound}
+                      className="flex items-center gap-1.5 text-white hover:text-emerald-300 cursor-pointer"
+                    >
+                      {isMuted ? (
+                        <VolumeX className="w-3.5 h-3.5 text-red-400" />
+                      ) : (
+                        <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                      )}
+                      <span>{isMuted ? 'Audio Muted (Tap to Unmute)' : 'Master Audio'}</span>
+                    </button>
+                    <span className="font-mono">{isMuted ? '0%' : `${masterVolume}%`}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={isMuted ? 0 : masterVolume}
+                    onChange={(e) => handleMasterVolumeChange(Number(e.target.value))}
+                    className="w-full accent-[#EF233C] h-1.5 bg-white/15 rounded-lg cursor-pointer"
+                  />
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="text-[10px] font-bold text-gray-300 flex items-center gap-1 shrink-0">
+                      <Radio className="w-3 h-3 text-emerald-400" />
+                      <span>Radio</span>
+                    </span>
+                    <select
+                      value={radioStation}
+                      onChange={(e) => {
+                        engineAudio.init();
+                        onSelectRadioStation(Number(e.target.value));
+                      }}
+                      className="flex-1 h-7 px-2 rounded-lg bg-white/10 border border-white/15 text-[10px] font-bold text-white outline-none"
+                    >
+                      {Object.entries(RADIO_STATION_NAMES).map(([id, name]) => (
+                        <option key={id} value={id} className="bg-[#071A2B] text-white">
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.round(radioVolume * 100)}
+                      onChange={(e) => onRadioVolumeChange(Number(e.target.value) / 100)}
+                      className="w-14 accent-emerald-400 h-1 bg-white/15 rounded-lg cursor-pointer"
+                      title="Radio Volume"
+                    />
+                  </div>
+                </div>
+
+                {/* World Actions: Map, Missions, Music, Tuning, Drivers */}
+                <div className="space-y-1">
                   {onOpenCityMap && (
                     <button
                       type="button"
@@ -367,7 +561,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                         setShowGameMenu(false);
                         onOpenCityMap();
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold cursor-pointer"
                     >
                       <MapIcon className="w-3.5 h-3.5 text-sky-400" />
                       <span>Lagos City GPS Map [M]</span>
@@ -381,7 +575,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                         setShowGameMenu(false);
                         onOpenMissions();
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold cursor-pointer"
                     >
                       <Flag className="w-3.5 h-3.5 text-amber-400" />
                       <span>Missions &amp; Street Races</span>
@@ -395,7 +589,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                         setShowGameMenu(false);
                         onOpenMusicLibrary();
                       }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold cursor-pointer"
                     >
                       <span className="flex items-center gap-2">
                         <Music className="w-3.5 h-3.5 text-cyan-400" />
@@ -415,28 +609,72 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                       setShowGameMenu(false);
                       onOpenCustomizer();
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold cursor-pointer"
                   >
                     <Palette className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Tuning &amp; Upgrades [C]</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowGameMenu(false);
-                      onCameraChange(cameraMode === 'CHASE' ? 'DRONE' : 'CHASE');
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
-                  >
-                    <span className="flex items-center gap-2">
-                      <Camera className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Camera View</span>
-                    </span>
-                    <span className="text-[10px] font-mono text-sky-300">{cameraMode}</span>
-                  </button>
+                  {onOpenNearbyDrivers && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGameMenu(false);
+                        onOpenNearbyDrivers();
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Users className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Nearby Drivers</span>
+                      </span>
+                      <span className="text-[10px] font-mono text-emerald-400">
+                        {nearbyPlayersCount} online
+                      </span>
+                    </button>
+                  )}
 
-                  <div className="px-3 py-1.5 flex items-center justify-between gap-2">
+                  {onOpenBlockedDrivers && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGameMenu(false);
+                        onOpenBlockedDrivers();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-gray-200 hover:bg-white/10 font-bold cursor-pointer"
+                    >
+                      <Ban className="w-3.5 h-3.5 text-red-400" />
+                      <span>Blocked Drivers</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Camera, Time, Touch Pedals, Quality & Reset */}
+                <div className="border-t border-white/10 pt-2 space-y-2">
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Camera</span>
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {cameraOptions.map((opt) => (
+                        <button
+                          key={opt.mode}
+                          type="button"
+                          onClick={() => onCameraChange(opt.mode)}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase cursor-pointer ${
+                            cameraMode === opt.mode
+                              ? 'bg-white text-slate-950'
+                              : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="px-1 flex items-center justify-between gap-2">
                     <span className="text-[10px] uppercase font-bold text-gray-400">
                       Time of Day
                     </span>
@@ -444,7 +682,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                       <button
                         type="button"
                         onClick={() => onTimeOfDayChange('DAYLIGHT')}
-                        className={`p-1 rounded-lg ${
+                        className={`p-1 rounded-lg cursor-pointer ${
                           timeOfDay === 'DAYLIGHT'
                             ? 'bg-amber-400 text-black'
                             : 'text-gray-400 hover:text-white'
@@ -456,7 +694,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                       <button
                         type="button"
                         onClick={() => onTimeOfDayChange('SUNSET')}
-                        className={`p-1 rounded-lg ${
+                        className={`p-1 rounded-lg cursor-pointer ${
                           timeOfDay === 'SUNSET'
                             ? 'bg-orange-500 text-white'
                             : 'text-gray-400 hover:text-white'
@@ -468,7 +706,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                       <button
                         type="button"
                         onClick={() => onTimeOfDayChange('MIDNIGHT')}
-                        className={`p-1 rounded-lg ${
+                        className={`p-1 rounded-lg cursor-pointer ${
                           timeOfDay === 'MIDNIGHT'
                             ? 'bg-indigo-600 text-white'
                             : 'text-gray-400 hover:text-white'
@@ -482,15 +720,12 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => {
-                      setTouchControlsEnabled((p) => !p);
-                      setShowGameMenu(false);
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                    onClick={() => setTouchControlsEnabled((p) => !p)}
+                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-left text-white hover:bg-white/10 font-bold cursor-pointer"
                   >
                     <span className="flex items-center gap-2">
                       <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Touch Pedals</span>
+                      <span>On-Screen Steering &amp; Gas</span>
                     </span>
                     <span className="text-[10px] font-mono text-gray-300">
                       {touchControlsEnabled ? 'ON' : 'OFF'}
@@ -498,7 +733,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                   </button>
 
                   {onQualityModeChange && (
-                    <div className="px-3 py-1.5 space-y-1.5 border-t border-white/10 mt-1 pt-2">
+                    <div className="px-1 space-y-1.5">
                       <span className="text-[10px] uppercase font-bold text-gray-400 block">
                         3D Graphics Quality
                       </span>
@@ -535,542 +770,94 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
                         setShowGameMenu(false);
                         onResetVehicle();
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-white hover:bg-white/10 font-bold"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-white hover:bg-white/10 font-bold cursor-pointer"
                     >
                       <RotateCcw className="w-3.5 h-3.5 text-gray-300" />
                       <span>Reset Vehicle [R]</span>
                     </button>
                   )}
-
-                  <div className="border-t border-white/10 pt-1 mt-1 space-y-1">
-                    {onOpenShowroomSample && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowGameMenu(false);
-                          onOpenShowroomSample();
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-200 hover:bg-white/10 font-semibold"
-                      >
-                        <Compass className="w-3.5 h-3.5 text-blue-400" />
-                        <span>Showroom Pavilion</span>
-                      </button>
-                    )}
-                    {onOpenDealerLounge && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowGameMenu(false);
-                          onOpenDealerLounge();
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-200 hover:bg-white/10 font-semibold"
-                      >
-                        <Building2 className="w-3.5 h-3.5 text-amber-400" />
-                        <span>VIP Dealer Lounge</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowGameMenu(false);
-                        onEnterMarketplace();
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-[#EF233C] hover:bg-white/10 font-black"
-                    >
-                      <ShoppingBag className="w-3.5 h-3.5" />
-                      <span>MANIFOLD Marketplace</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowGameMenu(false);
-                        setShowControlsHelp(true);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-300 hover:bg-white/10 font-semibold"
-                    >
-                      <HelpCircle className="w-3.5 h-3.5" />
-                      <span>Controls Guide</span>
-                    </button>
-                  </div>
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* Right: Credits (Desktop+) + Player Status + Mute Toggle */}
-          <div className="relative flex items-center gap-1.5 sm:gap-2">
-            <div className="hidden md:flex bg-[#071A2B]/94 px-3 py-1.5 rounded-xl border border-white/15 shadow-lg items-center gap-1.5 text-xs font-mono font-black text-amber-400">
-              <Coins className="w-3.5 h-3.5" />
-              <span className="tabular-nums">{playerCredits.toLocaleString()}</span>
-              <span className="text-[9px] text-gray-400 font-sans font-bold">MC</span>
-            </div>
-
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPlayerMenu((p) => !p);
-                  setShowGameMenu(false);
-                  setShowVehiclePanel(false);
-                }}
-                className="min-h-[38px] sm:min-h-[40px] flex items-center gap-1.5 bg-[#071A2B]/96 hover:bg-[#0b233a] px-2.5 sm:px-3 py-1.5 rounded-xl border border-white/15 shadow-lg text-[11px] sm:text-xs font-bold text-white cursor-pointer whitespace-nowrap"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                <User className="w-3.5 h-3.5 text-sky-400 hidden sm:inline" />
-                <span className="max-w-[78px] sm:max-w-[110px] truncate font-black">
-                  {playerNickname}
-                </span>
-              </button>
-
-              {showPlayerMenu && (
-                <div className="absolute top-full right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-140px)] overflow-y-auto bg-[#071A2B]/98 border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-2.5 text-xs">
-                  <div className="pb-2 border-b border-white/10">
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-white">{playerNickname}</span>
-                      <span className="text-[10px] font-bold text-emerald-400 uppercase">
-                        Online
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-amber-400 font-mono font-bold block mt-0.5">
-                      {playerCredits.toLocaleString()} MC Balance
-                    </span>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] font-black uppercase">
-                      <span className="flex items-center gap-1 text-gray-300">
-                        {lockStatus?.isLocked ? (
-                          <Lock className="w-3 h-3 text-amber-400" />
-                        ) : (
-                          <Unlock className="w-3 h-3 text-emerald-400" />
-                        )}
-                        <span>Vehicle Setup</span>
-                      </span>
-                      <span
-                        className={`font-mono ${
-                          lockStatus?.isLocked ? 'text-amber-300' : 'text-emerald-400'
-                        }`}
-                      >
-                        {lockStatus?.isLocked ? lockStatus.hhmmss : 'Unlocked'}
-                      </span>
-                    </div>
-
-                    {onOpenVehicleConfig && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowPlayerMenu(false);
-                          onOpenVehicleConfig();
-                        }}
-                        className="w-full py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold"
-                      >
-                        {lockStatus?.isLocked ? 'View Lock Countdown' : 'Reconfigure Vehicle'}
-                      </button>
-                    )}
-                  </div>
-
-                  {onOpenBlockedDrivers && (
+                {/* Portals, Marketplace, Guide & Sign Out */}
+                <div className="border-t border-white/10 pt-2 space-y-1">
+                  {onOpenShowroomSample && (
                     <button
                       type="button"
                       onClick={() => {
-                        setShowPlayerMenu(false);
-                        onOpenBlockedDrivers();
+                        setShowGameMenu(false);
+                        onOpenShowroomSample();
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-gray-200 hover:bg-white/10 font-bold"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-200 hover:bg-white/10 font-semibold cursor-pointer"
                     >
-                      <Ban className="w-3.5 h-3.5 text-red-400" />
-                      <span>Blocked Drivers</span>
+                      <Compass className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Showroom Pavilion</span>
                     </button>
                   )}
-
+                  {onOpenDealerLounge && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGameMenu(false);
+                        onOpenDealerLounge();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-200 hover:bg-white/10 font-semibold cursor-pointer"
+                    >
+                      <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                      <span>VIP Dealer Lounge</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
-                      setShowPlayerMenu(false);
+                      setShowGameMenu(false);
+                      onEnterMarketplace();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-[#EF233C] hover:bg-white/10 font-black cursor-pointer"
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    <span>MANIFOLD Marketplace</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGameMenu(false);
                       setShowControlsHelp(true);
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-gray-200 hover:bg-white/10 font-bold"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-gray-300 hover:bg-white/10 font-semibold cursor-pointer"
                   >
-                    <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Driving & Community Guide</span>
+                    <HelpCircle className="w-3.5 h-3.5" />
+                    <span>Driving &amp; Community Guide</span>
                   </button>
-
                   {onLogout && (
                     <button
                       type="button"
                       onClick={() => {
-                        setShowPlayerMenu(false);
+                        setShowGameMenu(false);
                         onLogout();
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-red-300 hover:bg-red-500/15 font-black"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-red-300 hover:bg-red-500/15 font-black cursor-pointer"
                     >
                       <LogOut className="w-3.5 h-3.5" />
                       <span>Sign Out of Game</span>
                     </button>
                   )}
                 </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={toggleSound}
-              className="min-w-[38px] min-h-[38px] sm:min-w-[40px] sm:min-h-[40px] p-1.5 sm:p-2 bg-[#071A2B]/96 hover:bg-white/10 rounded-xl border border-white/15 shadow-lg text-gray-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
-              title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
-              aria-label={isMuted ? 'Unmute Audio' : 'Mute Audio'}
-            >
-              {isMuted ? (
-                <VolumeX className="w-4 h-4 text-red-400" />
-              ) : (
-                <Volume2 className="w-4 h-4 text-emerald-400" />
-              )}
-            </button>
+              </div>
+            )}
           </div>
         </header>
 
-        {/* PROMINENT SUSPENDED DEALER ADVERTISING BILLBOARD IMMEDIATELY BELOW HEADER */}
+        {/* SUSPENDED DEALER ADVERTISING BILLBOARD */}
         <GameBillboardOverlay
           items={billboardItems}
           onOpenListing={(slug) => onOpenBillboardListing?.(slug)}
           onBrowseMarketplace={onEnterMarketplace}
-          hidden={showGameMenu || showPlayerMenu || showControlsHelp}
+          hidden={showGameMenu || showControlsHelp}
         />
 
-        {/* Drone Mode Subtle Interactive Guide */}
         {cameraMode === 'DRONE' && (
           <div className="hidden sm:flex self-center items-center gap-2 bg-[#071A2B]/92 px-3 py-1 rounded-xl border border-sky-400/30 text-[10px] font-bold text-sky-200 pointer-events-none">
             <span>DRONE VIEW — Drag anywhere to orbit · Scroll to zoom</span>
-          </div>
-        )}
-      </div>
-
-      {/* LEFT-SIDE VERTICAL CONTROL STACK (Clear of top billboard & bottom mobile pedals) */}
-      <div
-        className="absolute left-[max(0.6rem,env(safe-area-inset-left))] sm:left-5 top-[122px] sm:top-[152px] [@media(max-height:480px)]:top-[104px] z-20 pointer-events-auto flex flex-col items-start gap-1 sm:gap-1.5"
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        {/* Expandable Speed / Gear / Vehicle Systems Trigger */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => {
-              setShowVehiclePanel((p) => !p);
-              setShowGameMenu(false);
-              setShowPlayerMenu(false);
-            }}
-            className="min-h-[36px] flex items-center gap-2 bg-[#071A2B]/94 hover:bg-[#0b233a] px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg cursor-pointer"
-            title="Toggle Vehicle Controls"
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                isEngineRunning ? 'bg-emerald-400' : 'bg-red-400'
-              }`}
-            />
-            <span className="text-xs font-black text-[#EF233C] font-mono">{selectedGear}</span>
-            <span className="w-px h-3.5 bg-white/15" />
-            <div className="flex items-baseline gap-0.5 font-mono">
-              <span className="text-sm font-black text-white tabular-nums">{speedKmh}</span>
-              <span className="text-[8px] text-gray-400 font-bold">KM/H</span>
-            </div>
-            {showVehiclePanel ? (
-              <ChevronUp className="w-3.5 h-3.5 text-gray-300" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5 text-gray-300" />
-            )}
-          </button>
-
-          {/* Expandable Vehicle Systems Drawer */}
-          {showVehiclePanel && (
-            <div className="absolute left-0 top-full mt-2 sm:left-full sm:top-0 sm:mt-0 sm:ml-2 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-180px)] overflow-y-auto bg-[#071A2B]/98 border border-white/15 rounded-2xl shadow-2xl p-3 z-50 space-y-3 text-xs">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5 text-[#EF233C]" />
-                  <span>Vehicle Systems</span>
-                </span>
-                <span className="text-[10px] font-mono text-gray-400">{rpm} RPM</span>
-              </div>
-
-              {/* Primary Electrical & Horn Controls */}
-              <div className="grid grid-cols-4 gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    engineAudio.init();
-                    onToggleEngine();
-                  }}
-                  className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
-                    isEngineRunning
-                      ? 'bg-red-600/90 border-red-400 text-white'
-                      : 'bg-white/5 border-white/10 text-gray-400'
-                  }`}
-                >
-                  <Power className="w-3.5 h-3.5" />
-                  <span>{isEngineRunning ? 'Engine' : 'Off'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={onCycleHeadlights}
-                  className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
-                    headlightState === 'HIGH'
-                      ? 'bg-blue-600 border-blue-400 text-white'
-                      : headlightState === 'LOW'
-                      ? 'bg-emerald-600 border-emerald-400 text-white'
-                      : 'bg-white/5 border-white/10 text-gray-400'
-                  }`}
-                >
-                  <Lightbulb className="w-3.5 h-3.5" />
-                  <span>{headlightState}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={onToggleHazard}
-                  className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
-                    hazardLights
-                      ? 'bg-amber-500 border-amber-300 text-slate-950'
-                      : 'bg-white/5 border-white/10 text-gray-400'
-                  }`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>Hazard</span>
-                </button>
-
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    engineAudio.init();
-                    onHornDown();
-                  }}
-                  onPointerUp={onHornUp}
-                  onPointerCancel={onHornUp}
-                  onPointerLeave={onHornUp}
-                  className={`py-2 px-1 rounded-xl border flex flex-col items-center gap-1 text-[10px] font-black uppercase transition-colors cursor-pointer ${
-                    hornActive
-                      ? 'bg-yellow-400 border-yellow-200 text-slate-950'
-                      : 'bg-white/5 border-white/10 text-yellow-400'
-                  }`}
-                >
-                  <Volume2 className="w-3.5 h-3.5" />
-                  <span>Horn</span>
-                </button>
-              </div>
-
-              {/* Turn Indicators */}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] font-bold uppercase text-gray-400">Indicators</span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => onToggleTurnSignal('LEFT')}
-                    className={`px-2.5 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
-                      turnSignal === 'LEFT'
-                        ? 'bg-amber-500 text-slate-950 border-amber-300'
-                        : 'bg-white/5 border-white/10 text-gray-300'
-                    }`}
-                  >
-                    <ArrowLeft className="w-3 h-3" />L
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onToggleTurnSignal('RIGHT')}
-                    className={`px-2.5 py-1 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
-                      turnSignal === 'RIGHT'
-                        ? 'bg-amber-500 text-slate-950 border-amber-300'
-                        : 'bg-white/5 border-white/10 text-gray-300'
-                    }`}
-                  >
-                    R<ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Camera Mode Selector (Chase / Drone ONLY) */}
-              <div>
-                <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1.5">
-                  Camera Perspective
-                </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {cameraOptions.map((opt) => (
-                    <button
-                      key={opt.mode}
-                      type="button"
-                      onClick={() => onCameraChange(opt.mode)}
-                      className={`py-1.5 rounded-xl text-[11px] font-black uppercase transition-colors cursor-pointer ${
-                        cameraMode === opt.mode
-                          ? 'bg-white text-slate-950'
-                          : 'bg-white/8 text-gray-300 hover:bg-white/15'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Driving Mode Selector */}
-              <div>
-                <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1.5">
-                  Driving Mode
-                </span>
-                <div className="grid grid-cols-5 gap-1">
-                  {driveModes.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => onSelectDriveMode(m)}
-                      className={`py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors cursor-pointer ${
-                        driveMode === m
-                          ? 'bg-[#EF233C] text-white'
-                          : 'bg-white/8 text-gray-300 hover:bg-white/15'
-                      }`}
-                    >
-                      {m === 'COMFORT' ? 'CMFT' : m}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Sound & Audio Volume */}
-              <div className="space-y-1.5 pt-1 border-t border-white/10">
-                <div className="flex items-center justify-between text-[10px] font-bold text-gray-300">
-                  <span>Master Audio Volume</span>
-                  <span className="font-mono">{isMuted ? 'MUTED' : `${masterVolume}%`}</span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={isMuted ? 0 : masterVolume}
-                  onChange={(e) => handleMasterVolumeChange(Number(e.target.value))}
-                  className="w-full accent-[#EF233C] h-1.5 bg-white/15 rounded-lg cursor-pointer"
-                />
-
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <span className="text-[10px] font-bold text-gray-300 flex items-center gap-1 shrink-0">
-                    <Radio className="w-3 h-3 text-emerald-400" />
-                    <span>Radio</span>
-                  </span>
-                  <select
-                    value={radioStation}
-                    onChange={(e) => {
-                      engineAudio.init();
-                      onSelectRadioStation(Number(e.target.value));
-                    }}
-                    className="flex-1 h-7 px-2 rounded-lg bg-white/10 border border-white/15 text-[10px] font-bold text-white outline-none"
-                  >
-                    {Object.entries(RADIO_STATION_NAMES).map(([id, name]) => (
-                      <option key={id} value={id} className="bg-[#071A2B] text-white">
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={Math.round(radioVolume * 100)}
-                    onChange={(e) => onRadioVolumeChange(Number(e.target.value) / 100)}
-                    className="w-16 accent-emerald-400 h-1 bg-white/15 rounded-lg cursor-pointer"
-                    title="Radio Volume"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Quick Camera Mode Toggle */}
-        {cameraMode === 'DRONE' ? (
-          <button
-            type="button"
-            onClick={() => onCameraChange('CHASE')}
-            className="min-h-[34px] flex items-center gap-1.5 bg-[#EF233C] hover:bg-[#d90429] text-white px-2.5 py-1.5 rounded-xl shadow-lg text-[10px] sm:text-xs font-black uppercase tracking-wider cursor-pointer"
-          >
-            <Camera className="w-3.5 h-3.5" />
-            <span>Chase Cam</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onCameraChange('DRONE')}
-            className="min-h-[34px] flex items-center gap-1.5 bg-[#071A2B]/94 hover:bg-[#0b233a] text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg text-[10px] sm:text-[11px] font-bold uppercase cursor-pointer"
-            title="Switch to Drone Aerial Camera"
-          >
-            <Camera className="w-3.5 h-3.5 text-sky-400" />
-            <span>Drone</span>
-          </button>
-        )}
-
-        {/* Quick Left-Side Navigation Stack: Map, Missions, Music */}
-        <div className="flex flex-col items-start gap-1 sm:gap-1.5 [@media(max-height:480px)]:flex-row [@media(max-height:480px)]:flex-wrap">
-          {onOpenCityMap && (
-            <button
-              type="button"
-              onClick={onOpenCityMap}
-              className="min-h-[34px] flex items-center gap-1.5 bg-[#071A2B]/94 hover:bg-[#0b233a] text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
-              title="Lagos City GPS Map [M]"
-            >
-              <MapIcon className="w-3.5 h-3.5 text-sky-400" />
-              <span>Map</span>
-            </button>
-          )}
-          {onOpenMissions && (
-            <button
-              type="button"
-              onClick={onOpenMissions}
-              className="min-h-[34px] flex items-center gap-1.5 bg-[#071A2B]/94 hover:bg-[#0b233a] text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
-              title="Open Missions & Street Races"
-            >
-              <Flag className="w-3.5 h-3.5 text-amber-400" />
-              <span>Missions</span>
-            </button>
-          )}
-          {onOpenMusicLibrary && (
-            <button
-              type="button"
-              onClick={onOpenMusicLibrary}
-              className="min-h-[34px] flex items-center gap-1.5 bg-[#071A2B]/94 hover:bg-[#0b233a] text-gray-200 px-2.5 py-1.5 rounded-xl border border-white/15 shadow-lg text-[10px] font-bold uppercase cursor-pointer"
-              title="Open Manifold Music Library"
-            >
-              <Music className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Music</span>
-              {isMusicPlaying && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />}
-            </button>
-          )}
-        </div>
-
-        {/* Desktop Compact Transmission Strip (When touch pedals are off) */}
-        {!touchControlsEnabled && (
-          <div
-            className="hidden sm:flex items-center gap-1 bg-[#071A2B]/94 p-1 rounded-xl border border-white/15 shadow-xl"
-            role="group"
-            aria-label="Transmission Gear Selector"
-          >
-            {TRANSMISSION_GEAR_ORDER.map((g, idx) => {
-              const prof = TRANSMISSION_GEAR_PROFILES[g];
-              const active = selectedGear === g;
-              return (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => onSelectGear(g)}
-                  title={`${prof.label} — ${prof.shortDesc} (Key ${idx + 1})`}
-                  className={`px-2 py-1 rounded-lg text-[10px] font-black font-mono transition-colors cursor-pointer ${
-                    active
-                      ? g === 'D1'
-                        ? 'bg-[#EF233C] text-white shadow'
-                        : g === 'P'
-                        ? 'bg-amber-400 text-slate-950 shadow'
-                        : 'bg-sky-500 text-slate-950 shadow'
-                      : 'text-gray-300 hover:bg-white/10'
-                  }`}
-                >
-                  {g}
-                </button>
-              );
-            })}
           </div>
         )}
       </div>
@@ -1082,7 +869,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
             <div className="flex items-center gap-2">
               <Navigation className="w-5 h-5 text-[#EF233C]" />
               <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                MANIFOLD Driving & Camera Guide
+                MANIFOLD Driving &amp; Camera Guide
               </h3>
             </div>
             <button
@@ -1096,19 +883,19 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           <div className="grid grid-cols-2 gap-2.5 mt-4 text-xs">
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
               <span className="font-bold text-[#EF233C] block mb-0.5">W / ↑ / GAS</span>
-              <span className="text-gray-300 text-[11px]">Throttle & Dynamic Acceleration</span>
+              <span className="text-gray-300 text-[11px]">Throttle &amp; Dynamic Acceleration</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
               <span className="font-bold text-[#EF233C] block mb-0.5">S / ↓ / BRAKE</span>
-              <span className="text-gray-300 text-[11px]">Braking & Reverse Gear</span>
+              <span className="text-gray-300 text-[11px]">Braking &amp; Reverse Gear</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
               <span className="font-bold text-[#EF233C] block mb-0.5">A / D or ◀ / ▶</span>
               <span className="text-gray-300 text-[11px]">Steering Authority</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
-              <span className="font-bold text-amber-400 block mb-0.5">Spacebar / DRIFT</span>
-              <span className="text-gray-300 text-[11px]">Handbrake Drift (Sport/Drift)</span>
+              <span className="font-bold text-amber-400 block mb-0.5">Spacebar</span>
+              <span className="text-gray-300 text-[11px]">Handbrake Drift</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
               <span className="font-bold text-sky-400 block mb-0.5">1–5 Keys: Transmission</span>
@@ -1215,202 +1002,16 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         )}
       </div>
 
-      {/* 4. MOBILE THUMB DRIVING CONTROLS (Clean, Ergonomic, Safe-Area Bounded) */}
+      {/* 4. ONLY ON-SCREEN DRIVING CONTROLS: ACCELERATION (GAS/BRAKE) & DIRECTIONS (LEFT/RIGHT) */}
       {touchControlsEnabled && (
         <MobileTouchControls
           onVirtualInput={onVirtualInput || (() => {})}
           virtualInputState={virtualInputState}
           cameraMode={cameraMode}
-          driveMode={driveMode}
           selectedGear={selectedGear}
-          onSelectGear={onSelectGear}
-          speedKmh={speedKmh}
-          disabled={showGameMenu || showPlayerMenu || showControlsHelp}
+          disabled={showGameMenu || showControlsHelp}
         />
       )}
-
-      {/* 5. DESKTOP BOTTOM HUD BAR (Hidden when touch pedals active on compact viewports) */}
-      <footer
-        className={`${
-          touchControlsEnabled ? 'hidden xl:flex' : 'hidden sm:flex'
-        } items-end justify-between w-full pointer-events-auto gap-4`}
-      >
-        {/* Left: Simplified 2-Mode Camera Selector (Chase / Drone) */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-1 bg-[#071A2B]/94 p-1.5 rounded-xl border border-white/10 shadow-lg">
-            <div className="px-2 py-1 text-gray-400 text-xs font-bold uppercase flex items-center gap-1.5">
-              <Camera className="w-3.5 h-3.5" />
-              <span>Cam</span>
-            </div>
-            {cameraOptions.map((opt) => (
-              <button
-                key={opt.mode}
-                type="button"
-                onClick={() => onCameraChange(opt.mode)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${
-                  cameraMode === opt.mode
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-gray-300 hover:text-white'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2 bg-[#071A2B]/92 px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-gray-300 font-mono">
-            <span className="text-amber-300 font-bold">
-              GEAR: {selectedGear} ({TRANSMISSION_GEAR_PROFILES[selectedGear].label}) [1-5]
-            </span>
-            <span>•</span>
-            <span>MODE: {driveMode}</span>
-            <span>•</span>
-            <span>{currentProfile.horsepower} HP</span>
-          </div>
-        </div>
-
-        {/* Center: Live Centered Vector Road & GPS Minimap Radar */}
-        <div className="hidden lg:flex flex-col items-center bg-[#071A2B]/94 p-2 rounded-2xl border border-white/15 shadow-2xl">
-          <div
-            onClick={onOpenCityMap}
-            className="w-36 h-36 relative rounded-xl bg-[#04101d] overflow-hidden border border-white/15 cursor-pointer group"
-            title="Click to open Full Lagos Metro GPS Map [M]"
-          >
-            <svg viewBox={`${vbLeft} ${vbTop} ${vbSize} ${vbSize}`} className="w-full h-full">
-              <rect
-                x={WORLD_BOUNDS.minX - 250}
-                y={WORLD_BOUNDS.lagoonNorthZ}
-                width={WORLD_BOUNDS.maxX - WORLD_BOUNDS.minX + 600}
-                height={WORLD_BOUNDS.lagoonSouthZ - WORLD_BOUNDS.lagoonNorthZ}
-                fill="#0b3b59"
-                fillOpacity="0.65"
-              />
-              <rect
-                x={WORLD_BOUNDS.ikoyiChannelMinX}
-                y={WORLD_BOUNDS.lagoonSouthZ}
-                width={WORLD_BOUNDS.ikoyiChannelMaxX - WORLD_BOUNDS.ikoyiChannelMinX}
-                height={WORLD_BOUNDS.southOceanZ - WORLD_BOUNDS.lagoonSouthZ + 120}
-                fill="#0b3b59"
-                fillOpacity="0.65"
-              />
-              <rect
-                x={WORLD_BOUNDS.epeCreekMinX}
-                y={WORLD_BOUNDS.lagoonSouthZ}
-                width={WORLD_BOUNDS.epeCreekMaxX - WORLD_BOUNDS.epeCreekMinX}
-                height={WORLD_BOUNDS.southOceanZ - WORLD_BOUNDS.lagoonSouthZ + 120}
-                fill="#0b3b59"
-                fillOpacity="0.65"
-              />
-              <rect
-                x={WORLD_BOUNDS.epeBayMinX}
-                y={WORLD_BOUNDS.lagoonSouthZ}
-                width={WORLD_BOUNDS.maxX - WORLD_BOUNDS.epeBayMinX + 450}
-                height={WORLD_BOUNDS.southOceanZ - WORLD_BOUNDS.lagoonSouthZ + 120}
-                fill="#0b3b59"
-                fillOpacity="0.6"
-              />
-              <rect
-                x={WORLD_BOUNDS.minX - 250}
-                y={WORLD_BOUNDS.southOceanZ}
-                width={WORLD_BOUNDS.maxX - WORLD_BOUNDS.minX + 700}
-                height={350}
-                fill="#0b3b59"
-                fillOpacity="0.6"
-              />
-
-              {radarRoadEdges.map((e) => (
-                <line
-                  key={e.key}
-                  x1={e.x1}
-                  y1={e.z1}
-                  x2={e.x2}
-                  y2={e.z2}
-                  stroke={e.isBridge ? '#38bdf8' : e.isDual ? '#64748b' : '#475569'}
-                  strokeWidth={e.isDual ? 15 : 10}
-                  strokeLinecap="round"
-                />
-              ))}
-
-              {gpsRouteInfo && gpsRouteInfo.path.length >= 2 && (
-                <polyline
-                  points={gpsRouteInfo.path
-                    .map((pt) => `${pt.x.toFixed(1)},${pt.z.toFixed(1)}`)
-                    .join(' ')}
-                  fill="none"
-                  stroke="#10b981"
-                  strokeWidth="6"
-                  strokeDasharray="10 6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              )}
-
-              {CITY_LANDMARKS.map((lm) => (
-                <circle
-                  key={lm.id}
-                  cx={lm.x}
-                  cy={lm.z}
-                  r="7"
-                  fill={lm.color}
-                  stroke="#071A2B"
-                  strokeWidth="2"
-                />
-              ))}
-
-              <g
-                transform={`translate(${carPosition.x}, ${carPosition.z}) rotate(${
-                  180 - (carPosition.heading * 180) / Math.PI
-                })`}
-              >
-                <circle cx="0" cy="0" r="14" fill="rgba(250, 204, 21, 0.22)" />
-                <polygon
-                  points="0,-13 9,9 0,3 -9,9"
-                  fill="#facc15"
-                  stroke="#071A2B"
-                  strokeWidth="2"
-                />
-              </g>
-            </svg>
-
-            <div className="absolute top-1 left-1.5 px-1.5 py-0.5 rounded bg-black/55 text-[8px] font-extrabold uppercase text-sky-300 truncate max-w-[125px]">
-              {nearestAreaLabel}
-            </div>
-          </div>
-          <span className="text-[9px] text-gray-400 uppercase tracking-widest font-bold mt-1">
-            Lagos GPS Radar [M]
-          </span>
-        </div>
-
-        {/* Right: Racing Telemetry Cluster (Speedometer & RPM) */}
-        <div className="bg-[#071A2B]/94 px-5 py-3 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-6">
-          <div className="flex flex-col items-center">
-            <span className="text-[10px] text-gray-400 uppercase font-semibold">Gear</span>
-            <span className="text-2xl font-black text-[#EF233C] font-mono">{selectedGear}</span>
-            <span className="text-[9px] text-gray-400 font-mono">{gear}</span>
-          </div>
-
-          <div className="flex flex-col items-end">
-            <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-black text-white font-mono tabular-nums tracking-tight">
-                {speedKmh}
-              </span>
-              <span className="text-xs font-extrabold text-gray-400 uppercase">KM/H</span>
-            </div>
-
-            <div className="w-32 h-1.5 bg-white/10 rounded-full overflow-hidden mt-1">
-              <div
-                className={`h-full transition-all duration-75 rounded-full ${
-                  rpm > currentProfile.redlineRpm * 0.85 ? 'bg-red-500' : 'bg-emerald-400'
-                }`}
-                style={{ width: `${Math.min(100, (rpm / currentProfile.redlineRpm) * 100)}%` }}
-              />
-            </div>
-            <span className="text-[9px] text-gray-400 font-mono mt-0.5 tabular-nums">
-              {rpm} RPM
-            </span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };

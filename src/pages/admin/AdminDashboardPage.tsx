@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Car as CarIcon,
+  Shield,
   ShieldCheck,
   Compass,
   Video,
@@ -50,6 +51,8 @@ import { AdminModerationView } from '../../components/admin/AdminModerationView'
 import { AdminGamePlayersView } from '../../components/admin/AdminGamePlayersView';
 import { AdminBillboardView } from '../../components/admin/AdminBillboardView';
 import { AdminMissionsView } from '../../components/admin/AdminMissionsView';
+import { AdminDealersView } from '../../components/admin/AdminDealersView';
+import { AdminDealerManagement } from '../../components/admin/AdminDealerManagement';
 import { useAuth } from '../../context/AuthContext';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../../data/mockCars';
 import { Car, CarBrand, BodyTypeCategory } from '../../types';
@@ -58,7 +61,11 @@ import { mediaService, MediaVideoItem } from '../../services/mediaService';
 import { brandService } from '../../services/brandService';
 import { modelService } from '../../services/modelService';
 import { categoryService } from '../../services/categoryService';
-import { dealerService, DealerFullRecord } from '../../services/dealerService';
+import {
+  dealerService,
+  DealerFullRecord,
+  AdminDealerDirectoryResult,
+} from '../../services/dealerService';
 import { inquiryService, InquiryRecord, InquiryDetailedStatus } from '../../services/inquiryService';
 import { carHuntService, CarHuntRequestRecord } from '../../services/carHuntService';
 import { inspectionService, InspectionRecord } from '../../services/inspectionService';
@@ -82,6 +89,7 @@ export type AdminTabType =
   | 'models'
   | 'types'
   | 'dealers'
+  | 'dealer-management'
   | 'sales'
   | 'commissions'
   | 'intelligence'
@@ -109,6 +117,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     if (route.startsWith('/admin/brands')) return 'brands';
     if (route.startsWith('/admin/models')) return 'models';
     if (route.startsWith('/admin/types')) return 'types';
+    if (route.startsWith('/admin/dealer-management')) return 'dealer-management';
     if (route.startsWith('/admin/dealers')) return 'dealers';
     if (route.startsWith('/admin/media')) return 'media';
     if (route.startsWith('/admin/enquiries')) return 'concierge';
@@ -145,6 +154,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       models: '/admin/models',
       types: '/admin/types',
       dealers: '/admin/dealers',
+      'dealer-management': '/admin/dealer-management',
       sales: '/admin/sales',
       commissions: '/admin/commissions',
       intelligence: '/admin/market-intelligence',
@@ -166,6 +176,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [brands, setBrands] = useState<CarBrand[]>([]);
   const [bodyTypes, setBodyTypes] = useState<BodyTypeCategory[]>([]);
   const [dealers, setDealers] = useState<DealerFullRecord[]>([]);
+  const [dealerDirectory, setDealerDirectory] = useState<AdminDealerDirectoryResult>({
+    accounts: [],
+    migrationRequired: false,
+  });
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [commissions, setCommissions] = useState<CommissionRecord[]>([]);
 
@@ -246,6 +260,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         brandsRes,
         typesRes,
         dealersRes,
+        dealerDirectoryRes,
         salesRes,
         commRes,
         rulesRes,
@@ -256,6 +271,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         brandService.getBrands(),
         categoryService.getBodyTypes(),
         dealerService.getDealers(),
+        dealerService.getAllDealerAccountsForAdmin(),
         salesService.getSales(),
         salesService.getCommissions(),
         commissionService.getRules(),
@@ -267,6 +283,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       if (brandsRes.status === 'fulfilled') setBrands(brandsRes.value);
       if (typesRes.status === 'fulfilled') setBodyTypes(typesRes.value);
       if (dealersRes.status === 'fulfilled') setDealers(dealersRes.value);
+      if (dealerDirectoryRes.status === 'fulfilled') setDealerDirectory(dealerDirectoryRes.value);
       if (salesRes.status === 'fulfilled') setSales(salesRes.value);
       if (commRes.status === 'fulfilled') setCommissions(commRes.value);
       if (rulesRes.status === 'fulfilled') setCommissionRules(rulesRes.value);
@@ -600,6 +617,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setNewDealerEmail('');
       setNewDealerModal(false);
       notify(`Dealer "${created.name}" persisted to public.dealers!`);
+      const refreshedDirectory = await dealerService.getAllDealerAccountsForAdmin();
+      setDealerDirectory(refreshedDirectory);
     } catch (e: any) {
       notify(`Error: ${e.message}`);
     }
@@ -927,7 +946,24 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               }`}
             >
               <Building2 className="w-4 h-4" />
-              <span>Dealers ({dealers.length})</span>
+              <span>Dealers ({dealerDirectory.accounts.length || dealers.length})</span>
+              {dealerDirectory.accounts.filter((a) => a.approvalStatus === 'pending').length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold">
+                  {dealerDirectory.accounts.filter((a) => a.approvalStatus === 'pending').length} pending
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => handleTabChange('dealer-management')}
+              className={`py-3 px-1 border-b-2 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer ${
+                activeTab === 'dealer-management'
+                  ? 'border-[#EF233C] text-[#EF233C]'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              <Shield className="w-4 h-4" />
+              <span>Dealer Management</span>
             </button>
 
             <button
@@ -1730,55 +1766,24 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </div>
         )}
 
-        {/* TAB 7: PARTNER DEALERS (public.dealers) */}
+        {/* TAB 7: DEALER ACCOUNTS & APPROVALS */}
         {activeTab === 'dealers' && (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-gray-100 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-gray-900 text-sm">
-                  Partner Dealers (public.dealers)
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Confidential dealer contact details. NEVER exposed to public consumers on vehicle pages.
-                </p>
-              </div>
-              <button
-                onClick={() => setNewDealerModal(true)}
-                className="inline-flex items-center gap-1 text-xs font-bold text-white bg-[#EF233C] px-3 py-1.5 rounded-lg shadow"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Dealer</span>
-              </button>
-            </div>
+          <AdminDealersView
+            accounts={dealerDirectory.accounts}
+            migrationRequired={dealerDirectory.migrationRequired}
+            loading={loadingData}
+            onRefresh={loadLiveSupabaseData}
+            onOpenAddDealer={() => setNewDealerModal(true)}
+            onNotify={notify}
+          />
+        )}
 
-            <div className="divide-y divide-gray-100">
-              {dealers.map((d) => (
-                <div
-                  key={d.id}
-                  className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-gray-50/60 transition"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-sm text-gray-900">{d.name}</h4>
-                      <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                        Verified Partner
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {d.city}, {d.state} · Partner since {d.joined_year}
-                    </p>
-                    <div className="flex items-center gap-4 text-xs text-gray-600 mt-1">
-                      {d.phone && <span>Phone: {d.phone}</span>}
-                      {d.email && <span>Email: {d.email}</span>}
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-mono text-gray-400 bg-gray-100 px-2 py-1 rounded">
-                    ID: {d.id}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* TAB 7B: DEALER MANAGEMENT TABLE */}
+        {activeTab === 'dealer-management' && (
+          <AdminDealerManagement
+            onNotify={notify}
+            onStatusChanged={loadLiveSupabaseData}
+          />
         )}
 
         {/* TAB 8: SALES & COMMISSIONS */}

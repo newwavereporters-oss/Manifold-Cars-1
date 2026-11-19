@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS public.dealers (
   phone TEXT, -- NEVER exposed to public visitors
   email TEXT, -- NEVER exposed to public visitors
   is_verified BOOLEAN DEFAULT true,
+  dealer_status TEXT NOT NULL DEFAULT 'pending' CHECK (dealer_status IN ('pending', 'approved', 'disapproved')),
   joined_year INTEGER DEFAULT 2024,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -395,11 +396,11 @@ CREATE POLICY "Admins moderate cars" ON public.cars FOR UPDATE USING (public.is_
 CREATE POLICY "Admins delete cars" ON public.cars FOR DELETE USING (public.is_active_admin());
 
 -- PHASE 4: Admin MUST NOT list or create dealer vehicles (Section 1 Requirement)
--- Only active authenticated dealers may insert vehicles, and only with their own dealer_id
+-- Only Admin-approved authenticated dealers may insert vehicles, and only with their own dealer_id
 CREATE POLICY "Dealers insert own cars" ON public.cars
   FOR INSERT
   WITH CHECK (
-    public.is_active_dealer() AND
+    public.is_approved_dealer() AND
     dealer_id::TEXT = public.current_dealer_id() AND
     public.current_dealer_id() IS NOT NULL
   );
@@ -493,6 +494,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
+CREATE OR REPLACE FUNCTION public.is_approved_dealer()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.dealer_accounts da
+    LEFT JOIN public.dealers d ON d.id::TEXT = da.dealer_id::TEXT
+    WHERE da.user_id = auth.uid()
+      AND da.account_status = 'active'
+      AND COALESCE((to_jsonb(d)->>'is_verified')::BOOLEAN, true) = true
+      AND COALESCE(NULLIF(to_jsonb(d)->>'dealer_status', ''), 'approved') = 'approved'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
 -- Dealer Inquiries: Dealer can read inquiries only for vehicles they own
 CREATE POLICY "Dealers view inquiries for own cars" ON public.buyer_inquiries
   FOR SELECT
@@ -535,18 +551,30 @@ CREATE POLICY "Dealers manage own address" ON public.dealer_addresses
   USING (dealer_id::TEXT = public.current_dealer_id())
   WITH CHECK (dealer_id::TEXT = public.current_dealer_id());
 
+CREATE POLICY "Admins manage dealer accounts" ON public.dealer_accounts
+  FOR ALL
+  USING (public.is_active_admin())
+  WITH CHECK (public.is_active_admin());
+
 CREATE POLICY "Dealers view own account" ON public.dealer_accounts
   FOR SELECT
-  USING (user_id = auth.uid() OR dealer_id::TEXT = public.current_dealer_id());
+  USING (user_id = auth.uid() OR dealer_id::TEXT = public.current_dealer_id() OR public.is_active_admin());
 
 CREATE POLICY "Dealers view own cars" ON public.cars
   FOR SELECT
   USING (dealer_id::TEXT = public.current_dealer_id() OR status = 'PUBLISHED' OR public.is_active_admin());
 
-CREATE POLICY "Dealers manage own cars" ON public.cars
-  FOR ALL
+CREATE POLICY "Dealers update own cars" ON public.cars
+  FOR UPDATE
   USING (dealer_id::TEXT = public.current_dealer_id())
-  WITH CHECK (dealer_id::TEXT = public.current_dealer_id());
+  WITH CHECK (
+    dealer_id::TEXT = public.current_dealer_id() AND
+    (public.is_approved_dealer() OR status IN ('DRAFT', 'ARCHIVED', 'SOLD'))
+  );
+
+CREATE POLICY "Dealers delete own cars" ON public.cars
+  FOR DELETE
+  USING (dealer_id::TEXT = public.current_dealer_id());
 
 -- Notifications: Strict isolation by user_id = auth.uid()
 CREATE POLICY "Users read own notifications" ON public.notifications

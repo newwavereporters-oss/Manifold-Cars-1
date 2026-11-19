@@ -1467,6 +1467,84 @@ Message: ${JSON.stringify(trimmed)}`,
   return res.json({ allowed: true, severity: 'clean', action: 'allow', category: 'CLEAN', reason: null });
 });
 
+// ==============================================================================
+// 4C. DEALER APPROVAL MIGRATION STATUS & SQL SERVE
+// ==============================================================================
+app.get('/api/dealers/db-status', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const supabase = getSupabaseClient(authHeader);
+
+  if (!supabase) {
+    return res.json({
+      configured: false,
+      migrationRequired: true,
+      error: 'Supabase URL or Key not configured in environment.',
+    });
+  }
+
+  const checkRpcExists = async (fnName: string, args: Record<string, any>) => {
+    try {
+      const result = await Promise.race([
+        supabase.rpc(fnName, args),
+        new Promise<{ error: { code: string; message: string } }>((resolve) =>
+          setTimeout(
+            () => resolve({ error: { code: 'TIMEOUT', message: 'Supabase check timed out' } }),
+            2500
+          )
+        ),
+      ]);
+      const error = (result as any)?.error;
+      if (
+        error &&
+        (error.code === 'PGRST202' ||
+          error.code === '42883' ||
+          error.message?.includes('Could not find the function') ||
+          (error.message?.includes('function') && error.message?.includes('does not exist')))
+      ) {
+        return { exists: false, code: error.code, error: error.message };
+      }
+      if (error && (error.code === 'TIMEOUT' || error.code === 'FETCH_ERROR')) {
+        return { exists: false, code: error.code, error: error.message };
+      }
+      return { exists: true };
+    } catch (err: any) {
+      return { exists: false, code: 'FETCH_ERROR', error: err?.message || 'Fetch failed' };
+    }
+  };
+
+  const [listCheck, setStatusCheck, approvedFnCheck] = await Promise.all([
+    checkRpcExists('admin_list_dealer_accounts', {}),
+    checkRpcExists('admin_set_dealer_approval_status', { p_dealer_id: '', p_action: 'pending', p_reason: null }),
+    checkRpcExists('is_approved_dealer', {}),
+  ]);
+
+  const checks = {
+    'rpc:admin_list_dealer_accounts': listCheck,
+    'rpc:admin_set_dealer_approval_status': setStatusCheck,
+    'rpc:is_approved_dealer': approvedFnCheck,
+  };
+
+  const timedOut = Object.values(checks).every((c) => c.code === 'TIMEOUT' || c.code === 'FETCH_ERROR');
+  const allExist = Object.values(checks).every((c) => c.exists);
+
+  return res.json({
+    configured: true,
+    migrationRequired: timedOut ? false : !allExist,
+    networkUnreachable: timedOut,
+    checks,
+    migrationFilePath: 'src/db/dealer-approval-migration.sql',
+  });
+});
+
+app.get('/api/dealers/migration-sql', (_req: Request, res: Response) => {
+  const filePath = path.resolve(process.cwd(), 'src/db/dealer-approval-migration.sql');
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'text/plain');
+    return res.send(fs.readFileSync(filePath, 'utf-8'));
+  }
+  return res.status(404).send('-- Dealer approval migration SQL not found.');
+});
+
 // Start Server & Vite Middlewares
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';

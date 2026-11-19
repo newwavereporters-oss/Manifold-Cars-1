@@ -23,9 +23,11 @@ import {
   Info,
   ShieldAlert,
   TrendingUp,
+  Lock,
 } from 'lucide-react';
 import { CarBrand, BodyTypeCategory } from '../../types';
 import { commissionService, CommissionCalculationResult } from '../../services/commissionService';
+import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
 
 interface DealerEditCarPageProps {
   carId: string;
@@ -34,6 +36,12 @@ interface DealerEditCarPageProps {
 
 export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, navigate }) => {
   const { dealerAccount } = useDealerAuth();
+  const resolvedApproval = resolveDealerApprovalState(
+    dealerAccount?.accountStatus,
+    dealerAccount?.isVerified
+  );
+  const approvalStatus = dealerAccount?.approvalStatus ?? resolvedApproval.approvalStatus;
+  const isApproved = dealerAccount?.isApproved ?? resolvedApproval.isApproved;
 
   const [loading, setLoading] = useState(true);
   const [unauthorized, setUnauthorized] = useState(false);
@@ -242,6 +250,13 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
   const handleSave = async (isDraft: boolean) => {
     if (!dealerAccount?.dealerId) return;
 
+    if (!isDraft && !isApproved) {
+      setSubmitError(
+        'Your dealership account must be approved by an administrator before submitting vehicles for review.'
+      );
+      return;
+    }
+
     if (!isDraft) {
       if (!price.trim() || Number(price.replace(/[^0-9.]/g, '')) <= 0) {
         setSubmitError('Please specify a valid vehicle price.');
@@ -338,6 +353,22 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
             </p>
           </div>
         </div>
+
+        {!isApproved && (
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+            <Lock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-950 leading-relaxed">
+              <p className="font-bold">
+                {approvalStatus === 'disapproved'
+                  ? 'Dealership Account Disapproved for Listing'
+                  : 'Dealership Account Pending Admin Approval'}
+              </p>
+              <p className="mt-0.5">
+                You can update draft notes on existing records, but submitting vehicles for review is disabled until Admin approves your dealership account.
+              </p>
+            </div>
+          </div>
+        )}
 
         {submitError && (
           <div className="p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3">
@@ -835,15 +866,18 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
               <button
                 type="button"
                 onClick={() => handleSave(false)}
-                disabled={submitting}
-                className="flex-1 sm:flex-initial px-6 py-3 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-red-900/30"
+                disabled={submitting || !isApproved}
+                title={!isApproved ? 'Admin approval required before submitting for review' : undefined}
+                className="flex-1 sm:flex-initial px-6 py-3 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
+                ) : !isApproved ? (
+                  <Lock className="w-4 h-4" />
                 ) : (
                   <Send className="w-4 h-4" />
                 )}
-                <span>Submit for Review</span>
+                <span>{isApproved ? 'Submit for Review' : 'Approval Required'}</span>
               </button>
             </div>
           </div>

@@ -293,14 +293,46 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     });
   });
 
-  const distToNearestRoad = (px: number, pz: number): number => {
-    let minD = Infinity;
-    for (let i = 0; i < roadSegments.length; i++) {
-      const s = roadSegments[i];
-      const d = pointToSegmentDist(px, pz, s.aX, s.aZ, s.bX, s.bZ);
-      if (d < minD) minD = d;
+  const isGroundSegment = (s: RoadSegment): boolean => {
+    const isTmbSouthApproach =
+      (s.aId === 'N_YABA_TECH_JCT' && s.bId === 'N_TMB_FORK') ||
+      (s.bId === 'N_YABA_TECH_JCT' && s.aId === 'N_TMB_FORK');
+    const isTmbNorthApproach =
+      (s.aId === 'N_TMB_NORTH' && s.bId === 'N_IYANA_OWORO') ||
+      (s.bId === 'N_TMB_NORTH' && s.aId === 'N_IYANA_OWORO');
+    if (isTmbSouthApproach || isTmbNorthApproach) return true;
+    return s.aY === 0 && s.bY === 0 && !s.isBridge;
+  };
+
+  const groundRoadSegments = roadSegments.filter(isGroundSegment);
+  const groundRoadNodes = Object.values(LAGOS_ROAD_NODES).filter(
+    (node) => (node.y ?? 0) === 0 && !node.isBridge
+  );
+
+  // Signed clearance distance OUTSIDE the nearest ground road asphalt edge or intersection circle.
+  // Positive = clear of drivable asphalt; <= 0 = inside road carriageway.
+  const edgeDistToRoad = (px: number, pz: number): number => {
+    let minEdge = Infinity;
+    for (let i = 0; i < groundRoadSegments.length; i++) {
+      const s = groundRoadSegments[i];
+      const d = pointToSegmentDist(px, pz, s.aX, s.aZ, s.bX, s.bZ) - s.width * 0.5;
+      if (d < minEdge) minEdge = d;
     }
-    return minD;
+    for (let i = 0; i < groundRoadNodes.length; i++) {
+      const n = groundRoadNodes[i];
+      const isDual = Boolean(n.isDualCarriageway);
+      const isExpress = isDual || (n.speedLimit || 50) >= 65;
+      const jctRadius = isDual ? 16.8 : isExpress ? 14.2 : 13.0;
+      const d = Math.hypot(px - n.x, pz - n.z) - jctRadius;
+      if (d < minEdge) minEdge = d;
+    }
+    return minEdge;
+  };
+
+  // Normalized road-center equivalent distance (references 10.2m baseline half-width)
+  // so downstream thresholds (e.g. >= 15.2) guarantee >= 5.0m clear outside EVERY road width (including 27.6m dual carriageways).
+  const distToNearestRoad = (px: number, pz: number): number => {
+    return edgeDistToRoad(px, pz) + 10.2;
   };
 
   // =========================================================================
@@ -459,7 +491,7 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       }
     });
 
-    // Center Markings: Double yellow centerline flanking raised median on dual carriageways
+    // Center Markings: Clean double yellow centerline (no raised center-of-road concrete medians blocking crossings)
     const centerLineLen = Math.max(4, roadLength - 24.5);
     const yellowOffset = seg.isDualCarriageway ? 0.56 : 0.22;
     [-yellowOffset, yellowOffset].forEach((offset) => {
@@ -470,28 +502,6 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       yMesh.position.set(midX + rightX * offset, 0.024, midZ + rightZ * offset);
       cityGroup.add(yMesh);
     });
-
-    // Raised concrete median along dual carriageways & Expressways (HARDENED COLLIDER)
-    if ((seg.isDualCarriageway || seg.isExpressway) && centerLineLen > 24) {
-      const medianLen = Math.max(6, centerLineLen - 10);
-      const medW = seg.isDualCarriageway ? 0.72 : 0.48;
-      const medH = seg.isDualCarriageway ? 0.42 : 0.32;
-      const medianGeo = trackGeo(new THREE.BoxGeometry(medW, medH, medianLen));
-      const medianMesh = new THREE.Mesh(medianGeo, texPack.curbMat);
-      medianMesh.rotation.y = angle;
-      medianMesh.position.set(midX, medH * 0.5, midZ);
-      cityGroup.add(medianMesh);
-      addBarricade(
-        `MED_${seg.aId}_${seg.bId}`,
-        midX,
-        0,
-        midZ,
-        medW * 0.5,
-        medianLen * 0.5,
-        angle,
-        'MEDIAN'
-      );
-    }
 
     // Dashed white lane dividers & reflective road studs
     const dashStep = 7.0;
@@ -569,12 +579,12 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       const baseX = seg.aX + (seg.bX - seg.aX) * t;
       const baseZ = seg.aZ + (seg.bZ - seg.aZ) * t;
 
-      // Alternate or bilateral streetlights on expressways
+      // Alternate or bilateral streetlights strictly on sidewalk edge & clear of cross-streets
       const sides = seg.isExpressway ? [-1, 1] : [i % 2 === 0 ? 1 : -1];
       sides.forEach((s) => {
-        const lx = baseX + rightX * (s * (roadWidth / 2 + 1.55));
-        const lz = baseZ + rightZ * (s * (roadWidth / 2 + 1.55));
-        if (Math.hypot(lx - seg.aX, lz - seg.aZ) > 17.5 && Math.hypot(lx - seg.bX, lz - seg.bZ) > 17.5) {
+        const lx = baseX + rightX * (s * (roadWidth / 2 + 2.0));
+        const lz = baseZ + rightZ * (s * (roadWidth / 2 + 2.0));
+        if (edgeDistToRoad(lx, lz) >= 1.45) {
           lightTransforms.push({
             x: lx,
             y: 0,
@@ -584,12 +594,12 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
         }
       });
 
-      // Utility pole on opposite sidewalk for non-expressways
+      // Utility pole on opposite outer sidewalk edge strictly clear of intersecting roads
       if (!seg.isExpressway) {
         const uSide = i % 2 === 0 ? -1 : 1;
-        const ux = baseX + rightX * (uSide * (roadWidth / 2 + 3.4));
-        const uz = baseZ + rightZ * (uSide * (roadWidth / 2 + 3.4));
-        if (Math.hypot(ux - seg.aX, uz - seg.aZ) > 18 && Math.hypot(ux - seg.bX, uz - seg.bZ) > 18) {
+        const ux = baseX + rightX * (uSide * (roadWidth / 2 + 3.6));
+        const uz = baseZ + rightZ * (uSide * (roadWidth / 2 + 3.6));
+        if (edgeDistToRoad(ux, uz) >= 2.1) {
           utilityPoleTransforms.push({ x: ux, z: uz, angle });
         }
       }
@@ -819,78 +829,95 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       }
     });
 
-    // Dynamic Synchronized Traffic Signal Mast Poles at Signalized Intersections
+    // Dynamic Synchronized Traffic Signal Mast Poles placed STRICTLY on clear outer sidewalk corners
+    // using actual outgoing road sector bisectors so poles never drop inside skewed/T-junction roadways.
     const sigDef = signalDefByNode[node.id];
     if (sigDef) {
       const pMats = getSignalPhaseMats(node.id, sigDef.phaseOffsetSec);
-      const cornerOff = isDual ? 15.6 : 12.6;
-      const sigCorners = [
-        { ox: cornerOff, oz: cornerOff, rot: 0, axis: 'NS' as const },
-        { ox: -cornerOff, oz: -cornerOff, rot: Math.PI, axis: 'NS' as const },
-        { ox: -cornerOff, oz: cornerOff, rot: -Math.PI / 2, axis: 'EW' as const },
-        { ox: cornerOff, oz: -cornerOff, rot: Math.PI / 2, axis: 'EW' as const },
-      ];
-      sigCorners.forEach((sc) => {
+      const edgeAngles: number[] = [];
+      node.neighbors.forEach((nId) => {
+        const nb = LAGOS_ROAD_NODES[nId];
+        if (!nb || (nb.y ?? 0) > 0 || nb.isBridge) return;
+        const dx = nb.x - node.x;
+        const dz = nb.z - node.z;
+        if (Math.hypot(dx, dz) < 1) return;
+        let a = Math.atan2(dz, dx);
+        if (a < 0) a += Math.PI * 2;
+        edgeAngles.push(a);
+      });
+      edgeAngles.sort((a, b) => a - b);
+
+      const candidateBearings: number[] = [];
+      if (edgeAngles.length >= 2) {
+        for (let idx = 0; idx < edgeAngles.length; idx++) {
+          const a1 = edgeAngles[idx];
+          const a2 = idx + 1 < edgeAngles.length ? edgeAngles[idx + 1] : edgeAngles[0] + Math.PI * 2;
+          const gap = a2 - a1;
+          if (gap > 0.72) {
+            candidateBearings.push(a1 + gap * 0.5);
+          }
+        }
+      } else if (edgeAngles.length === 1) {
+        candidateBearings.push(edgeAngles[0] + Math.PI * 0.35, edgeAngles[0] - Math.PI * 0.35);
+      } else {
+        candidateBearings.push(Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75);
+      }
+
+      candidateBearings.slice(0, 4).forEach((theta) => {
+        const dirX = Math.cos(theta);
+        const dirZ = Math.sin(theta);
+        let placedX: number | null = null;
+        let placedZ: number | null = null;
+
+        // Probe outward from junction edge until completely clear of ALL road carriageways (>= 2.2m margin)
+        for (let r = jctRadius + 2.6; r <= jctRadius + 12.0; r += 1.2) {
+          const tx = node.x + dirX * r;
+          const tz = node.z + dirZ * r;
+          if (edgeDistToRoad(tx, tz) >= 2.2) {
+            placedX = tx;
+            placedZ = tz;
+            break;
+          }
+        }
+
+        if (placedX === null || placedZ === null) return;
+
+        // Determine dominant traffic axis facing the pole
+        const isNsCorner = Math.abs(dirZ) >= Math.abs(dirX);
+        const inwardYaw = Math.atan2(-dirX, -dirZ) - Math.PI * 0.5;
+
         const sigGroup = new THREE.Group();
-        sigGroup.position.set(node.x + sc.ox, 0, node.z + sc.oz);
-        sigGroup.rotation.y = sc.rot;
+        sigGroup.position.set(placedX, 0, placedZ);
+        sigGroup.rotation.y = inwardYaw;
 
-        const sigPole = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.11, 0.14, 4.9, 8)), steelDarkMat);
-        sigPole.position.y = 2.45;
-        const sigArm = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.8, 0.14, 0.14)), steelDarkMat);
-        sigArm.position.set(-1.2, 4.75, 0);
+        const sigPole = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.11, 0.14, 6.0, 8)), steelDarkMat);
+        sigPole.position.y = 3.0;
+        const sigArm = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.6, 0.14, 0.14)), steelDarkMat);
+        sigArm.position.set(-1.1, 5.85, 0);
         const headBox = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.46, 1.35, 0.34)), darkMetalMat);
-        headBox.position.set(-2.2, 4.25, 0);
+        headBox.position.set(-2.0, 5.35, 0);
 
-        const rMat = sc.axis === 'NS' ? pMats.nsRed : pMats.ewRed;
-        const aMat = sc.axis === 'NS' ? pMats.nsAmber : pMats.ewAmber;
-        const gMat = sc.axis === 'NS' ? pMats.nsGreen : pMats.ewGreen;
+        const rMat = isNsCorner ? pMats.nsRed : pMats.ewRed;
+        const aMat = isNsCorner ? pMats.nsAmber : pMats.ewAmber;
+        const gMat = isNsCorner ? pMats.nsGreen : pMats.ewGreen;
 
         const addLensPair = (yPos: number, mat: THREE.MeshBasicMaterial) => {
           const lensF = new THREE.Mesh(trackGeo(new THREE.CircleGeometry(0.13, 10)), mat);
-          lensF.position.set(-2.2, yPos, 0.18);
+          lensF.position.set(-2.0, yPos, 0.18);
           const lensB = lensF.clone();
           lensB.position.z = -0.18;
           lensB.rotation.y = Math.PI;
           sigGroup.add(lensF, lensB);
         };
-        addLensPair(4.65, rMat);
-        addLensPair(4.25, aMat);
-        addLensPair(3.85, gMat);
+        addLensPair(5.75, rMat);
+        addLensPair(5.35, aMat);
+        addLensPair(4.95, gMat);
 
         sigGroup.add(sigPole, sigArm, headBox);
         cityGroup.add(sigGroup);
       });
     }
   });
-
-  // Sabo Central Roundabout Architectural Island (Center of N_CENTRAL_JCT [0, 0])
-  {
-    const islandGroup = new THREE.Group();
-    islandGroup.position.set(0, 0, 0);
-    const islandCurb = new THREE.Mesh(
-      trackGeo(new THREE.CylinderGeometry(2.8, 3.0, 0.32, 24)),
-      texPack.curbMat
-    );
-    islandCurb.position.y = 0.16;
-    const islandTurf = new THREE.Mesh(
-      trackGeo(new THREE.CylinderGeometry(2.45, 2.45, 0.36, 24)),
-      texPack.medianGrassMat
-    );
-    islandTurf.position.y = 0.18;
-    const monumentPlinth = new THREE.Mesh(
-      trackGeo(new THREE.CylinderGeometry(0.95, 1.2, 0.9, 12)),
-      steelDarkMat
-    );
-    monumentPlinth.position.y = 0.65;
-    const monumentFin = new THREE.Mesh(
-      trackGeo(new THREE.ConeGeometry(0.55, 2.4, 6)),
-      goldAccentMat
-    );
-    monumentFin.position.y = 2.25;
-    islandGroup.add(islandCurb, islandTurf, monumentPlinth, monumentFin);
-    cityGroup.add(islandGroup);
-  }
 
   // =========================================================================
   // 3. ARCHITECTURAL BUILDINGS (EXISTING + PLAYABLE INFILL BLOCKS)
@@ -1402,13 +1429,14 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
   );
 
   const busStopLocations = [
-    { x: 13.0, z: -22 * S, angle: -Math.PI / 2, label: 'SHOWROOM / SABO STOP' },
-    { x: 75 * S, z: 12.2, angle: Math.PI, label: 'COMMERCIAL AVE BANK ROW' },
-    { x: -75 * S, z: 12.2, angle: Math.PI, label: 'SURULERE EXPRESS LINK' },
-    { x: -13.0, z: 68 * S, angle: Math.PI / 2, label: 'MARKETPLACE BLVD STOP' },
+    { x: 13.4, z: -22 * S, angle: -Math.PI / 2, label: 'SHOWROOM / SABO STOP' },
+    { x: 75 * S, z: 14.0, angle: Math.PI, label: 'COMMERCIAL AVE BANK ROW' },
+    { x: -75 * S, z: 14.0, angle: Math.PI, label: 'SURULERE EXPRESS LINK' },
+    { x: -13.4, z: 68 * S, angle: Math.PI / 2, label: 'MARKETPLACE BLVD STOP' },
   ];
 
   busStopLocations.forEach((loc, idx) => {
+    if (edgeDistToRoad(loc.x, loc.z) < 2.2) return;
     const stopGroup = new THREE.Group();
     stopGroup.position.set(loc.x, 0, loc.z);
     stopGroup.rotation.y = loc.angle;
@@ -1533,10 +1561,10 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     gantryGroup.position.set(0, 0, gz);
 
     const gPillarL = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.28, 0.34, 8.6, 12)), steelSilverMat);
-    gPillarL.position.set(-10.5, 4.3, 0);
+    gPillarL.position.set(-12.4, 4.3, 0);
     const gPillarR = gPillarL.clone();
-    gPillarR.position.x = 10.5;
-    const gBeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(22.0, 0.65, 0.65)), steelSilverMat);
+    gPillarR.position.x = 12.4;
+    const gBeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(26.0, 0.65, 0.65)), steelSilverMat);
     gBeam.position.set(0, 8.3, 0);
 
     const gantrySignTex = texPack.createSignTexture(
@@ -1553,8 +1581,8 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
 
     gantryGroup.add(gPillarL, gPillarR, gBeam, gantrySignF, gantrySignB);
     cityGroup.add(gantryGroup);
-    addBarricade('HM_GANTRY_L', -10.5, 0, gz, 0.45, 0.45, 0, 'GANTRY_PILLAR');
-    addBarricade('HM_GANTRY_R', 10.5, 0, gz, 0.45, 0.45, 0, 'GANTRY_PILLAR');
+    addBarricade('HM_GANTRY_L', -12.4, 0, gz, 0.45, 0.45, 0, 'GANTRY_PILLAR');
+    addBarricade('HM_GANTRY_R', 12.4, 0, gz, 0.45, 0.45, 0, 'GANTRY_PILLAR');
   }
 
   // =========================================================================
@@ -1633,10 +1661,10 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     const freightGantry = new THREE.Group();
     freightGantry.position.set(fgX, 0, fgZ);
     const fColL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.65, 7.2, 0.65)), barrierYellowMat);
-    fColL.position.set(-10.5, 3.6, 0);
+    fColL.position.set(-12.4, 3.6, 0);
     const fColR = fColL.clone();
-    fColR.position.x = 10.5;
-    const fBeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(22.0, 1.2, 0.8)), steelDarkMat);
+    fColR.position.x = 12.4;
+    const fBeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(26.0, 1.2, 0.8)), steelDarkMat);
     fBeam.position.set(0, 7.2, 0);
     const fTex = texPack.createSignTexture('MAINLAND CARGO DEPOT', 'FREIGHT BAY 1 - 4', {
       bg: '#064E3B',
@@ -1650,8 +1678,8 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     fSign.position.set(0, 7.2, 0.45);
     freightGantry.add(fColL, fColR, fBeam, fSign);
     cityGroup.add(freightGantry);
-    addBarricade('FREIGHT_GANTRY_L', fgX - 10.5, 0, fgZ, 0.45, 0.45, 0, 'GANTRY_PILLAR');
-    addBarricade('FREIGHT_GANTRY_R', fgX + 10.5, 0, fgZ, 0.45, 0.45, 0, 'GANTRY_PILLAR');
+    addBarricade('FREIGHT_GANTRY_L', fgX - 12.4, 0, fgZ, 0.45, 0.45, 0, 'GANTRY_PILLAR');
+    addBarricade('FREIGHT_GANTRY_R', fgX + 12.4, 0, fgZ, 0.45, 0.45, 0, 'GANTRY_PILLAR');
 
     // Shipping Containers stacked in Depot Compound
     const containerGeo = trackGeo(new THREE.BoxGeometry(6.2, 2.6, 2.5));
@@ -1688,10 +1716,10 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     raceGantry.rotation.y = Math.PI / 2; // Spans East-West Expressway cleanly
 
     const rColL = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.32, 0.38, 8.2, 10)), redPaintMat);
-    rColL.position.set(-11.4, 4.1, 0);
+    rColL.position.set(-13.4, 4.1, 0);
     const rColR = rColL.clone();
-    rColR.position.x = 11.4;
-    const rTruss = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(24.0, 1.3, 1.0)), darkMetalMat);
+    rColR.position.x = 13.4;
+    const rTruss = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(28.0, 1.3, 1.0)), darkMetalMat);
     rTruss.position.set(0, 7.9, 0);
 
     const startTex = texPack.createSignTexture('SURULERE GRAND PRIX', 'STARTING GRID • SECTOR 1', {
@@ -1731,8 +1759,8 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     raceGantry.add(rColL, rColR, rTruss, rBanner, rBannerB);
     cityGroup.add(raceGantry);
     // Race gantry rotated 90 deg so pillars lie along Z around (rgX, rgZ)
-    addBarricade('RACE_GANTRY_L', rgX, 0, rgZ - 11.4, 0.5, 0.5, 0, 'GANTRY_PILLAR');
-    addBarricade('RACE_GANTRY_R', rgX, 0, rgZ + 11.4, 0.5, 0.5, 0, 'GANTRY_PILLAR');
+    addBarricade('RACE_GANTRY_L', rgX, 0, rgZ - 13.4, 0.5, 0.5, 0, 'GANTRY_PILLAR');
+    addBarricade('RACE_GANTRY_R', rgX, 0, rgZ + 13.4, 0.5, 0.5, 0, 'GANTRY_PILLAR');
   }
 
   // Landmark 6 Upgrade: MANIFOLD GRAND MARKETPLACE PORTAL ([0, 100*S])
@@ -1743,17 +1771,17 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
 
     const pPillarGeo = trackGeo(new THREE.BoxGeometry(2.0, 10.2, 2.4));
     const pPillarL = new THREE.Mesh(pPillarGeo, darkMetalMat);
-    pPillarL.position.set(-10.6, 5.1, 0);
+    pPillarL.position.set(-12.8, 5.1, 0);
     pPillarL.castShadow = true;
     const pPillarR = pPillarL.clone();
-    pPillarR.position.x = 10.6;
+    pPillarR.position.x = 12.8;
 
-    const pArch = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(23.4, 2.0, 2.8)), darkMetalMat);
+    const pArch = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(27.8, 2.0, 2.8)), darkMetalMat);
     pArch.position.set(0, 10.0, 0);
     pArch.castShadow = true;
 
     const neonTrim = new THREE.Mesh(
-      trackGeo(new THREE.BoxGeometry(22.0, 0.28, 3.0)),
+      trackGeo(new THREE.BoxGeometry(26.4, 0.28, 3.0)),
       trackMat(new THREE.MeshStandardMaterial({ color: 0xef233c, emissive: 0xef233c, emissiveIntensity: 3.2 }))
     );
     neonTrim.position.set(0, 8.95, 0);
@@ -1782,13 +1810,13 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
         roughness: 0.15,
       })
     );
-    const veil = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(19.0, 8.6)), veilMat);
+    const veil = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(23.2, 8.6)), veilMat);
     veil.position.set(0, 4.3, 0);
 
     portalGroup.add(pPillarL, pPillarR, pArch, neonTrim, portalSignF, portalSignB, veil);
     cityGroup.add(portalGroup);
-    addBarricade('PORTAL_PILLAR_L', -10.6, 0, pZ, 1.0, 1.2, 0, 'GANTRY_PILLAR');
-    addBarricade('PORTAL_PILLAR_R', 10.6, 0, pZ, 1.0, 1.2, 0, 'GANTRY_PILLAR');
+    addBarricade('PORTAL_PILLAR_L', -12.8, 0, pZ, 1.0, 1.2, 0, 'GANTRY_PILLAR');
+    addBarricade('PORTAL_PILLAR_R', 12.8, 0, pZ, 1.0, 1.2, 0, 'GANTRY_PILLAR');
   }
 
   // =========================================================================
