@@ -519,13 +519,20 @@ export function animateVehicleModel(
   }
 ) {
   const { steeringAngle, wheelSpinAngle, accelLoad = 0, delta = 0.016, isCockpitCamera = false } = params;
+  const dt = Math.max(0.001, Math.min(0.1, delta));
+
+  // Subtle Ackermann geometry: inner front wheel turns slightly sharper than outer wheel at full lock
+  const leftAngle =
+    steeringAngle > 0 ? steeringAngle * 1.07 : steeringAngle * 0.93;
+  const rightAngle =
+    steeringAngle < 0 ? steeringAngle * 1.07 : steeringAngle * 0.93;
 
   if (vehicle.wheelSteeringGroups) {
-    vehicle.wheelSteeringGroups.frontLeft.rotation.y = steeringAngle;
-    vehicle.wheelSteeringGroups.frontRight.rotation.y = steeringAngle;
+    vehicle.wheelSteeringGroups.frontLeft.rotation.y = leftAngle;
+    vehicle.wheelSteeringGroups.frontRight.rotation.y = rightAngle;
   } else {
-    vehicle.frontLeftWheel.rotation.y = steeringAngle;
-    vehicle.frontRightWheel.rotation.y = Math.PI + steeringAngle;
+    vehicle.frontLeftWheel.rotation.y = leftAngle;
+    vehicle.frontRightWheel.rotation.y = Math.PI + rightAngle;
   }
 
   if (vehicle.wheelSpinGroups) {
@@ -540,29 +547,49 @@ export function animateVehicleModel(
     vehicle.rearRightWheel.rotation.x = -wheelSpinAngle;
   }
 
+  const interiorLerp = 1 - Math.exp(-16 * dt);
   if (vehicle.steeringWheelGroup) {
-    vehicle.steeringWheelGroup.rotation.z = -steeringAngle * 2.1;
+    const targetWheelRot = -steeringAngle * 2.55;
+    vehicle.steeringWheelGroup.rotation.z +=
+      (targetWheelRot - vehicle.steeringWheelGroup.rotation.z) * interiorLerp;
   }
 
   if (vehicle.driverGroup) {
     vehicle.driverGroup.visible = !isCockpitCamera;
   }
   if (vehicle.driverHeadGroup) {
-    const targetHeadYaw = steeringAngle * 0.45;
-    vehicle.driverHeadGroup.rotation.y += (targetHeadYaw - vehicle.driverHeadGroup.rotation.y) * Math.min(1, delta * 8);
+    const targetHeadYaw = steeringAngle * 0.42;
+    vehicle.driverHeadGroup.rotation.y +=
+      (targetHeadYaw - vehicle.driverHeadGroup.rotation.y) * (1 - Math.exp(-8 * dt));
   }
   if (vehicle.driverArmGroups) {
     const [armNeg, armPos] = vehicle.driverArmGroups;
-    armNeg.rotation.x = steeringAngle * 0.22;
-    armPos.rotation.x = -steeringAngle * 0.22;
+    const targetArmNeg = steeringAngle * 0.24;
+    const targetArmPos = -steeringAngle * 0.24;
+    armNeg.rotation.x += (targetArmNeg - armNeg.rotation.x) * interiorLerp;
+    armPos.rotation.x += (targetArmPos - armPos.rotation.x) * interiorLerp;
   }
 
   if (vehicle.chassisGroup) {
     // Subtle pitch under accel/braking and body roll in corners while tyres remain planted at y = 0
-    const targetRoll = THREE.MathUtils.clamp(-steeringAngle * (params.speed * 0.0022), -0.045, 0.045);
+    const chassisLerp = 1 - Math.exp(-9 * dt);
+    const targetRoll = THREE.MathUtils.clamp(-steeringAngle * (params.speed * 0.002), -0.045, 0.045);
     const targetPitch = THREE.MathUtils.clamp(-accelLoad * 0.02, -0.028, 0.028);
-    vehicle.chassisGroup.rotation.z += (targetRoll - vehicle.chassisGroup.rotation.z) * Math.min(1, delta * 9);
-    vehicle.chassisGroup.rotation.x += (targetPitch - vehicle.chassisGroup.rotation.x) * Math.min(1, delta * 9);
+    vehicle.chassisGroup.rotation.z += (targetRoll - vehicle.chassisGroup.rotation.z) * chassisLerp;
+    vehicle.chassisGroup.rotation.x += (targetPitch - vehicle.chassisGroup.rotation.x) * chassisLerp;
+  }
+
+  if (vehicle.exhaustFlames && vehicle.exhaustFlames.length > 0) {
+    const showFlames = params.speed > 10 && accelLoad > 0.35;
+    const now = performance.now();
+    for (let i = 0; i < vehicle.exhaustFlames.length; i++) {
+      const flame = vehicle.exhaustFlames[i];
+      flame.visible = showFlames;
+      if (showFlames) {
+        const flicker = 0.78 + Math.abs(Math.sin(now * 0.036 + i * 1.4)) * 0.65;
+        flame.scale.set(0.95, flicker, 0.95);
+      }
+    }
   }
 }
 
@@ -681,9 +708,30 @@ export class VehicleModelFactory {
     [-0.48, -0.24, 0, 0.24, 0.48].forEach((fx) => {
       addBox(chassisGroup, 0.024, 0.13, 0.26, mats.carbonMat, fx, 0.22, -2.08);
     });
+    const flameGeo = new THREE.ConeGeometry(0.052, 0.44, 8);
+    flameGeo.rotateX(-Math.PI / 2);
+    const flameMat = new THREE.MeshBasicMaterial({
+      color: 0xfb923c,
+      transparent: true,
+      opacity: 0.92,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const exhaustFlames: THREE.Mesh[] = [];
     [-0.56, -0.43, 0.43, 0.56].forEach((ex) => {
       addCyl(chassisGroup, 0.045, 0.045, 0.15, 14, mats.chromeMat, ex, 0.24, -2.14, Math.PI / 2);
       addCyl(chassisGroup, 0.034, 0.034, 0.05, 10, mats.trimBlackMat, ex, 0.24, -2.2, Math.PI / 2, 0, 0, false);
+      const flame = new THREE.Mesh(flameGeo, flameMat);
+      flame.position.set(ex, 0.24, -2.42);
+      flame.visible = false;
+      chassisGroup.add(flame);
+      exhaustFlames.push(flame);
+    });
+
+    // Louvered Carbon Rear Engine Deck & Side Intake Vents (inspired by mid-engine track supercar)
+    addBox(chassisGroup, 0.78, 0.03, 0.62, mats.carbonMat, 0, 0.91, -1.3, 0.14);
+    [-1.12, -1.24, -1.36, -1.48].forEach((lz) => {
+      addBox(chassisGroup, 0.72, 0.024, 0.045, mats.trimBlackMat, 0, 0.92 + (-1.12 - lz) * -0.11, lz, 0.14);
     });
 
     // 4. Sculpted Hood Power Dome & Vents + Honeycomb Grille
@@ -756,7 +804,11 @@ export class VehicleModelFactory {
     const turnRearR = addBox(chassisGroup, 0.18, 0.036, 0.05, mats.amberSignalMat.clone(), 0.74, 0.66, -2.14, 0, 0, 0, false);
 
     const taillightsGroup = new THREE.Group();
-    addBox(taillightsGroup, 1.54, 0.055, 0.06, mats.taillightMat, 0, 0.71, -2.14, 0, 0, 0, false);
+    // Sleek full-width rear LED lightbar + twin outer quad-cluster LED bezels
+    addBox(taillightsGroup, 1.54, 0.045, 0.06, mats.taillightMat, 0, 0.71, -2.14, 0, 0, 0, false);
+    [-0.66, -0.52, 0.52, 0.66].forEach((tx) => {
+      addBox(taillightsGroup, 0.11, 0.085, 0.068, mats.taillightMat, tx, 0.695, -2.145, 0, 0, 0, false);
+    });
     chassisGroup.add(taillightsGroup);
 
     const revL = addBox(chassisGroup, 0.16, 0.036, 0.05, mats.reverseMat, -0.56, 0.62, -2.14, 0, 0, 0, false);
@@ -826,6 +878,7 @@ export class VehicleModelFactory {
       vehicleType: 'SPORTS_COUPE',
       reverseLights: [revL, revR],
       brakeLightMats: [mats.taillightMat],
+      exhaustFlames,
     };
   }
 

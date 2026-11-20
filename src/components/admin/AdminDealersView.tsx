@@ -34,6 +34,7 @@ interface AdminDealersViewProps {
   accounts: AdminDealerAccountRecord[];
   migrationRequired: boolean;
   loading: boolean;
+  error?: string;
   onRefresh: () => Promise<void> | void;
   onOpenAddDealer: () => void;
   onNotify: (message: string) => void;
@@ -52,6 +53,7 @@ export const AdminDealersView: React.FC<AdminDealersViewProps> = ({
   accounts,
   migrationRequired,
   loading,
+  error,
   onRefresh,
   onOpenAddDealer,
   onNotify,
@@ -315,6 +317,22 @@ export const AdminDealersView: React.FC<AdminDealersViewProps> = ({
       </div>
 
       {/* Dealer Accounts List */}
+      {error && (
+        <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-[#EF233C] shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void onRefresh()}
+            className="px-3 py-1 rounded-lg bg-white border border-red-200 text-[#EF233C] font-bold hover:bg-red-100 transition shrink-0"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         {loading && accounts.length === 0 ? (
           <div className="p-12 text-center text-xs text-gray-500 flex flex-col items-center gap-2">

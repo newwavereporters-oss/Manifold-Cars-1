@@ -202,6 +202,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [mediaSearchTerm, setMediaSearchTerm] = useState('');
   const [loadingData, setLoadingData] = useState(false);
+  const [loadingDealers, setLoadingDealers] = useState(false);
 
   // Modals
   const [showAddCarModal, setShowAddCarModal] = useState(false);
@@ -250,8 +251,73 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     };
   }, []);
 
+  const loadDealerDirectory = async () => {
+    setLoadingDealers(true);
+    try {
+      const dir = await dealerService.getAllDealerAccountsForAdmin();
+      if (dir.accounts.length > 0) {
+        setDealerDirectory(dir);
+        return;
+      }
+
+      // Secondary safeguard: if RPC/directory returned empty, query public.dealers directly
+      const directDealers = await dealerService.getDealers(false).catch(() => []);
+      if (directDealers.length > 0) {
+        setDealers(directDealers);
+        setDealerDirectory({
+          accounts: directDealers.map((d) => ({
+            dealerId: d.id,
+            dealerAccountId: null,
+            userId: null,
+            hasPortalAccount: false,
+            businessName: d.name,
+            tradingName: null,
+            contactName: null,
+            email: d.email || null,
+            phone: d.phone || null,
+            city: d.city || 'Lagos',
+            state: d.state || 'Lagos',
+            country: 'Nigeria',
+            addressLine1: d.address || null,
+            addressLine2: null,
+            businessType: null,
+            businessDescription: null,
+            website: null,
+            cacRegistrationNumber: null,
+            accountStatus: d.verified_partner ? 'active' : 'pending',
+            dealerStatus: d.verified_partner ? 'approved' : 'pending',
+            onboardingStatus: 'directory_only',
+            isVerified: Boolean(d.verified_partner),
+            approvalStatus: d.verified_partner ? 'approved' : 'pending',
+            canListCars: Boolean(d.verified_partner),
+            approvalNotes: null,
+            approvedAt: null,
+            disapprovedAt: null,
+            joinedYear: d.joined_year || new Date().getFullYear(),
+            createdAt: new Date().toISOString(),
+            totalVehicles: 0,
+            publishedVehicles: 0,
+            inReviewVehicles: 0,
+          })),
+          migrationRequired: dir.migrationRequired,
+          error: dir.error,
+        });
+      } else {
+        setDealerDirectory(dir);
+      }
+    } catch (err: any) {
+      setDealerDirectory((prev) => ({
+        ...prev,
+        error: err?.message || 'Unable to load dealership accounts from Supabase.',
+      }));
+    } finally {
+      setLoadingDealers(false);
+    }
+  };
+
   const loadLiveSupabaseData = async () => {
     setLoadingData(true);
+    void loadDealerDirectory();
     try {
       const [
         inqRes,
@@ -260,7 +326,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         brandsRes,
         typesRes,
         dealersRes,
-        dealerDirectoryRes,
         salesRes,
         commRes,
         rulesRes,
@@ -271,7 +336,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         brandService.getBrands(),
         categoryService.getBodyTypes(),
         dealerService.getDealers(),
-        dealerService.getAllDealerAccountsForAdmin(),
         salesService.getSales(),
         salesService.getCommissions(),
         commissionService.getRules(),
@@ -283,7 +347,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       if (brandsRes.status === 'fulfilled') setBrands(brandsRes.value);
       if (typesRes.status === 'fulfilled') setBodyTypes(typesRes.value);
       if (dealersRes.status === 'fulfilled') setDealers(dealersRes.value);
-      if (dealerDirectoryRes.status === 'fulfilled') setDealerDirectory(dealerDirectoryRes.value);
       if (salesRes.status === 'fulfilled') setSales(salesRes.value);
       if (commRes.status === 'fulfilled') setCommissions(commRes.value);
       if (rulesRes.status === 'fulfilled') setCommissionRules(rulesRes.value);
@@ -1771,8 +1834,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           <AdminDealersView
             accounts={dealerDirectory.accounts}
             migrationRequired={dealerDirectory.migrationRequired}
-            loading={loadingData}
-            onRefresh={loadLiveSupabaseData}
+            loading={loadingDealers}
+            error={dealerDirectory.error}
+            onRefresh={loadDealerDirectory}
             onOpenAddDealer={() => setNewDealerModal(true)}
             onNotify={notify}
           />
@@ -1781,8 +1845,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         {/* TAB 7B: DEALER MANAGEMENT TABLE */}
         {activeTab === 'dealer-management' && (
           <AdminDealerManagement
-            onNotify={notify}
-            onStatusChanged={loadLiveSupabaseData}
+            onNotify={(_type, msg) => notify(msg)}
+            onStatusChanged={loadDealerDirectory}
           />
         )}
 

@@ -9,6 +9,7 @@ import {
   resolveSurfaceY,
   getBridgePitchAt,
   getTrafficSignalState,
+  getRoadSegmentProfile,
 } from './lagosCityData';
 import { getVehicleTextureBank } from '../../three/vehicleTextures';
 import {
@@ -487,6 +488,16 @@ export class TrafficEngine {
       { from: 'N_IYANOBA_N', to: 'N_IYANOBA_NW', type: 'DANFO_BUS', progress: 0.5, lane: 1 },
       { from: 'N_IYANOBA_NW', to: 'N_IYANOBA_W', type: 'OKADA', progress: 0.4, lane: 0 },
       { from: 'N_IYANOBA_W', to: 'N_IYANOBA', type: 'COASTER_BUS', progress: 0.6, lane: 1 },
+
+      // Lagos Coastal Road (Victoria Island -> Epe 4-Lane Highway + 2-Lane Inlets)
+      { from: 'N_COASTAL_VI_START', to: 'N_COASTAL_IKOYI_S', type: 'URBAN_SUV', progress: 0.4, lane: 1 },
+      { from: 'N_COASTAL_IKOYI_S', to: 'N_COASTAL_LEKKI', type: 'CITY_SEDAN', progress: 0.35, lane: 0 },
+      { from: 'N_COASTAL_LEKKI', to: 'N_COASTAL_IKOYI_S', type: 'COASTER_BUS', progress: 0.65, lane: 1 },
+      { from: 'N_COASTAL_LEKKI', to: 'N_COASTAL_AJAH', type: 'URBAN_SUV', progress: 0.5, lane: 0 },
+      { from: 'N_COASTAL_AJAH', to: 'N_COASTAL_ELEKO', type: 'DELIVERY_VAN', progress: 0.45, lane: 1 },
+      { from: 'N_COASTAL_ELEKO', to: 'N_COASTAL_EPE_MID', type: 'CITY_SEDAN', progress: 0.55, lane: 0 },
+      { from: 'N_COASTAL_EPE_END', to: 'N_COASTAL_EPE_MID', type: 'URBAN_SUV', progress: 0.4, lane: 1 },
+      { from: 'N_IKATE', to: 'N_COASTAL_LEKKI', type: 'CITY_SEDAN', progress: 0.5, lane: 0 },
     ];
 
     const okadaPalette = [0xdc2626, 0x0284c7, 0x16a34a, 0x1e293b];
@@ -1039,9 +1050,20 @@ export class TrafficEngine {
       const heading = Math.atan2(dx, dz);
 
       // Right-hand side vector for F = (sin h, 0, cos h): F x Up = (-cos h, 0, sin h)
-      // Widened 27.6m dual carriageways support 2 spacious lanes per direction (3.8m & 9.2m).
+      const segProfile = getRoadSegmentProfile(fromNode, toNode);
       const isDual = Boolean(fromNode.isDualCarriageway && toNode.isDualCarriageway);
-      const laneOffset = isDual ? (car.laneSlot === 0 ? 3.8 : 9.2) : 4.3;
+      const laneOffset =
+        segProfile === 'COASTAL_4LANE'
+          ? car.laneSlot === 0
+            ? 4.2
+            : 10.8
+          : segProfile === 'INLET_2LANE'
+          ? 2.8
+          : isDual
+          ? car.laneSlot === 0
+            ? 3.8
+            : 9.2
+          : 4.3;
       const rightX = -Math.cos(heading);
       const rightZ = Math.sin(heading);
 
@@ -1154,8 +1176,20 @@ export class TrafficEngine {
       const adx = activeTo.x - activeFrom.x;
       const adz = activeTo.z - activeFrom.z;
       const aHeading = Math.atan2(adx, adz);
+      const aProfile = getRoadSegmentProfile(activeFrom, activeTo);
       const aIsDual = Boolean(activeFrom.isDualCarriageway && activeTo.isDualCarriageway);
-      const aOffset = aIsDual ? (car.laneSlot === 0 ? 3.8 : 9.2) : 4.3;
+      const aOffset =
+        aProfile === 'COASTAL_4LANE'
+          ? car.laneSlot === 0
+            ? 4.2
+            : 10.8
+          : aProfile === 'INLET_2LANE'
+          ? 2.8
+          : aIsDual
+          ? car.laneSlot === 0
+            ? 3.8
+            : 9.2
+          : 4.3;
       const aLatX = -Math.cos(aHeading) * aOffset;
       const aLatZ = Math.sin(aHeading) * aOffset;
 
@@ -1219,6 +1253,34 @@ export class TrafficEngine {
       maxZ: car.z + car.length / 2,
       speed: car.speed,
     }));
+  }
+
+  /**
+   * Relocates any ambient traffic vehicle inside a bounding rectangle (e.g. Coastal Race grid/track)
+   * onto a safe mainland corridor so races start cleanly with zero obstruction.
+   */
+  public clearArea(minX: number, maxX: number, minZ: number, maxZ: number) {
+    const fallbackFrom = LAGOS_ROAD_NODES['N_IKEJA'];
+    const fallbackTo = LAGOS_ROAD_NODES['N_IKEJA_SOUTH'];
+    if (!fallbackFrom || !fallbackTo) return;
+    const segLen = Math.hypot(fallbackTo.x - fallbackFrom.x, fallbackTo.z - fallbackFrom.z);
+
+    this.vehicles.forEach((car, idx) => {
+      if (car.x >= minX && car.x <= maxX && car.z >= minZ && car.z <= maxZ) {
+        car.currentNodeId = 'N_IKEJA';
+        car.targetNodeId = 'N_IKEJA_SOUTH';
+        car.segmentLength = segLen;
+        car.progress = ((idx % 7) + 1) / 8;
+        car.x = fallbackFrom.x + (fallbackTo.x - fallbackFrom.x) * car.progress + 4.3;
+        car.z = fallbackFrom.z + (fallbackTo.z - fallbackFrom.z) * car.progress;
+        car.y = 0;
+        car.speed = car.targetSpeed;
+        car.knockX = 0;
+        car.knockZ = 0;
+        car.stunTimer = 0;
+        car.group.position.set(car.x, car.y, car.z);
+      }
+    });
   }
 
   public dispose() {

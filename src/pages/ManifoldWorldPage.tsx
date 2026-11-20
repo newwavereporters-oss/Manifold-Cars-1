@@ -25,6 +25,7 @@ import {
   MissionId,
   MISSIONS_CATALOG,
 } from '../components/world/missionEngine';
+import type { CoastalRaceState } from '../components/world/rivalsEngine';
 import {
   CarCustomization,
   VehicleModelType,
@@ -273,6 +274,11 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     { name: string; x: number; z: number }[]
   >([]);
   const [missionSession, setMissionSession] = useState<ActiveMissionSession | null>(null);
+  const [coastalRaceCommand, setCoastalRaceCommand] = useState<{
+    action: 'START' | 'EXIT';
+    seq: number;
+  } | null>(null);
+  const [coastalRaceState, setCoastalRaceState] = useState<CoastalRaceState | null>(null);
   const [missionOverrides, setMissionOverrides] = useState<Record<string, Partial<MissionDef>>>({});
   const [missionProgress, setMissionProgress] = useState<Record<string, MissionProgressStat>>({});
   const [serverMissionOffsetMs, setServerMissionOffsetMs] = useState(0);
@@ -1006,6 +1012,11 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     const activeId = missionManagerRef.current.session?.missionId;
     if (!activeId) return;
 
+    if (coastalRaceState) {
+      setCoastalRaceCommand((prev) => ({ action: 'EXIT', seq: (prev?.seq ?? 0) + 1 }));
+      setCoastalRaceState(null);
+    }
+
     const startRes = await missionService.startMission(activeId);
     if (!startRes.success || !startRes.runToken) {
       setSocialToast(startRes.message || 'This mission is currently unavailable or on cooldown.');
@@ -1157,6 +1168,21 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         2.5
     );
   }, [carPosition.x, carPosition.z, activeMissionTarget]);
+
+  const handleStartCoastalRace = useCallback(async () => {
+    const canProceed = await awaitAbandonActiveRunBeforeExit();
+    if (!canProceed) return;
+    setActiveDestination(null);
+    setIsCityMapOpen(false);
+    setIsCustomizerOpen(false);
+    setIsMissionDrawerOpen(false);
+    setCoastalRaceCommand((prev) => ({ action: 'START', seq: (prev?.seq ?? 0) + 1 }));
+  }, [awaitAbandonActiveRunBeforeExit]);
+
+  const handleExitCoastalRace = useCallback(() => {
+    setCoastalRaceCommand((prev) => ({ action: 'EXIT', seq: (prev?.seq ?? 0) + 1 }));
+    setCoastalRaceState(null);
+  }, []);
 
   const handleSpeedTrap = (recordedSpeed: number) => {
     setSpeedTrapRecord(recordedSpeed);
@@ -1414,6 +1440,9 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
           onTrafficPositionsUpdate={setTrafficPositions}
           onRivalPositionsUpdate={setRivalPositions}
           resetVehicleTrigger={resetVehicleTrigger}
+          coastalRaceCommand={coastalRaceCommand}
+          onCoastalRaceUpdate={setCoastalRaceState}
+          onStartCoastalRace={() => void handleStartCoastalRace()}
         />
       )}
 
@@ -1671,6 +1700,9 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             onLogout={() => void handleLogout()}
             qualityMode={qualityMode}
             onQualityModeChange={handleQualityModeChange}
+            coastalRaceState={coastalRaceState}
+            onStartCoastalRace={() => void handleStartCoastalRace()}
+            onExitCoastalRace={handleExitCoastalRace}
           />
 
           <MissionHUDOverlay

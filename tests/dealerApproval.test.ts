@@ -448,6 +448,49 @@ async function runTests() {
       assertEqual(fallbackDir.accounts[0].businessName, 'Island Motors', 'fallback reads business_name');
       assertEqual(fallbackDir.accounts[0].dealerStatus, 'disapproved', 'fallback reads dealer_status');
       assertEqual(fallbackDir.accounts[0].approvalStatus, 'disapproved', 'fallback resolves rejected->disapproved');
+
+      // 3. RPC returns auth error or empty while public.dealers has rows & auxiliary tables error
+      client.rpc = async () => ({
+        data: null,
+        error: { code: '42501', message: 'Admin authorization required' },
+      });
+      client.from = (table: string) => ({
+        select: async () => {
+          if (table === 'dealers') {
+            return {
+              data: [
+                { id: 'dlr-a', name: 'Victoria Motors', city: 'VI', state: 'Lagos', dealer_status: 'approved', is_verified: true },
+                { id: 'dlr-b', business_name: 'Lekki Auto', city: 'Lekki', state: 'Lagos', dealer_status: 'pending', is_verified: false },
+              ],
+              error: null,
+            };
+          }
+          return { data: null, error: { code: '42501', message: 'permission denied' } };
+        },
+        upsert: async () => ({ error: { code: '42501', message: 'permission denied' } }),
+      });
+
+      const dealersOnlyDir = await dealerService.getAllDealerAccountsForAdmin();
+      assertEqual(dealersOnlyDir.accounts.length, 2, 'populates all dealers from public.dealers even when auxiliary tables fail');
+      const vMotors = dealersOnlyDir.accounts.find((a) => a.dealerId === 'dlr-a');
+      const lAuto = dealersOnlyDir.accounts.find((a) => a.dealerId === 'dlr-b');
+      assertEqual(vMotors?.approvalStatus, 'approved', 'dlr-a approved status preserved');
+      assertEqual(vMotors?.canListCars, true, 'dlr-a can list cars');
+      assertEqual(lAuto?.approvalStatus, 'pending', 'dlr-b pending status preserved');
+      assertEqual(lAuto?.canListCars, false, 'dlr-b listing blocked until approved');
+
+      // 4. Empty dealers table + blocked seed must return [] without infinite recursion
+      let dealersCalls = 0;
+      client.from = () => ({
+        select: async () => {
+          dealersCalls += 1;
+          return { data: [], error: null };
+        },
+        upsert: async () => ({ error: { code: '42501', message: 'RLS blocked' } }),
+      });
+      const emptyDealers = await dealerService.getDealers();
+      assertEqual(emptyDealers.length, 0, 'empty dealers resolves safely');
+      assertEqual(dealersCalls, 2, 'getDealers queries at most twice (initial + 1 post-seed) and never recurses infinitely');
     } finally {
       client.rpc = originalRpc;
       client.from = originalFrom;

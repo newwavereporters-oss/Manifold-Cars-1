@@ -21,7 +21,9 @@ import {
   WORLD_BOUNDS,
   WORLD_XZ_SCALE,
   findShortestRoadPathDetailed,
+  getRoadSegmentProfile,
   CityLandmark,
+  RoadProfile,
 } from './lagosCityData';
 
 interface CityMapModalProps {
@@ -91,6 +93,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
       y2: number;
       isDual: boolean;
       isBridge: boolean;
+      profile: RoadProfile;
     }[] = [];
 
     Object.values(LAGOS_ROAD_NODES).forEach((node) => {
@@ -111,6 +114,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
           y2: p2.y,
           isDual: Boolean(node.isDualCarriageway && nb.isDualCarriageway),
           isBridge: Boolean(node.isBridge || nb.isBridge),
+          profile: getRoadSegmentProfile(node, nb),
         });
       });
     });
@@ -131,7 +135,13 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
         return lm.district === 'OBALENDE' || lm.district === 'IKOYI' || lm.id === 'IKOYI_LINK_BRIDGE';
       }
       if (regionFilter === 'LEKKI_AJAH_EPE') {
-        return lm.district === 'LEKKI' || lm.district === 'AJAH' || lm.district === 'EPE' || lm.id === 'IKOYI_LINK_BRIDGE';
+        return (
+          lm.district === 'LEKKI' ||
+          lm.district === 'AJAH' ||
+          lm.district === 'EPE' ||
+          lm.district === 'COASTAL' ||
+          lm.id === 'IKOYI_LINK_BRIDGE'
+        );
       }
       if (regionFilter === 'LASU') {
         return lm.district === 'LASU' || lm.district === 'MILE2' || lm.district === 'IYANOBA';
@@ -167,11 +177,14 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
   const lagoonTopLeft = worldToSvg(MIN_X, WORLD_BOUNDS.lagoonNorthZ);
   const lagoonBotRight = worldToSvg(MAX_X, WORLD_BOUNDS.lagoonSouthZ);
   const ikoyiChanTopLeft = worldToSvg(WORLD_BOUNDS.ikoyiChannelMinX, WORLD_BOUNDS.lagoonSouthZ);
-  const ikoyiChanBotRight = worldToSvg(WORLD_BOUNDS.ikoyiChannelMaxX, MAX_Z);
+  const ikoyiChanBotRight = worldToSvg(WORLD_BOUNDS.ikoyiChannelMaxX, WORLD_BOUNDS.coastalLandNorthZ);
   const epeCreekTopLeft = worldToSvg(WORLD_BOUNDS.epeCreekMinX, WORLD_BOUNDS.lagoonSouthZ);
-  const epeCreekBotRight = worldToSvg(WORLD_BOUNDS.epeCreekMaxX, MAX_Z);
+  const epeCreekBotRight = worldToSvg(WORLD_BOUNDS.epeCreekMaxX, WORLD_BOUNDS.coastalLandNorthZ);
   const eastBayTopLeft = worldToSvg(WORLD_BOUNDS.epeBayMinX, WORLD_BOUNDS.lagoonSouthZ);
-  const eastBayBotRight = worldToSvg(MAX_X, MAX_Z);
+  const eastBayBotRight = worldToSvg(MAX_X, WORLD_BOUNDS.coastalLandNorthZ);
+  const coastalLandTopLeft = worldToSvg(-460 * S, WORLD_BOUNDS.coastalLandNorthZ);
+  const coastalLandBotRight = worldToSvg(WORLD_BOUNDS.coastalEastCoastX, WORLD_BOUNDS.southOceanZ);
+  const coastalEastSeaLeft = worldToSvg(WORLD_BOUNDS.coastalEastCoastX, WORLD_BOUNDS.coastalLandNorthZ);
   const southCoastTop = worldToSvg(MIN_X, WORLD_BOUNDS.southOceanZ);
 
   const routeSvgPoints = routeInfo
@@ -370,17 +383,35 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 fill="#0b3b59"
                 fillOpacity="0.55"
               />
-              {/* Southern Atlantic Coast */}
+              {/* Reclaimed Victoria Island -> Epe Coastal Highway Landmass Strip */}
+              <rect
+                x={coastalLandTopLeft.x}
+                y={coastalLandTopLeft.y}
+                width={coastalLandBotRight.x - coastalLandTopLeft.x}
+                height={coastalLandBotRight.y - coastalLandTopLeft.y}
+                fill="#0b1f33"
+                fillOpacity="0.82"
+              />
+              {/* Eastern Sea Terminus Beyond Epe Coastal Highway */}
+              <rect
+                x={coastalEastSeaLeft.x}
+                y={coastalEastSeaLeft.y}
+                width={SVG_W - coastalEastSeaLeft.x}
+                height={SVG_H - coastalEastSeaLeft.y}
+                fill="#0b3b59"
+                fillOpacity="0.58"
+              />
+              {/* Southern Atlantic Coast (Single-Sided Wide Open Sea) */}
               <rect
                 x={0}
                 y={southCoastTop.y}
                 width={SVG_W}
                 height={SVG_H - southCoastTop.y}
                 fill="#0b3b59"
-                fillOpacity="0.5"
+                fillOpacity="0.62"
               />
 
-              {/* Lagoon Label */}
+              {/* Lagoon & Ocean Labels */}
               <text
                 x={worldToSvg(240 * S, -375 * S).x}
                 y={(lagoonTopLeft.y + lagoonBotRight.y) / 2 + 5}
@@ -391,6 +422,17 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 letterSpacing="6"
               >
                 LAGOS LAGOON
+              </text>
+              <text
+                x={worldToSvg(1200 * S, 392 * S).x}
+                y={southCoastTop.y + 18}
+                textAnchor="middle"
+                fill="rgba(56, 189, 248, 0.45)"
+                fontSize="13"
+                fontWeight="900"
+                letterSpacing="7"
+              >
+                ATLANTIC OCEAN
               </text>
 
               {/* LASU Campus Precinct Boundary Shading */}
@@ -489,6 +531,9 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 { x: 1135, z: 155, label: 'AJAH FLYOVER' },
                 { x: 1388, z: 58, label: 'EPE BRIDGE' },
                 { x: 1545, z: 145, label: 'EPE WATERFRONT' },
+                { x: 240, z: 288, label: 'VICTORIA ISLAND COASTAL' },
+                { x: 1180, z: 294, label: 'LAGOS COASTAL HIGHWAY (4-LANE)' },
+                { x: 2150, z: 288, label: 'EPE COASTAL TERMINUS' },
                 { x: 85, z: -380, label: 'THIRD MAINLAND BRIDGE' },
                 { x: -495, z: -310, label: 'BLUE LINE RAIL BRIDGE' },
                 { x: 30, z: -618, label: 'IYANA-OWORO' },
@@ -528,8 +573,22 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                   y1={e.y1}
                   x2={e.x2}
                   y2={e.y2}
-                  stroke={e.isBridge ? '#38bdf8' : '#1e293b'}
-                  strokeWidth={e.isDual ? 10.5 : 7.8}
+                  stroke={
+                    e.profile === 'COASTAL_4LANE'
+                      ? '#dc2626'
+                      : e.isBridge
+                      ? '#38bdf8'
+                      : '#1e293b'
+                  }
+                  strokeWidth={
+                    e.profile === 'COASTAL_4LANE'
+                      ? 12.2
+                      : e.profile === 'INLET_2LANE'
+                      ? 5.6
+                      : e.isDual
+                      ? 10.5
+                      : 7.8
+                  }
                   strokeLinecap="round"
                 />
               ))}
@@ -543,7 +602,15 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                   x2={e.x2}
                   y2={e.y2}
                   stroke={e.isBridge ? '#1e3a5f' : '#475569'}
-                  strokeWidth={e.isDual ? 7.0 : 4.8}
+                  strokeWidth={
+                    e.profile === 'COASTAL_4LANE'
+                      ? 9.0
+                      : e.profile === 'INLET_2LANE'
+                      ? 3.8
+                      : e.isDual
+                      ? 7.0
+                      : 4.8
+                  }
                   strokeLinecap="round"
                 />
               ))}

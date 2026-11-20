@@ -1,6 +1,6 @@
 // MANIFOLD WORLD - COMPUTER-CONTROLLED RIVAL DRIVERS ENGINE
-// Controls autonomous rival racers along the Surulere & Yaba street race circuit
-// with tuned GT aero specs, surface elevation tracking, and real collision denting.
+// Controls autonomous rival racers along the Lagos Coastal Highway (Victoria Island -> Epe)
+// with tuned GT aero specs, 4-lane positioning, surface elevation tracking, and collision denting.
 
 import * as THREE from 'three';
 import {
@@ -12,6 +12,27 @@ import { createVehicleByType, CarCustomization, Vehicle3DResult } from './worldM
 import { animateVehicleModel } from '../../three/VehicleModelFactory';
 import { applyVehicleDent, resetVehicleDamage } from '../../three/vehicleDamage';
 import { disposeObject3D } from '../../utils/webglPerformance';
+
+export interface CoastalRaceLeaderboardEntry {
+  name: string;
+  position: number;
+  cpIdx: number;
+  isPlayer: boolean;
+  finishTime: number | null;
+}
+
+export interface CoastalRaceState {
+  phase: 'COUNTDOWN' | 'ACTIVE' | 'FINISHED';
+  countdownSeconds: number;
+  elapsedSec: number;
+  rank: number;
+  totalRacers: number;
+  checkpointIdx: number;
+  totalCheckpoints: number;
+  distanceRemainingMeters: number;
+  leaderboard: CoastalRaceLeaderboardEntry[];
+  prizeCredits: number;
+}
 
 export interface RivalDriver {
   id: string;
@@ -39,6 +60,7 @@ export interface RivalDriver {
   finishTime: number | null;
   gridOffsetX: number;
   gridOffsetZ: number;
+  preferredLaneOffset: number;
 }
 
 const _hitVec = new THREE.Vector3();
@@ -72,6 +94,7 @@ export class RivalsEngine {
       cornerSpeed: number;
       gridOffsetX: number;
       gridOffsetZ: number;
+      preferredLaneOffset: number;
     }[] = [
       {
         id: 'rival_tariq',
@@ -85,11 +108,12 @@ export class RivalsEngine {
         interiorTheme: 'SPORT',
         width: 1.9,
         length: 4.35,
-        maxSpeed: 40, // ~185 km/h
-        accel: 21,
-        cornerSpeed: 19,
-        gridOffsetX: -4.2,
-        gridOffsetZ: -4.5,
+        maxSpeed: 46, // ~212 km/h coastal express pace
+        accel: 24,
+        cornerSpeed: 30,
+        gridOffsetX: -4.5,
+        gridOffsetZ: -10.5,
+        preferredLaneOffset: -10.5,
       },
       {
         id: 'rival_chidi',
@@ -103,11 +127,12 @@ export class RivalsEngine {
         interiorTheme: 'BROWN',
         width: 2.06,
         length: 4.82,
-        maxSpeed: 36, // ~165 km/h
-        accel: 18,
-        cornerSpeed: 16,
-        gridOffsetX: 4.2,
-        gridOffsetZ: -8.5,
+        maxSpeed: 41, // ~189 km/h
+        accel: 20,
+        cornerSpeed: 28,
+        gridOffsetX: -11.5,
+        gridOffsetZ: -3.8,
+        preferredLaneOffset: -3.8,
       },
       {
         id: 'rival_amara',
@@ -121,11 +146,31 @@ export class RivalsEngine {
         interiorTheme: 'CREAM',
         width: 1.92,
         length: 4.7,
-        maxSpeed: 38, // ~175 km/h
-        accel: 19,
-        cornerSpeed: 20,
-        gridOffsetX: -4.2,
-        gridOffsetZ: -12.5,
+        maxSpeed: 43, // ~198 km/h
+        accel: 22,
+        cornerSpeed: 29,
+        gridOffsetX: -5.5,
+        gridOffsetZ: 10.6,
+        preferredLaneOffset: 10.6,
+      },
+      {
+        id: 'rival_tunde',
+        name: 'Tunde',
+        carName: 'Lagos Coastal RS Coupe',
+        vehicleType: 'SPORTS_COUPE',
+        paintColor: '#F59E0B', // Solar Amber
+        rimColor: '#0F172A', // Matte Carbon
+        caliperColor: '#38BDF8',
+        spoiler: 'GT_WING',
+        interiorTheme: 'SPORT',
+        width: 1.9,
+        length: 4.35,
+        maxSpeed: 45, // ~207 km/h
+        accel: 23,
+        cornerSpeed: 30,
+        gridOffsetX: -12.5,
+        gridOffsetZ: 4.0,
+        preferredLaneOffset: 4.0,
       },
     ];
 
@@ -151,7 +196,7 @@ export class RivalsEngine {
       const startY = resolveSurfaceY(startX, startZ, 0);
 
       vehObj.carGroup.position.set(startX, startY, startZ);
-      vehObj.carGroup.rotation.y = Math.PI / 2; // Facing towards checkpoint 2
+      vehObj.carGroup.rotation.y = Math.PI / 2; // Facing east down the Coastal Highway
 
       const rival: RivalDriver = {
         id: cfg.id,
@@ -179,6 +224,7 @@ export class RivalsEngine {
         finishTime: null,
         gridOffsetX: cfg.gridOffsetX,
         gridOffsetZ: cfg.gridOffsetZ,
+        preferredLaneOffset: cfg.preferredLaneOffset,
       };
 
       this.rivals.push(rival);
@@ -257,21 +303,22 @@ export class RivalsEngine {
       if (!targetCP) return;
 
       const dx = targetCP.x - rival.x;
-      const dz = targetCP.z - rival.z;
-      const dist = Math.hypot(dx, dz);
+      const targetZ = targetCP.z + rival.preferredLaneOffset;
+      const dz = targetZ - rival.z;
+      const dist = Math.hypot(dx, targetCP.z - rival.z);
       rival.distanceToNextCP = dist;
 
-      // Target steering heading towards checkpoint
+      // Target steering heading along assigned coastal highway lane
       const targetAngle = Math.atan2(dx, dz);
 
-      // Smooth steering rotation towards target checkpoint
+      // Smooth steering rotation towards target lane point
       let angleDiff = targetAngle - rival.rotation;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
       rival.rotation += Math.min(Math.max(angleDiff * 4.5 * dt, -2.8 * dt), 2.8 * dt);
 
-      // Brake if entering a sharp corner, accelerate on straights
+      // Brake if entering a sharp adjustment, accelerate down the long Coastal straight
       const isSharpTurn = Math.abs(angleDiff) > 0.45;
       const effectiveMax = isSharpTurn ? rival.cornerSpeed : rival.maxSpeed;
       const isBraking = rival.speed > effectiveMax + 1.0;
@@ -289,9 +336,13 @@ export class RivalsEngine {
         }
       }
 
-      // Move along heading vector + track surface elevation & ramp pitch
+      // Move along heading vector + keep cleanly inside 4-lane Coastal Highway asphalt
       rival.x += Math.sin(rival.rotation) * rival.speed * dt;
-      rival.z += Math.cos(rival.rotation) * rival.speed * dt;
+      rival.z = THREE.MathUtils.clamp(
+        rival.z + Math.cos(rival.rotation) * rival.speed * dt,
+        targetCP.z - 13.5,
+        targetCP.z + 13.5
+      );
       rival.y = resolveSurfaceY(rival.x, rival.z, rival.y);
 
       rival.group.position.set(rival.x, rival.y, rival.z);
@@ -310,10 +361,10 @@ export class RivalsEngine {
       });
 
       // Checkpoint passing detection
-      if (dist < targetCP.radius + 3.0) {
+      if (dist < targetCP.radius + 4.0) {
         rival.currentCheckpointIdx++;
 
-        // Completed final checkpoint (finish line)
+        // Completed final checkpoint (Epe Finish Gantry)
         if (rival.currentCheckpointIdx >= RIVAL_RACE_CHECKPOINTS.length) {
           rival.isFinished = true;
           rival.finishTime = (currentTime - this.raceStartTime) / 1000;

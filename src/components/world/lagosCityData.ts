@@ -1,6 +1,8 @@
 // MANIFOLD WORLD - LAGOS ISLAND, THIRD MAINLAND BRIDGE, ADEKUNLE, OBALENDE, IKOYI,
 // IKOYI LINK BRIDGE, LEKKI PENINSULA, IKATE, ELEGANZA, VGC, AJAH FLYOVER, EPE BRIDGE & MAINLAND CITY GRAPH.
 
+export type RoadProfile = 'STANDARD' | 'COASTAL_4LANE' | 'INLET_2LANE';
+
 export interface RoadNode {
   id: string;
   x: number;
@@ -13,6 +15,7 @@ export interface RoadNode {
   speedLimit?: number; // km/h
   isDualCarriageway?: boolean;
   isBridge?: boolean;
+  roadProfile?: RoadProfile;
 }
 
 export interface CityLandmark {
@@ -31,6 +34,7 @@ export interface CityLandmark {
     | 'LEKKI'
     | 'AJAH'
     | 'EPE'
+    | 'COASTAL'
     | 'BRIDGE'
     | 'MAINLAND'
     | 'LASU'
@@ -166,9 +170,9 @@ export const WORLD_XZ_SCALE = 1.65;
 // World geographic bounds for map & collision clamp
 export const WORLD_BOUNDS = {
   minX: Math.round(-1340 * WORLD_XZ_SCALE),
-  maxX: Math.round(1640 * WORLD_XZ_SCALE),
+  maxX: Math.round(2440 * WORLD_XZ_SCALE),
   minZ: Math.round(-1460 * WORLD_XZ_SCALE),
-  maxZ: Math.round(310 * WORLD_XZ_SCALE),
+  maxZ: Math.round(420 * WORLD_XZ_SCALE),
   lagoonSouthZ: -165 * WORLD_XZ_SCALE,
   lagoonNorthZ: -585 * WORLD_XZ_SCALE,
   ikoyiChannelMinX: 445 * WORLD_XZ_SCALE,
@@ -176,7 +180,10 @@ export const WORLD_BOUNDS = {
   epeCreekMinX: 1350 * WORLD_XZ_SCALE,
   epeCreekMaxX: 1425 * WORLD_XZ_SCALE,
   epeBayMinX: 1600 * WORLD_XZ_SCALE,
-  southOceanZ: 275 * WORLD_XZ_SCALE,
+  coastalLandNorthZ: 240 * WORLD_XZ_SCALE,
+  coastalRoadZ: 320 * WORLD_XZ_SCALE,
+  coastalEastCoastX: 2420 * WORLD_XZ_SCALE,
+  southOceanZ: 356 * WORLD_XZ_SCALE,
   bridgeDeckHeight: 6.0,
   bridgeHalfWidth: 14.0,
 };
@@ -558,19 +565,31 @@ export function getBridgePitchAt(
 
 export function isOverOpenWater(x: number, z: number): boolean {
   if (z < WORLD_BOUNDS.lagoonSouthZ && z > WORLD_BOUNDS.lagoonNorthZ) return true;
+  // Reclaimed Lagos Coastal Highway corridor (Victoria Island -> Epe) has continuous solid landmass south of z = 240*S
+  if (
+    z >= WORLD_BOUNDS.coastalLandNorthZ &&
+    z <= WORLD_BOUNDS.southOceanZ &&
+    x >= -460 * WORLD_XZ_SCALE &&
+    x <= WORLD_BOUNDS.coastalEastCoastX
+  ) {
+    return false;
+  }
   if (
     x > WORLD_BOUNDS.ikoyiChannelMinX &&
     x < WORLD_BOUNDS.ikoyiChannelMaxX &&
-    z >= WORLD_BOUNDS.lagoonSouthZ
+    z >= WORLD_BOUNDS.lagoonSouthZ &&
+    z < WORLD_BOUNDS.coastalLandNorthZ
   )
     return true;
   if (
     x > WORLD_BOUNDS.epeCreekMinX &&
     x < WORLD_BOUNDS.epeCreekMaxX &&
-    z >= WORLD_BOUNDS.lagoonSouthZ
+    z >= WORLD_BOUNDS.lagoonSouthZ &&
+    z < WORLD_BOUNDS.coastalLandNorthZ
   )
     return true;
-  if (x > WORLD_BOUNDS.epeBayMinX) return true;
+  if (x > WORLD_BOUNDS.epeBayMinX && z < WORLD_BOUNDS.coastalLandNorthZ) return true;
+  if (x > WORLD_BOUNDS.coastalEastCoastX && z >= WORLD_BOUNDS.coastalLandNorthZ) return true;
   if (z > WORLD_BOUNDS.southOceanZ) return true;
   return false;
 }
@@ -691,10 +710,15 @@ export function enforceBridgeAndWaterBarriers(
     };
   }
 
-  // 2. Ikoyi-Lekki Lagoon Channel
+  // 2. Ikoyi-Lekki Lagoon Channel (only north of Coastal Highway landmass)
   const ikMin = WORLD_BOUNDS.ikoyiChannelMinX - 5;
   const ikMax = WORLD_BOUNDS.ikoyiChannelMaxX + 5;
-  if (cs.z >= WORLD_BOUNDS.lagoonSouthZ && cs.x > ikMin && cs.x < ikMax) {
+  if (
+    cs.z >= WORLD_BOUNDS.lagoonSouthZ &&
+    cs.z < WORLD_BOUNDS.coastalLandNorthZ - 4 &&
+    cs.x > ikMin &&
+    cs.x < ikMax
+  ) {
     const dWest = Math.abs(cs.x - ikMin);
     const dEast = Math.abs(cs.x - ikMax);
     const impactVel = Math.abs(cs.speed);
@@ -712,10 +736,15 @@ export function enforceBridgeAndWaterBarriers(
     };
   }
 
-  // 3. Epe Creek Channel
+  // 3. Epe Creek Channel (only north of Coastal Highway landmass)
   const epMin = WORLD_BOUNDS.epeCreekMinX - 5;
   const epMax = WORLD_BOUNDS.epeCreekMaxX + 5;
-  if (cs.z >= WORLD_BOUNDS.lagoonSouthZ && cs.x > epMin && cs.x < epMax) {
+  if (
+    cs.z >= WORLD_BOUNDS.lagoonSouthZ &&
+    cs.z < WORLD_BOUNDS.coastalLandNorthZ - 4 &&
+    cs.x > epMin &&
+    cs.x < epMax
+  ) {
     const dWest = Math.abs(cs.x - epMin);
     const dEast = Math.abs(cs.x - epMax);
     const impactVel = Math.abs(cs.speed);
@@ -733,11 +762,27 @@ export function enforceBridgeAndWaterBarriers(
     };
   }
 
-  // 4. Eastern Epe Bay / Southern Ocean boundary
+  // 4. Eastern Epe Bay north of Coastal Road + Epe Coastal Terminus East Seawall + Single South Atlantic Coastline
   const eastBayGuard = WORLD_BOUNDS.epeBayMinX - 5;
-  if (cs.x > eastBayGuard) {
+  if (cs.z < WORLD_BOUNDS.coastalLandNorthZ - 4 && cs.x > eastBayGuard) {
     const impactVel = Math.abs(cs.speed);
     cs.x = eastBayGuard;
+    cs.speed = -cs.speed * 0.32;
+    return {
+      hit: true,
+      impactVelocity: impactVel,
+      normalX: -1,
+      normalZ: 0,
+      hitX: cs.x + carHalfWidth,
+      hitZ: cs.z,
+      kind: 'SEAWALL',
+    };
+  }
+
+  const coastEastGuard = WORLD_BOUNDS.coastalEastCoastX - 5;
+  if (cs.z >= WORLD_BOUNDS.coastalLandNorthZ - 4 && cs.x > coastEastGuard) {
+    const impactVel = Math.abs(cs.speed);
+    cs.x = coastEastGuard;
     cs.speed = -cs.speed * 0.32;
     return {
       hit: true,
@@ -1024,7 +1069,7 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     name: 'Marina East / CMS Junction',
     roadName: 'Marina Boulevard',
     district: 'Marina',
-    neighbors: ['N_OBALENDE_S', 'N_MARINA_CENTRAL'],
+    neighbors: ['N_OBALENDE_S', 'N_MARINA_CENTRAL', 'N_COASTAL_VI_START'],
     speedLimit: 55,
     isDualCarriageway: true,
   },
@@ -1265,7 +1310,7 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     name: 'Ikoyi South Club Drive',
     roadName: 'Ikoyi Crescent',
     district: 'Ikoyi',
-    neighbors: ['N_IKOYI_SOUTH_W', 'N_IKOYI_EAST'],
+    neighbors: ['N_IKOYI_SOUTH_W', 'N_IKOYI_EAST', 'N_COASTAL_IKOYI_S'],
     speedLimit: 55,
     isDualCarriageway: true,
   },
@@ -1363,7 +1408,7 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     name: 'Ikate Chisco Junction',
     roadName: 'Lekki-Epe Expressway',
     district: 'Ikate',
-    neighbors: ['N_LEKKI_ADMIRALTY', 'N_LEKKI_EAST', 'N_ELEGANZA'],
+    neighbors: ['N_LEKKI_ADMIRALTY', 'N_LEKKI_EAST', 'N_ELEGANZA', 'N_COASTAL_LEKKI'],
     speedLimit: 85,
     isDualCarriageway: true,
   },
@@ -1520,7 +1565,7 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     name: 'Ajah / Sangotedo South Link',
     roadName: 'Addo Road South',
     district: 'Ajah',
-    neighbors: ['N_AJAH_GROUND'],
+    neighbors: ['N_AJAH_GROUND', 'N_COASTAL_AJAH'],
     speedLimit: 60,
     isDualCarriageway: true,
   },
@@ -1602,7 +1647,7 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     name: 'Epe Waterfront Marina',
     roadName: 'Epe Waterfront Road',
     district: 'Epe Corridor',
-    neighbors: ['N_EPE_TOWN'],
+    neighbors: ['N_EPE_TOWN', 'N_COASTAL_ELEKO'],
     speedLimit: 55,
     isDualCarriageway: true,
   },
@@ -1999,7 +2044,113 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     neighbors: ['N_IYANOBA_W', 'N_IYANOBA_N'],
     speedLimit: 45,
   },
+
+  // === LAGOS COASTAL HIGHWAY (4-LANE EXPRESSWAY: VICTORIA ISLAND -> EPE) ===
+  // Flat continuous paved coastal road with Atlantic Ocean strictly on the South (+Z) side and 5 two-lane inlets branching North (-Z).
+  N_COASTAL_VI_START: {
+    id: 'N_COASTAL_VI_START',
+    x: 160,
+    z: 320,
+    name: 'Victoria Island Coastal Highway Start',
+    roadName: 'Lagos-Calabar Coastal Highway',
+    district: 'Victoria Island Coastal',
+    neighbors: ['N_MARINA_E', 'N_COASTAL_IKOYI_S'],
+    speedLimit: 110,
+    isDualCarriageway: true,
+    roadProfile: 'COASTAL_4LANE',
+  },
+  N_COASTAL_IKOYI_S: {
+    id: 'N_COASTAL_IKOYI_S',
+    x: 365,
+    z: 320,
+    name: 'Coastal Road / Ikoyi South Inlet',
+    roadName: 'Lagos-Calabar Coastal Highway',
+    district: 'Victoria Island Coastal',
+    neighbors: ['N_IKOYI_SOUTH_E', 'N_COASTAL_VI_START', 'N_COASTAL_LEKKI'],
+    speedLimit: 110,
+    isDualCarriageway: true,
+    roadProfile: 'COASTAL_4LANE',
+  },
+  N_COASTAL_LEKKI: {
+    id: 'N_COASTAL_LEKKI',
+    x: 790,
+    z: 320,
+    name: 'Coastal Road / Lekki-Ikate Inlet',
+    roadName: 'Lagos-Calabar Coastal Highway',
+    district: 'Lekki Coastal',
+    neighbors: ['N_IKATE', 'N_COASTAL_IKOYI_S', 'N_COASTAL_AJAH'],
+    speedLimit: 110,
+    isDualCarriageway: true,
+    roadProfile: 'COASTAL_4LANE',
+  },
+  N_COASTAL_AJAH: {
+    id: 'N_COASTAL_AJAH',
+    x: 1135,
+    z: 320,
+    name: 'Coastal Road / Ajah-Sangotedo Inlet',
+    roadName: 'Lagos-Calabar Coastal Highway',
+    district: 'Ajah Coastal',
+    neighbors: ['N_AJAH_BADORE_S', 'N_COASTAL_LEKKI', 'N_COASTAL_ELEKO'],
+    speedLimit: 110,
+    isDualCarriageway: true,
+    roadProfile: 'COASTAL_4LANE',
+  },
+  N_COASTAL_ELEKO: {
+    id: 'N_COASTAL_ELEKO',
+    x: 1565,
+    z: 320,
+    name: 'Coastal Road / Eleko-Epe Inlet',
+    roadName: 'Lagos-Calabar Coastal Highway',
+    district: 'Epe Coastal',
+    neighbors: ['N_EPE_WATERFRONT', 'N_COASTAL_AJAH', 'N_COASTAL_EPE_MID'],
+    speedLimit: 110,
+    isDualCarriageway: true,
+    roadProfile: 'COASTAL_4LANE',
+  },
+  N_COASTAL_EPE_MID: {
+    id: 'N_COASTAL_EPE_MID',
+    x: 1920,
+    z: 320,
+    name: 'Epe Coastal Expressway KM 4',
+    roadName: 'Lagos-Calabar Coastal Highway',
+    district: 'Epe Coastal',
+    neighbors: ['N_COASTAL_ELEKO', 'N_COASTAL_EPE_END'],
+    speedLimit: 110,
+    isDualCarriageway: true,
+    roadProfile: 'COASTAL_4LANE',
+  },
+  N_COASTAL_EPE_END: {
+    id: 'N_COASTAL_EPE_END',
+    x: 2260,
+    z: 320,
+    name: 'Epe Coastal Highway Terminus',
+    roadName: 'Lagos-Calabar Coastal Highway',
+    district: 'Epe Coastal',
+    neighbors: ['N_COASTAL_EPE_MID'],
+    speedLimit: 110,
+    isDualCarriageway: true,
+    roadProfile: 'COASTAL_4LANE',
+  },
 };
+
+export function getRoadSegmentProfile(a: RoadNode, b: RoadNode): RoadProfile {
+  if (a.roadProfile === 'COASTAL_4LANE' && b.roadProfile === 'COASTAL_4LANE') {
+    return 'COASTAL_4LANE';
+  }
+  if (a.roadProfile === 'COASTAL_4LANE' || b.roadProfile === 'COASTAL_4LANE') {
+    return 'INLET_2LANE';
+  }
+  return 'STANDARD';
+}
+
+export const COASTAL_KM_MARKERS = [
+  { km: 0, label: 'KM 0', subtitle: 'VICTORIA ISLAND START · EPE 5 KM', x: 180 * WORLD_XZ_SCALE },
+  { km: 1, label: 'KM 1', subtitle: 'IKOYI SOUTH BEACHFRONT · EPE 4 KM', x: 596 * WORLD_XZ_SCALE },
+  { km: 2, label: 'KM 2', subtitle: 'LEKKI / IKATE COASTAL · EPE 3 KM', x: 1012 * WORLD_XZ_SCALE },
+  { km: 3, label: 'KM 3', subtitle: 'AJAH OCEANFRONT · EPE 2 KM', x: 1428 * WORLD_XZ_SCALE },
+  { km: 4, label: 'KM 4', subtitle: 'ELEKO COASTAL RUN · EPE 1 KM', x: 1844 * WORLD_XZ_SCALE },
+  { km: 5, label: 'KM 5', subtitle: 'EPE COASTAL TERMINUS', x: 2235 * WORLD_XZ_SCALE },
+];
 
 // Apply horizontal road/bridge extension cleanly while preserving exact Adekunle Ramp splice
 for (const [id, node] of Object.entries(LAGOS_ROAD_NODES)) {
@@ -2068,14 +2219,14 @@ export const CITY_LANDMARKS: CityLandmark[] = [
     iconType: 'delivery',
   },
   {
-    id: 'RACEWAY_GRID',
-    name: 'Surulere Street Circuit Starting Grid',
-    subTitle: 'Underground Mainland Grand Prix',
-    district: 'SURULERE_EXPRESS',
-    x: -50,
-    z: -130,
-    radius: 14,
-    description: 'High-speed street racing starting grid. Compete against top rival drivers.',
+    id: 'COASTAL_RACE_GRID',
+    name: 'Coastal Highway Race Grid (Victoria Island)',
+    subTitle: '4-Lane Oceanfront Grand Prix Start',
+    district: 'COASTAL',
+    x: 200,
+    z: 320,
+    radius: 16,
+    description: 'High-speed 4-lane Lagos Coastal Road racing grid. Compete head-to-head to Epe Terminus.',
     color: '#DC2626',
     iconType: 'race',
   },
@@ -2237,6 +2388,18 @@ export const CITY_LANDMARKS: CityLandmark[] = [
     radius: 18,
     description: 'Preserved eastern waterfront promenade and lagoon resort at the end of the Lekki-Epe Expressway.',
     color: '#0EA5E9',
+    iconType: 'epe',
+  },
+  {
+    id: 'COASTAL_EPE_FINISH',
+    name: 'Epe Coastal Highway Terminus (KM 5)',
+    subTitle: 'Atlantic Coast Express Finish Line',
+    district: 'COASTAL',
+    x: 2220,
+    z: 320,
+    radius: 18,
+    description: 'Eastern finish gantry of the 4-lane Lagos Coastal Road overlooking the Atlantic Ocean.',
+    color: '#10B981',
     iconType: 'epe',
   },
 
@@ -2417,16 +2580,16 @@ export interface RaceCheckpoint {
 }
 
 export const RIVAL_RACE_CHECKPOINTS: RaceCheckpoint[] = [
-  { id: 1, x: -50 * WORLD_XZ_SCALE, z: -130 * WORLD_XZ_SCALE, name: 'Starting Grid / Sector 1', radius: 12 },
-  { id: 2, x: 0, z: -130 * WORLD_XZ_SCALE, name: 'Yaba Tech Apex Turn', radius: 13 },
-  { id: 3, x: 105 * WORLD_XZ_SCALE, z: -130 * WORLD_XZ_SCALE, name: 'Tech Blvd Sweeper', radius: 14 },
-  { id: 4, x: 105 * WORLD_XZ_SCALE, z: 0, name: 'Bank Row Chicane', radius: 13 },
-  { id: 5, x: 105 * WORLD_XZ_SCALE, z: 100 * WORLD_XZ_SCALE, name: 'Commercial Sector South', radius: 13 },
-  { id: 6, x: 0, z: 100 * WORLD_XZ_SCALE, name: 'Marketplace Boulevard', radius: 13 },
-  { id: 7, x: -55 * WORLD_XZ_SCALE, z: 100 * WORLD_XZ_SCALE, name: 'Depot S-Bend', radius: 13 },
-  { id: 8, x: -110 * WORLD_XZ_SCALE, z: 0, name: 'Surulere Express Straightaway', radius: 14 },
-  { id: 9, x: -110 * WORLD_XZ_SCALE, z: -130 * WORLD_XZ_SCALE, name: 'Expressway Final Hairpin', radius: 14 },
-  { id: 10, x: -50 * WORLD_XZ_SCALE, z: -130 * WORLD_XZ_SCALE, name: 'Finish Line Gantry', radius: 12 },
+  { id: 1, x: 200 * WORLD_XZ_SCALE, z: 320 * WORLD_XZ_SCALE, name: 'Victoria Island Coastal Grid', radius: 16 },
+  { id: 2, x: 425 * WORLD_XZ_SCALE, z: 320 * WORLD_XZ_SCALE, name: 'KM 1 Ikoyi Oceanfront', radius: 16 },
+  { id: 3, x: 650 * WORLD_XZ_SCALE, z: 320 * WORLD_XZ_SCALE, name: 'Kuramo Coastal Straight', radius: 16 },
+  { id: 4, x: 875 * WORLD_XZ_SCALE, z: 320 * WORLD_XZ_SCALE, name: 'KM 2 Lekki-Ikate Beach', radius: 16 },
+  { id: 5, x: 1100 * WORLD_XZ_SCALE, z: 320 * WORLD_XZ_SCALE, name: 'Ajah Coastal Approach', radius: 16 },
+  { id: 6, x: 1325 * WORLD_XZ_SCALE, z: 320 * WORLD_XZ_SCALE, name: 'KM 3 Atlantic Express', radius: 16 },
+  { id: 7, x: 1550 * WORLD_XZ_SCALE, z: 320 * WORLD_XZ_SCALE, name: 'Eleko Inlet Straightaway', radius: 16 },
+  { id: 8, x: 1775 * WORLD_XZ_SCALE, z: 320 * WORLD_XZ_SCALE, name: 'KM 4 Epe Ocean Boulevard', radius: 16 },
+  { id: 9, x: 2000 * WORLD_XZ_SCALE, z: 320 * WORLD_XZ_SCALE, name: 'Epe Final Sprint', radius: 16 },
+  { id: 10, x: 2220 * WORLD_XZ_SCALE, z: 320 * WORLD_XZ_SCALE, name: 'Epe Coastal Finish Gantry', radius: 16 },
 ];
 
 // 4. Core Island Urban Buildings (Additional regional buildings registered in lagosRegionBuilders.ts)
@@ -2592,28 +2755,36 @@ function findNearestNodeId(pos: { x: number; z: number }, currentY = 0): string 
       if (onMainlandNorth && node.z > WORLD_BOUNDS.lagoonSouthZ) continue;
       if (onSouthLand && node.z < WORLD_BOUNDS.lagoonNorthZ) continue;
 
-      // Prevent snapping straight across Ikoyi-Lekki channel without using bridge
+      // Prevent snapping straight across Ikoyi-Lekki channel without using bridge (unless on Coastal Highway landmass)
       if (
+        pos.z < WORLD_BOUNDS.coastalLandNorthZ &&
+        node.z < WORLD_BOUNDS.coastalLandNorthZ &&
         pos.x <= WORLD_BOUNDS.ikoyiChannelMinX &&
         node.x >= WORLD_BOUNDS.ikoyiChannelMaxX &&
         pos.z >= WORLD_BOUNDS.lagoonSouthZ
       )
         continue;
       if (
+        pos.z < WORLD_BOUNDS.coastalLandNorthZ &&
+        node.z < WORLD_BOUNDS.coastalLandNorthZ &&
         pos.x >= WORLD_BOUNDS.ikoyiChannelMaxX &&
         node.x <= WORLD_BOUNDS.ikoyiChannelMinX &&
         pos.z >= WORLD_BOUNDS.lagoonSouthZ
       )
         continue;
 
-      // Prevent snapping straight across Epe Creek without using Epe Bridge
+      // Prevent snapping straight across Epe Creek without using Epe Bridge (unless on Coastal Highway landmass)
       if (
+        pos.z < WORLD_BOUNDS.coastalLandNorthZ &&
+        node.z < WORLD_BOUNDS.coastalLandNorthZ &&
         pos.x <= WORLD_BOUNDS.epeCreekMinX &&
         node.x >= WORLD_BOUNDS.epeCreekMaxX &&
         pos.z >= WORLD_BOUNDS.lagoonSouthZ
       )
         continue;
       if (
+        pos.z < WORLD_BOUNDS.coastalLandNorthZ &&
+        node.z < WORLD_BOUNDS.coastalLandNorthZ &&
         pos.x >= WORLD_BOUNDS.epeCreekMaxX &&
         node.x <= WORLD_BOUNDS.epeCreekMinX &&
         pos.z >= WORLD_BOUNDS.lagoonSouthZ

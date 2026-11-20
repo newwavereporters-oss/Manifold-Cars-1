@@ -3,6 +3,10 @@ import { CollisionEngine } from '../src/components/world/collisionEngine';
 import {
   enforceBridgeAndWaterBarriers,
   getEdgeDistToElevatedRamps,
+  isOverOpenWater,
+  COASTAL_KM_MARKERS,
+  RIVAL_RACE_CHECKPOINTS,
+  WORLD_BOUNDS,
   WORLD_XZ_SCALE,
   BarricadeCollider,
   BuildingBox,
@@ -12,6 +16,11 @@ import {
   isSpawnPoseClear,
   toColliderBoxes,
 } from '../src/components/world/spawnUtils';
+import {
+  VEHICLE_SPEC_PROFILES,
+  computeTargetSteerAngle,
+  stepSteeringAngle,
+} from '../src/components/world/worldModels';
 
 let passed = 0;
 
@@ -204,6 +213,102 @@ runTest('Shared Showroom Boulevard spawn assigns distinct non-overlapping slots 
       length: 4.6,
     });
   }
+});
+
+runTest('Front wheel steering achieves full lock and ramps smoothly without overshoot even at coarse delta', () => {
+  const coupe = VEHICLE_SPEC_PROFILES.SPORTS_COUPE;
+  assert.ok(coupe.maxSteer >= 0.62, `Expected full steering lock >= 0.62 rad, got ${coupe.maxSteer}`);
+
+  const targetLow = computeTargetSteerAngle({
+    steerInput: 1,
+    maxSteer: coupe.maxSteer,
+    speed: 4,
+    effectiveMaxSpeed: 48,
+  });
+  assert.equal(targetLow, coupe.maxSteer, 'Low-speed steering reaches full maxSteer lock');
+
+  let angle = 0;
+  let prev = 0;
+  for (let i = 0; i < 15; i++) {
+    angle = stepSteeringAngle({
+      currentAngle: angle,
+      targetAngle: targetLow,
+      effectiveSteerSpeed: coupe.steerSpeed * 1.45 * 1.2,
+      delta: 0.08, // coarse 12.5fps worst-case delta
+    });
+    assert.ok(angle >= prev, `Steering dipped backward during smooth ramp: prev=${prev}, next=${angle}`);
+    assert.ok(angle <= targetLow + 1e-6, `Steering overshot target at coarse delta: angle=${angle} > ${targetLow}`);
+    prev = angle;
+  }
+  assert.ok(angle > coupe.maxSteer * 0.95, `Steering did not converge near full lock: ${angle}`);
+
+  // Releasing key smoothly returns to center without negative overshoot
+  for (let i = 0; i < 25; i++) {
+    angle = stepSteeringAngle({
+      currentAngle: angle,
+      targetAngle: 0,
+      effectiveSteerSpeed: coupe.steerSpeed,
+      delta: 0.033,
+    });
+    assert.ok(angle >= 0, `Self-centering overshot zero: ${angle}`);
+  }
+  assert.equal(angle, 0, 'Self-centering settles cleanly to 0');
+});
+
+runTest('Lagos Coastal Highway runs continuously VI -> Epe with 5 inland inlets and south ocean seawall', () => {
+  // Continuous 4-lane Coastal Highway corridor from Victoria Island (160*S) to Epe (2260*S)
+  for (let gx = 160; gx <= 2260; gx += 60) {
+    const wx = gx * WORLD_XZ_SCALE;
+    const wz = WORLD_BOUNDS.coastalRoadZ;
+    assert.equal(
+      isOverOpenWater(wx, wz),
+      false,
+      `Coastal Highway at x=${gx}*S must be solid paved land`
+    );
+    const probe = { x: wx, z: wz, speed: 35 };
+    const hit = enforceBridgeAndWaterBarriers(probe, 0, 1.0);
+    assert.equal(hit, null, `Coastal Highway at x=${gx}*S hit unexpected barrier`);
+  }
+
+  // All 5 two-lane inland inlets cross coastalLandNorthZ (240*S) without hitting water
+  const inletXs = [160, 365, 790, 1135, 1565];
+  inletXs.forEach((ix) => {
+    const wx = ix * WORLD_XZ_SCALE;
+    assert.equal(
+      isOverOpenWater(wx, WORLD_BOUNDS.coastalLandNorthZ),
+      false,
+      `Inlet at x=${ix}*S should connect smoothly inland`
+    );
+  });
+
+  // Atlantic Ocean sits strictly on the south side (+Z beyond southOceanZ) and east beyond coastalEastCoastX
+  assert.equal(
+    isOverOpenWater(600 * WORLD_XZ_SCALE, WORLD_BOUNDS.southOceanZ + 12),
+    true,
+    'South Atlantic Ocean past southOceanZ should be open water'
+  );
+  const oceanProbe = {
+    x: 600 * WORLD_XZ_SCALE,
+    z: WORLD_BOUNDS.southOceanZ + 8,
+    speed: 30,
+  };
+  const oceanHit = enforceBridgeAndWaterBarriers(oceanProbe, 0, 1.0);
+  assert.ok(oceanHit?.hit, 'Atlantic Ocean seawall should stop cars from plunging into open sea');
+  assert.ok(
+    oceanProbe.z <= WORLD_BOUNDS.southOceanZ,
+    `Atlantic seawall should push car back onto coastal side: z=${oceanProbe.z}`
+  );
+
+  // KM 0..KM 5 markers + all 10 Coastal race checkpoints stay strictly on the Coastal Highway
+  assert.equal(COASTAL_KM_MARKERS.length, 6, 'Expected KM 0..KM 5 signs');
+  assert.equal(RIVAL_RACE_CHECKPOINTS.length, 10, 'Expected 10 Coastal Race checkpoints');
+  RIVAL_RACE_CHECKPOINTS.forEach((cp) => {
+    assert.equal(
+      cp.z,
+      WORLD_BOUNDS.coastalRoadZ,
+      `Race checkpoint ${cp.name} must stay on Coastal Highway`
+    );
+  });
 });
 
 console.log(`ALL ${passed} WORLD PHYSICS & SPAWN TESTS PASSED`);

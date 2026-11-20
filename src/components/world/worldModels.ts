@@ -117,8 +117,8 @@ export const VEHICLE_SPEC_PROFILES: Record<VehicleModelType, VehicleSpecProfile>
     acceleration: 24,
     deceleration: 14,
     brakeDecel: 44,
-    maxSteer: 0.54,
-    steerSpeed: 3.4,
+    maxSteer: 0.68,
+    steerSpeed: 3.6,
     gearRatios: [3.4, 2.2, 1.6, 1.2, 0.95, 0.78],
     redlineRpm: 7800,
     idleRpm: 850,
@@ -151,8 +151,8 @@ export const VEHICLE_SPEC_PROFILES: Record<VehicleModelType, VehicleSpecProfile>
     acceleration: 19,
     deceleration: 12,
     brakeDecel: 38,
-    maxSteer: 0.46,
-    steerSpeed: 2.7,
+    maxSteer: 0.64,
+    steerSpeed: 3.1,
     gearRatios: [3.8, 2.4, 1.7, 1.25, 0.98, 0.82],
     redlineRpm: 6600,
     idleRpm: 750,
@@ -185,8 +185,8 @@ export const VEHICLE_SPEC_PROFILES: Record<VehicleModelType, VehicleSpecProfile>
     acceleration: 21,
     deceleration: 13,
     brakeDecel: 40,
-    maxSteer: 0.5,
-    steerSpeed: 3.0,
+    maxSteer: 0.66,
+    steerSpeed: 3.3,
     gearRatios: [3.5, 2.3, 1.65, 1.22, 0.96, 0.8],
     redlineRpm: 6900,
     idleRpm: 800,
@@ -219,8 +219,8 @@ export const VEHICLE_SPEC_PROFILES: Record<VehicleModelType, VehicleSpecProfile>
     acceleration: 17,
     deceleration: 11,
     brakeDecel: 36,
-    maxSteer: 0.44,
-    steerSpeed: 2.4,
+    maxSteer: 0.62,
+    steerSpeed: 2.9,
     gearRatios: [4.1, 2.6, 1.8, 1.3, 1.0, 0.84],
     redlineRpm: 6200,
     idleRpm: 700,
@@ -399,6 +399,7 @@ export interface Vehicle3DResult {
   vehicleType: VehicleModelType;
   reverseLights?: THREE.Mesh[];
   brakeLightMats?: THREE.MeshStandardMaterial[];
+  exhaustFlames?: THREE.Mesh[];
 }
 
 /**
@@ -741,4 +742,64 @@ export function createWorldEnvironment(): {
     marketplacePortal,
     speedTrapGate,
   };
+}
+
+/**
+ * Computes the speed-adjusted target front-wheel steering angle (in radians).
+ * At standstill, crawl, and city-cornering speeds, allows full steering lock (`maxSteer`),
+ * then smoothly eases at high highway speeds to prevent twitchy oversteer.
+ */
+export function computeTargetSteerAngle(params: {
+  steerInput: -1 | 0 | 1;
+  maxSteer: number;
+  speed: number;
+  effectiveMaxSpeed: number;
+}): number {
+  const { steerInput, maxSteer, speed, effectiveMaxSpeed } = params;
+  if (steerInput === 0) return 0;
+
+  const absSpeed = Math.abs(speed);
+  const fullLockThreshold = Math.max(6, effectiveMaxSpeed * 0.25);
+  const topSpeedRef = Math.max(22, effectiveMaxSpeed * 1.15);
+
+  let speedSteerFactor = 1.0;
+  if (absSpeed > fullLockThreshold) {
+    const t = Math.min(1, (absSpeed - fullLockThreshold) / Math.max(10, topSpeedRef - fullLockThreshold));
+    // Smooth ease-out curve: stays generous through mid-city speeds, stabilizes at top speed (~0.44)
+    const smoothT = t * t * (3 - 2 * t);
+    speedSteerFactor = 1.0 - smoothT * 0.56;
+  }
+
+  return steerInput * maxSteer * speedSteerFactor;
+}
+
+/**
+ * Frame-rate-independent exponential steering angle smoother.
+ * Guarantees smooth, monotonic sweep to full lock and smooth self-centering without
+ * Euler overshoot at low frame rates.
+ */
+export function stepSteeringAngle(params: {
+  currentAngle: number;
+  targetAngle: number;
+  effectiveSteerSpeed: number;
+  delta: number;
+}): number {
+  const { currentAngle, targetAngle, effectiveSteerSpeed, delta } = params;
+  const dt = Math.max(0, Math.min(0.1, delta));
+  const isReturningToCenter = Math.abs(targetAngle) < 0.001;
+  const isCounterSteering =
+    targetAngle !== 0 &&
+    currentAngle !== 0 &&
+    Math.sign(targetAngle) !== Math.sign(currentAngle);
+
+  const baseRate = Math.max(2.0, effectiveSteerSpeed);
+  const rate = isReturningToCenter
+    ? 8.0 + baseRate * 0.65
+    : isCounterSteering
+    ? 7.2 + baseRate * 0.65
+    : 5.8 + baseRate * 0.55;
+
+  const alpha = 1 - Math.exp(-rate * dt);
+  const next = currentAngle + (targetAngle - currentAngle) * alpha;
+  return Math.abs(next) < 0.0005 && isReturningToCenter ? 0 : next;
 }

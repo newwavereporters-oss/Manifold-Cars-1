@@ -9,6 +9,7 @@ import {
   BuildingBox,
   BarricadeKind,
   DynamicPropCollider,
+  COASTAL_KM_MARKERS,
   WORLD_XZ_SCALE,
   WORLD_BOUNDS,
 } from './lagosCityData';
@@ -31,6 +32,7 @@ export interface RegionBuildContext {
   trackGeo: <T extends THREE.BufferGeometry>(g: T) => T;
   trackMat: <T extends THREE.Material>(m: T) => T;
   distToNearestRoad: (px: number, pz: number) => number;
+  edgeDistToRoad: (px: number, pz: number) => number;
   allCollidableBuildings: BuildingBox[];
   buildCompositeBuilding: (b: BuildingBox) => void;
   addBarricade: (
@@ -53,6 +55,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
     trackGeo,
     trackMat,
     distToNearestRoad,
+    edgeDistToRoad,
     allCollidableBuildings,
     buildCompositeBuilding,
     addBarricade,
@@ -113,16 +116,29 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
   );
 
   // =========================================================================
-  // 1. CONTINUOUS LAGOS LAGOON OCEAN PLANE & COASTAL SEAWALLS
+  // 1. CONTINUOUS LAGOS LAGOON & SINGLE-SIDED ATLANTIC OCEAN SEAWALLS
   // =========================================================================
   {
-    // Single seamless lagoon ocean plane sitting below all coastal landmass slabs (y = -1.65)
-    const oceanGeo = trackGeo(new THREE.PlaneGeometry(4200 * S, 1500 * S));
+    // Wide Atlantic Ocean & Lagos Lagoon surface sitting below all coastal landmass slabs (y = -1.65)
+    const oceanGeo = trackGeo(new THREE.PlaneGeometry(6800 * S, 2600 * S));
     const oceanMesh = new THREE.Mesh(oceanGeo, waterMat);
     oceanMesh.rotation.x = -Math.PI / 2;
-    oceanMesh.position.set(220 * S, -1.65, -80 * S);
+    oceanMesh.position.set(520 * S, -1.65, -200 * S);
     oceanMesh.receiveShadow = true;
     cityGroup.add(oceanMesh);
+
+    // Sunlit white Atlantic surf foam ribbon exclusively along southern (+Z) open sea edge
+    const surfFoamMat = trackMat(
+      new THREE.MeshBasicMaterial({
+        color: 0xe0f2fe,
+        transparent: true,
+        opacity: 0.45,
+      })
+    );
+    const surfRibbon = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(2880 * S, 5.2)), surfFoamMat);
+    surfRibbon.rotation.x = -Math.PI / 2;
+    surfRibbon.position.set(980 * S, -1.52, WORLD_BOUNDS.southOceanZ + 3.2);
+    cityGroup.add(surfRibbon);
 
     const buildSeawallZ = (xStart: number, xEnd: number, zPos: number, idPrefix: string) => {
       const len = xEnd - xStart;
@@ -162,30 +178,32 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
     buildSeawallZ(595 * S, 1350 * S, -165 * S, 'SS_3');
     buildSeawallZ(1425 * S, 1600 * S, -165 * S, 'SS_4');
 
-    // Marina & South Atlantic Coastline Seawalls (z = 275*S)
-    buildSeawallZ(-460 * S, 445 * S, 275 * S, 'MARINA_S');
-    buildSeawallZ(595 * S, 1350 * S, 275 * S, 'LEKKI_S');
-    buildSeawallZ(1425 * S, 1600 * S, 275 * S, 'EPE_S');
-
     // North Mainland Shore (z = -585*S) — extended west past Mile 2 & Iyanoba
     buildSeawallZ(-1420 * S, -15.5, -585 * S, 'NM_1');
     buildSeawallZ(15.5, 1800 * S, -585 * S, 'NM_2');
 
-    // Ikoyi-Lekki Lagoon Channel Shores (x = 445*S & x = 595*S, wide gap for bridge z in [-20*S - 15.5, -20*S + 15.5])
+    // Ikoyi-Lekki Lagoon Channel Shores (stopping cleanly at coastalLandNorthZ = 240*S so inlets pass unobstructed)
     buildSeawallX(445 * S, -165 * S, -20 * S - 15.5, 'IK_W1');
-    buildSeawallX(445 * S, -20 * S + 15.5, 275 * S, 'IK_W2');
+    buildSeawallX(445 * S, -20 * S + 15.5, WORLD_BOUNDS.coastalLandNorthZ, 'IK_W2');
     buildSeawallX(595 * S, -165 * S, -20 * S - 15.5, 'IK_E1');
-    buildSeawallX(595 * S, -20 * S + 15.5, 275 * S, 'IK_E2');
+    buildSeawallX(595 * S, -20 * S + 15.5, WORLD_BOUNDS.coastalLandNorthZ, 'IK_E2');
+    buildSeawallZ(445 * S, 595 * S, WORLD_BOUNDS.coastalLandNorthZ, 'IK_MOUTH');
 
-    // Epe Creek Shores (x = 1350*S & x = 1425*S, gap for Epe Bridge z in [100*S - 15.5, 100*S + 15.5])
+    // Epe Creek Shores (stopping cleanly at coastalLandNorthZ = 240*S)
     buildSeawallX(1350 * S, -165 * S, 100 * S - 15.5, 'EC_W1');
-    buildSeawallX(1350 * S, 100 * S + 15.5, 275 * S, 'EC_W2');
+    buildSeawallX(1350 * S, 100 * S + 15.5, WORLD_BOUNDS.coastalLandNorthZ, 'EC_W2');
     buildSeawallX(1425 * S, -165 * S, 100 * S - 15.5, 'EC_E1');
-    buildSeawallX(1425 * S, 100 * S + 15.5, 275 * S, 'EC_E2');
+    buildSeawallX(1425 * S, 100 * S + 15.5, WORLD_BOUNDS.coastalLandNorthZ, 'EC_E2');
+    buildSeawallZ(1350 * S, 1425 * S, WORLD_BOUNDS.coastalLandNorthZ, 'EC_MOUTH');
 
-    // East Epe Waterfront Bay Shore (x = 1600*S, opening at Marina Pier z in [100*S - 15.5, 100*S + 15.5])
+    // East Epe Waterfront Bay Shore (north of reclaimed coastal highway land)
     buildSeawallX(1600 * S, -165 * S, 100 * S - 15.5, 'EE_1');
-    buildSeawallX(1600 * S, 100 * S + 15.5, 275 * S, 'EE_2');
+    buildSeawallX(1600 * S, 100 * S + 15.5, WORLD_BOUNDS.coastalLandNorthZ, 'EE_2');
+    buildSeawallZ(1600 * S, WORLD_BOUNDS.coastalEastCoastX, WORLD_BOUNDS.coastalLandNorthZ, 'EE_MOUTH');
+
+    // Single Continuous South Atlantic Coastline Seawall (+Z side ONLY) + Eastern Terminus Shore
+    buildSeawallZ(-460 * S, WORLD_BOUNDS.coastalEastCoastX, WORLD_BOUNDS.southOceanZ, 'ATLANTIC_SOUTH');
+    buildSeawallX(WORLD_BOUNDS.coastalEastCoastX, WORLD_BOUNDS.coastalLandNorthZ, WORLD_BOUNDS.southOceanZ, 'COAST_EAST');
   }
 
   // =========================================================================
@@ -1302,6 +1320,63 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
       hasSign: true,
       signText: 'CAMPUS SECURITY',
     },
+
+    // Victoria Island Coastal Oceanfront Modern Stepped Towers
+    {
+      id: 'B_VI_COAST_TOWER_1',
+      x: 195,
+      z: 266,
+      width: 24,
+      depth: 20,
+      height: 44,
+      name: 'Eko Atlantic Horizon Tower',
+      type: 'tech_hub',
+      color: 0x0f172a,
+      roofColor: 0x38bdf8,
+      hasSign: true,
+      signText: 'EKO HORIZON',
+    },
+    {
+      id: 'B_VI_COAST_TOWER_2',
+      x: 255,
+      z: 268,
+      width: 22,
+      depth: 20,
+      height: 52,
+      name: 'Kuramo Bay Terrace Residences',
+      type: 'bank',
+      color: 0x1e293b,
+      roofColor: 0xf8fafc,
+      hasSign: true,
+      signText: 'KURAMO BAY',
+    },
+    {
+      id: 'B_VI_COAST_TOWER_3',
+      x: 315,
+      z: 264,
+      width: 24,
+      depth: 20,
+      height: 36,
+      name: 'Victoria Island Coastal Plaza',
+      type: 'tech_hub',
+      color: 0x334155,
+      roofColor: 0x10b981,
+      hasSign: true,
+      signText: 'VI COASTAL PLAZA',
+    },
+    {
+      id: 'B_VI_COAST_TOWER_4',
+      x: 425,
+      z: 266,
+      width: 22,
+      depth: 18,
+      height: 32,
+      name: 'Ikoyi South Oceanfront Suites',
+      type: 'bank',
+      color: 0x1e293b,
+      roofColor: 0xf59e0b,
+      hasSign: false,
+    },
   ];
 
   regionalBuildingSpecs.forEach((b) => {
@@ -1316,6 +1391,111 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
     allCollidableBuildings.push(scaledB);
     buildCompositeBuilding(scaledB);
   });
+
+  // =========================================================================
+  // 8b. LAGOS COASTAL HIGHWAY: KM 0-5 SIGNS, RACE GANTRIES, GRASSY EMBANKMENT & BEACH BERM
+  // =========================================================================
+  {
+    const roadZ = WORLD_BOUNDS.coastalRoadZ;
+
+    // Victoria Island Start Gantry & Epe Finish Gantry across the 4-lane Coastal Highway
+    addHighwayGantry(
+      200 * S,
+      0,
+      roadZ,
+      Math.PI / 2,
+      'COASTAL GRAND PRIX START',
+      'VICTORIA ISLAND -> EPE (5 KM) · 4-LANE EXPRESS',
+      35.4
+    );
+    addHighwayGantry(
+      2220 * S,
+      0,
+      roadZ,
+      Math.PI / 2,
+      'EPE COASTAL FINISH LINE',
+      'LAGOS COASTAL HIGHWAY TERMINUS · KM 5',
+      35.4
+    );
+
+    // Kilometer Interval Signs (KM 0 .. KM 5) on inland (-Z) north shoulder, nudged clear of inlet junctions
+    COASTAL_KM_MARKERS.forEach((km) => {
+      let signX = km.x;
+      const signZ = roadZ - 21.5;
+      if (edgeDistToRoad(signX, signZ) < 2.5) {
+        signX += 30;
+      }
+      if (edgeDistToRoad(signX, signZ) < 2.2) return;
+
+      const kg = new THREE.Group();
+      kg.position.set(signX, 0, signZ);
+
+      const postL = new THREE.Mesh(
+        trackGeo(new THREE.CylinderGeometry(0.14, 0.18, 6.4, 8)),
+        steelSilverMat
+      );
+      postL.position.set(-2.2, 3.2, 0);
+      const postR = postL.clone();
+      postR.position.x = 2.2;
+
+      const board = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(7.2, 2.4, 0.22)), greenHwyMat);
+      board.position.set(0, 5.2, 0);
+
+      const kmTex = texPack.createKmSignTexture(km.label, km.subtitle);
+      const kmMat = trackMat(new THREE.MeshBasicMaterial({ map: kmTex }));
+      const faceF = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(6.9, 2.15)), kmMat);
+      faceF.position.set(0, 5.2, 0.13);
+      const faceB = faceF.clone();
+      faceB.position.z = -0.13;
+      faceB.rotation.y = Math.PI;
+
+      kg.add(postL, postR, board, faceF, faceB);
+      cityGroup.add(kg);
+    });
+
+    // Green Coastal Grass Inland Embankments (north side of Coastal Highway, cleanly notched at 5 inlets)
+    const inletCentersX = [160 * S, 365 * S, 790 * S, 1135 * S, 1565 * S];
+    for (let x = 135 * S; x <= 2320 * S; x += 28) {
+      const nearInlet = inletCentersX.some((ix) => Math.abs(x - ix) < 24);
+      if (nearInlet) continue;
+      const gx = x + 14;
+      const gz = roadZ - 27.5;
+      if (edgeDistToRoad(gx, gz) < 2.0) continue;
+
+      const mound = new THREE.Mesh(
+        trackGeo(new THREE.BoxGeometry(28.5, 1.35, 14.5)),
+        texPack.coastalGrassMat
+      );
+      mound.position.set(gx, 0.45, gz);
+      mound.receiveShadow = true;
+      cityGroup.add(mound);
+
+      // Granite rock outcrop every ~84 units on grassy embankment
+      if (Math.round(x) % 3 === 0) {
+        const rock = new THREE.Mesh(
+          trackGeo(new THREE.DodecahedronGeometry(2.4, 0)),
+          texPack.coastalRockMat
+        );
+        rock.scale.set(1.6, 0.85, 1.2);
+        rock.position.set(gx + 2, 1.05, gz - 2.2);
+        rock.rotation.y = (x * 0.03) % Math.PI;
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        cityGroup.add(rock);
+      }
+    }
+
+    // Sandy Beach Promenade Berm along South (+Z) Atlantic Oceanfront (zero sightline obstructions)
+    const sandMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xd6c19b, roughness: 0.94 }));
+    const beachStrip = new THREE.Mesh(
+      trackGeo(new THREE.PlaneGeometry(2880 * S, 14.0)),
+      sandMat
+    );
+    beachStrip.rotation.x = -Math.PI / 2;
+    beachStrip.position.set(980 * S, -0.02, roadZ + 28.0);
+    beachStrip.receiveShadow = true;
+    cityGroup.add(beachStrip);
+  }
 
   // =========================================================================
   // 8. LAGOS STATE UNIVERSITY (LASU) ARCHED GATE, PERIMETER WALL & QUAD
@@ -1513,7 +1693,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
         z >= WORLD_BOUNDS.lagoonSouthZ - 8
       )
         return false;
-      if (x > WORLD_BOUNDS.epeBayMinX - 8) return false;
+      if (x > WORLD_BOUNDS.epeBayMinX - 8 && z < WORLD_BOUNDS.coastalLandNorthZ + 4) return false;
       if (z > WORLD_BOUNDS.southOceanZ - 12) return false;
       if (distToNearestRoad(x, z) < 18.5) return false;
       for (let i = 0; i < allCollidableBuildings.length; i++) {
@@ -1548,6 +1728,15 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
           palmCoords.push({ x: px, z: pz, scale: 0.9 + rand() * 0.35, yaw: rand() * Math.PI * 2 });
         }
       });
+    }
+
+    // Lagos Coastal Highway Inland (-Z) Palms lining the green embankment (ocean side kept open)
+    for (let x = 155 * S; x <= 2320 * S; x += 38) {
+      const px = x + (rand() - 0.5) * 8;
+      const pz = WORLD_BOUNDS.coastalRoadZ - 26 - rand() * 6;
+      if (isClear(px, pz)) {
+        palmCoords.push({ x: px, z: pz, scale: 0.96 + rand() * 0.32, yaw: rand() * Math.PI * 2 });
+      }
     }
 
     // Mainland Highways & LASU Campus Shade/Palm Trees

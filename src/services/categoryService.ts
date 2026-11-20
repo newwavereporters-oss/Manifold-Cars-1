@@ -5,7 +5,7 @@ import { BODY_TYPES } from '../data/brandsAndTypes';
 class CategoryService {
   private cache: BodyTypeCategory[] = [];
 
-  public async getBodyTypes(): Promise<BodyTypeCategory[]> {
+  public async getBodyTypes(allowSeed = true): Promise<BodyTypeCategory[]> {
     if (!isSupabaseConfigured) {
       throw new Error('Supabase is not configured.');
     }
@@ -32,9 +32,13 @@ class CategoryService {
       return [...this.cache];
     }
 
-    // Auto-seed if empty
+    if (!allowSeed) {
+      return [];
+    }
+
+    // Auto-seed at most once if empty
     await this.seedInitialBodyTypes();
-    return this.getBodyTypes();
+    return this.getBodyTypes(false);
   }
 
   public getBodyTypesSync(): BodyTypeCategory[] {

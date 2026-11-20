@@ -12,13 +12,15 @@ import {
   TurnSignalState,
   TransmissionGear,
   TRANSMISSION_GEAR_PROFILES,
+  computeTargetSteerAngle,
+  stepSteeringAngle,
 } from './worldModels';
 import { animateVehicleModel } from '../../three/VehicleModelFactory';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
 import { resolveSafeCameraPosition, isTargetOccludedByBuildings } from '../../utils/cameraCollision';
 import { buildLagosCityDistrict, LagosCityResult } from './lagosCityBuilder';
 import { TrafficEngine } from './trafficEngine';
-import { RivalsEngine } from './rivalsEngine';
+import { RivalsEngine, type CoastalRaceState } from './rivalsEngine';
 import { CollisionEngine, VehicleColliderBox } from './collisionEngine';
 import {
   findFreeSharedSpawnPose,
@@ -114,6 +116,9 @@ export interface WorldCanvasProps {
   onTrafficPositionsUpdate?: (positions: { x: number; z: number }[]) => void;
   onRivalPositionsUpdate?: (positions: { name: string; x: number; z: number }[]) => void;
   resetVehicleTrigger?: number;
+  coastalRaceCommand?: { action: 'START' | 'EXIT'; seq: number } | null;
+  onCoastalRaceUpdate?: (state: CoastalRaceState | null) => void;
+  onStartCoastalRace?: () => void;
 }
 
 export const WorldCanvas: React.FC<WorldCanvasProps> = ({
@@ -155,6 +160,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   onTrafficPositionsUpdate,
   onRivalPositionsUpdate,
   resetVehicleTrigger,
+  coastalRaceCommand,
+  onCoastalRaceUpdate,
+  onStartCoastalRace,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -187,6 +195,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const lastEmittedGear = useRef<string>('');
   const prevMissionStateKey = useRef<string>('');
   const contextLostRef = useRef<boolean>(false);
+  const coastalRaceSessionRef = useRef<{
+    phase: 'COUNTDOWN' | 'ACTIVE' | 'FINISHED';
+    countdownRemaining: number;
+    startTimeMs: number;
+    checkpointIdx: number;
+    prizeAwarded: boolean;
+  } | null>(null);
+  const lastCoastalEmitRef = useRef<number>(0);
+  const lastHandledRaceCmdSeqRef = useRef<number>(-1);
 
   // Dynamic Component Refs
   const wheelsRef = useRef<{
@@ -304,6 +321,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
   const onRivalPositionsUpdateRef = useRef(onRivalPositionsUpdate);
   onRivalPositionsUpdateRef.current = onRivalPositionsUpdate;
+
+  const onCoastalRaceUpdateRef = useRef(onCoastalRaceUpdate);
+  onCoastalRaceUpdateRef.current = onCoastalRaceUpdate;
+
+  const onStartCoastalRaceRef = useRef(onStartCoastalRace);
+  onStartCoastalRaceRef.current = onStartCoastalRace;
 
   const presentationModeRef = useRef(presentationMode);
   presentationModeRef.current = presentationMode;
@@ -547,15 +570,26 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
     if (activeMissionSession.missionId === 'MISSION_B_RACE') {
       if (stateChanged && activeMissionSession.state === 'COUNTDOWN') {
-        cs.x = -50 * WORLD_XZ_SCALE;
-        cs.z = -130 * WORLD_XZ_SCALE;
+        const startCP = RIVAL_RACE_CHECKPOINTS[0];
+        cs.x = startCP.x - 2.0;
+        cs.z = startCP.z + 4.0;
+        cs.y = resolveSurfaceY(cs.x, cs.z, 0);
         cs.rotation = Math.PI / 2;
         cs.speed = 0;
         cs.steeringAngle = 0;
+        chaseCamRef.current.yaw = cs.rotation;
         if (playerCarGroupRef.current) {
-          playerCarGroupRef.current.position.set(cs.x, 0, cs.z);
+          playerCarGroupRef.current.position.set(cs.x, cs.y, cs.z);
           playerCarGroupRef.current.rotation.y = cs.rotation;
+          playerCarGroupRef.current.rotation.x = 0;
+          resetVehicleDamage(playerCarGroupRef.current);
         }
+        trafficEngineRef.current?.clearArea(
+          140 * WORLD_XZ_SCALE,
+          2300 * WORLD_XZ_SCALE,
+          295 * WORLD_XZ_SCALE,
+          345 * WORLD_XZ_SCALE
+        );
         playerRaceCheckpointIdx.current = 1;
         if (rivals) {
           rivals.group.visible = true;
@@ -596,10 +630,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         });
       }
     } else if (stateChanged) {
-      if (rivals) rivals.group.visible = false;
-      cityData?.checkpointMeshes.forEach((cp) => {
-        cp.mesh.visible = false;
-      });
+      if (rivals && !coastalRaceSessionRef.current) rivals.group.visible = false;
+      if (!coastalRaceSessionRef.current) {
+        cityData?.checkpointMeshes.forEach((cp) => {
+          cp.mesh.visible = false;
+        });
+      }
       const isInitialEntry =
         !prevState || prevState === 'NONE' || prevState === 'BRIEFING' || prevState === 'COUNTDOWN';
       if (activeMissionSession.state === 'ACTIVE' && isInitialEntry) {
@@ -628,6 +664,96 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     activeMissionSession?.state,
     activeMissionSession?.currentRaceCheckpointIdx,
   ]);
+
+  // Standalone Coastal Highway Race Command Handler (Victoria Island -> Epe 4-lane AI Race)
+  useEffect(() => {
+    if (!coastalRaceCommand || coastalRaceCommand.seq === lastHandledRaceCmdSeqRef.current) {
+      return;
+    }
+    lastHandledRaceCmdSeqRef.current = coastalRaceCommand.seq;
+
+    const cityData = cityDataRef.current;
+    const rivals = rivalsEngineRef.current;
+    const cs = carState.current;
+
+    if (coastalRaceCommand.action === 'START') {
+      const startCP = RIVAL_RACE_CHECKPOINTS[0];
+      const finishCP = RIVAL_RACE_CHECKPOINTS[RIVAL_RACE_CHECKPOINTS.length - 1];
+      trafficEngineRef.current?.clearArea(
+        140 * WORLD_XZ_SCALE,
+        2300 * WORLD_XZ_SCALE,
+        295 * WORLD_XZ_SCALE,
+        345 * WORLD_XZ_SCALE
+      );
+
+      cs.x = startCP.x - 2.0;
+      cs.z = startCP.z + 4.0;
+      cs.y = resolveSurfaceY(cs.x, cs.z, 0);
+      cs.rotation = Math.PI / 2;
+      cs.speed = 0;
+      cs.steeringAngle = 0;
+      chaseCamRef.current.yaw = Math.PI / 2;
+
+      if (playerCarGroupRef.current) {
+        playerCarGroupRef.current.position.set(cs.x, cs.y, cs.z);
+        playerCarGroupRef.current.rotation.y = cs.rotation;
+        playerCarGroupRef.current.rotation.x = 0;
+        resetVehicleDamage(playerCarGroupRef.current);
+      }
+
+      if (rivals) {
+        rivals.group.visible = true;
+        rivals.resetToGrid();
+      }
+      cityData?.checkpointMeshes.forEach((cp, idx) => {
+        cp.mesh.visible = idx >= 1;
+        cp.mesh.scale.setScalar(idx === 1 ? 1.15 : 0.9);
+      });
+
+      coastalRaceSessionRef.current = {
+        phase: 'COUNTDOWN',
+        countdownRemaining: 3.2,
+        startTimeMs: 0,
+        checkpointIdx: 1,
+        prizeAwarded: false,
+      };
+      lastCoastalEmitRef.current = 0;
+
+      const standings = rivals
+        ? rivals.getRaceStandings({
+            checkpointIdx: 1,
+            distToNext: Math.hypot(
+              RIVAL_RACE_CHECKPOINTS[1].x - cs.x,
+              RIVAL_RACE_CHECKPOINTS[1].z - cs.z
+            ),
+            isFinished: false,
+          })
+        : { rank: 1, leaderboard: [] };
+
+      onCoastalRaceUpdateRef.current?.({
+        phase: 'COUNTDOWN',
+        countdownSeconds: 3,
+        elapsedSec: 0,
+        rank: standings.rank,
+        totalRacers: (rivals?.rivals.length ?? 4) + 1,
+        checkpointIdx: 1,
+        totalCheckpoints: RIVAL_RACE_CHECKPOINTS.length,
+        distanceRemainingMeters: Math.round(Math.hypot(finishCP.x - cs.x, finishCP.z - cs.z) * 1.5),
+        leaderboard: standings.leaderboard,
+        prizeCredits: 0,
+      });
+    } else if (coastalRaceCommand.action === 'EXIT') {
+      coastalRaceSessionRef.current = null;
+      if (activeMissionSessionRef.current?.missionId !== 'MISSION_B_RACE') {
+        rivals?.resetToGrid();
+        if (rivals) rivals.group.visible = false;
+        cityData?.checkpointMeshes.forEach((cp) => {
+          cp.mesh.visible = false;
+        });
+      }
+      onCoastalRaceUpdateRef.current?.(null);
+    }
+  }, [coastalRaceCommand]);
 
   // Headlights & Exterior Spotlights state sync
   useEffect(() => {
@@ -728,6 +854,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           onOpenCustomizer?.();
         } else if (activeZoneRef.current === 'dealer-lounge') {
           onOpenDealerLounge?.();
+        } else if (activeZoneRef.current === 'coastal-race') {
+          onStartCoastalRaceRef.current?.();
         } else {
           onInspectCar?.(activeZoneRef.current);
         }
@@ -749,7 +877,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       if (k === 'r') {
         const cs = carState.current;
         const spec = vehicleSpecRef.current;
-        const isRace = activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE';
+        const isRace =
+          activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE' ||
+          Boolean(coastalRaceSessionRef.current);
+        const raceStart = RIVAL_RACE_CHECKPOINTS[0];
         const occupied = [
           ...Array.from(remoteCarMeshesRef.current.values()).map((r) => ({
             x: r.x,
@@ -760,13 +891,13 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             rotation: r.heading,
           })),
           ...(trafficEngineRef.current?.getTrafficBoundingBoxes() ?? []),
-          ...(rivalsEngineRef.current?.isRaceActive
-            ? rivalsEngineRef.current.getRivalsBoundingBoxes()
+          ...(rivalsEngineRef.current?.isRaceActive || coastalRaceSessionRef.current
+            ? rivalsEngineRef.current?.getRivalsBoundingBoxes() ?? []
             : []),
         ];
         const freePose = findFreeSharedSpawnPose({
-          baseX: isRace ? -50 * WORLD_XZ_SCALE : 0,
-          baseZ: isRace ? -130 * WORLD_XZ_SCALE : 10 * WORLD_XZ_SCALE,
+          baseX: isRace ? raceStart.x - 2.0 : 0,
+          baseZ: isRace ? raceStart.z + 4.0 : 10 * WORLD_XZ_SCALE,
           rotation: isRace ? Math.PI / 2 : Math.PI,
           carHalfWidth: spec.bodyWidth * 0.5,
           carHalfLength: spec.bodyLength * 0.5,
@@ -828,7 +959,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     if (!resetVehicleTrigger) return;
     const cs = carState.current;
     const spec = vehicleSpecRef.current;
-    const isRace = activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE';
+    const isRace =
+      activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE' ||
+      Boolean(coastalRaceSessionRef.current);
+    const raceStart = RIVAL_RACE_CHECKPOINTS[0];
     const occupied = [
       ...Array.from(remoteCarMeshesRef.current.values()).map((r) => ({
         x: r.x,
@@ -839,13 +973,13 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         rotation: r.heading,
       })),
       ...(trafficEngineRef.current?.getTrafficBoundingBoxes() ?? []),
-      ...(rivalsEngineRef.current?.isRaceActive
-        ? rivalsEngineRef.current.getRivalsBoundingBoxes()
+      ...(rivalsEngineRef.current?.isRaceActive || coastalRaceSessionRef.current
+        ? rivalsEngineRef.current?.getRivalsBoundingBoxes() ?? []
         : []),
     ];
     const freePose = findFreeSharedSpawnPose({
-      baseX: isRace ? -50 * WORLD_XZ_SCALE : 0,
-      baseZ: isRace ? -130 * WORLD_XZ_SCALE : 10 * WORLD_XZ_SCALE,
+      baseX: isRace ? raceStart.x - 2.0 : 0,
+      baseZ: isRace ? raceStart.z + 4.0 : 10 * WORLD_XZ_SCALE,
       rotation: isRace ? Math.PI / 2 : Math.PI,
       carHalfWidth: spec.bodyWidth * 0.5,
       carHalfLength: spec.bodyLength * 0.5,
@@ -1377,7 +1511,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       if (playerCarGroupRef.current) playerCarGroupRef.current.visible = true;
 
       // Input Resolution (Keyboard + Touch), locked during Race Countdown
-      const isRaceCountdown = activeMissionSessionRef.current?.state === 'COUNTDOWN';
+      const isRaceCountdown =
+        activeMissionSessionRef.current?.state === 'COUNTDOWN' ||
+        coastalRaceSessionRef.current?.phase === 'COUNTDOWN';
       const currentVirtual = virtualInputRef.current;
       const input = isRaceCountdown
         ? { forward: false, backward: false, left: false, right: false, handbrake: false }
@@ -1442,7 +1578,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
       // Transmission-Governed Throttle & Braking Dynamics
       // Strict hierarchy: D1 (Fast) > D2 (Moderate) > D0 (Slow); P locks vehicle; R governs reverse
-      if (currentGear === 'P' || activeMissionSessionRef.current?.state === 'COUNTDOWN') {
+      if (currentGear === 'P' || isRaceCountdown) {
         if (Math.abs(cs.speed) > 0.1) {
           const decel = brakeDecelEffective * delta;
           cs.speed = cs.speed > 0 ? Math.max(0, cs.speed - decel) : Math.min(0, cs.speed + decel);
@@ -1510,23 +1646,29 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         cs.isDrifting = false;
       }
 
-      // Speed-based steering damping (safe denominator so D0 and R turn smoothly)
-      const speedSteerFactor = Math.max(0.32, 1 - Math.abs(cs.speed) / Math.max(16, effectiveMaxSpeed * 1.35));
-      const targetSteer = input.left
-        ? baseSpec.maxSteer * speedSteerFactor
-        : input.right
-        ? -baseSpec.maxSteer * speedSteerFactor
-        : 0;
+      // Smooth, full-lock exponential steering (standstill/city full lock + highway stability)
+      const steerInput: -1 | 0 | 1 = input.left && !input.right ? 1 : input.right && !input.left ? -1 : 0;
+      const targetSteer = computeTargetSteerAngle({
+        steerInput,
+        maxSteer: baseSpec.maxSteer,
+        speed: cs.speed,
+        effectiveMaxSpeed,
+      });
 
-      cs.steeringAngle += (targetSteer - cs.steeringAngle) * effectiveSteerSpeed * delta * 4;
+      cs.steeringAngle = stepSteeringAngle({
+        currentAngle: cs.steeringAngle,
+        targetAngle: targetSteer,
+        effectiveSteerSpeed,
+        delta,
+      });
 
-      // Heading rotation with drift authority
+      // Heading rotation with drift authority (calibrated for wider full-lock front wheel angle)
       if (Math.abs(cs.speed) > 0.05) {
         const turnDirection = cs.speed > 0 ? 1 : -1;
-        const driftMultiplier = (cs.isDrifting ? 1.7 : 1.0) * modeDriftMod * driftControlMultiplier;
-        const turnRefSpeed = Math.max(18, baseSpec.maxSpeed * 0.72);
+        const driftMultiplier = (cs.isDrifting ? 1.65 : 1.0) * modeDriftMod * driftControlMultiplier;
+        const turnRefSpeed = Math.max(16, baseSpec.maxSpeed * 0.68);
         cs.rotation +=
-          (cs.steeringAngle * (cs.speed / turnRefSpeed) * 2.8 * turnDirection * delta) *
+          (cs.steeringAngle * (cs.speed / turnRefSpeed) * 2.35 * turnDirection * delta) *
           driftMultiplier;
       }
 
@@ -1555,6 +1697,108 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       cityData.updateFallingProps(delta);
       cityData.updateDynamicWorld?.(delta, currentTime / 1000);
 
+      // Step Standalone Coastal Highway Race (Victoria Island -> Epe 4-lane AI Race)
+      const coastalRace = coastalRaceSessionRef.current;
+      if (coastalRace) {
+        const finishCP = RIVAL_RACE_CHECKPOINTS[RIVAL_RACE_CHECKPOINTS.length - 1];
+        if (coastalRace.phase === 'COUNTDOWN') {
+          coastalRace.countdownRemaining -= delta;
+          if (coastalRace.countdownRemaining <= 0) {
+            coastalRace.phase = 'ACTIVE';
+            coastalRace.startTimeMs = currentTime;
+            rivalsEngine.startRace();
+            cs.speed = 0;
+            lastCoastalEmitRef.current = 0;
+          }
+        } else if (coastalRace.phase === 'ACTIVE') {
+          const targetCP = RIVAL_RACE_CHECKPOINTS[coastalRace.checkpointIdx];
+          if (targetCP) {
+            const distToCP = Math.hypot(cs.x - targetCP.x, cs.z - targetCP.z);
+            if (distToCP < targetCP.radius + 4.5) {
+              const completedMesh = cityData.checkpointMeshes[coastalRace.checkpointIdx];
+              if (completedMesh) completedMesh.mesh.visible = false;
+
+              if (coastalRace.checkpointIdx < RIVAL_RACE_CHECKPOINTS.length - 1) {
+                coastalRace.checkpointIdx += 1;
+                const nextMesh = cityData.checkpointMeshes[coastalRace.checkpointIdx];
+                if (nextMesh) nextMesh.mesh.scale.setScalar(1.15);
+              } else {
+                coastalRace.phase = 'FINISHED';
+                const elapsedSec = Math.max(
+                  0.1,
+                  (currentTime - coastalRace.startTimeMs) / 1000
+                );
+                const standings = rivalsEngine.getRaceStandings({
+                  checkpointIdx: RIVAL_RACE_CHECKPOINTS.length,
+                  distToNext: 0,
+                  isFinished: true,
+                });
+                const prizeCredits =
+                  standings.rank === 1
+                    ? 1500
+                    : standings.rank === 2
+                    ? 900
+                    : standings.rank === 3
+                    ? 500
+                    : 250;
+                if (!coastalRace.prizeAwarded) {
+                  coastalRace.prizeAwarded = true;
+                  onAwardCreditsRef.current?.(
+                    prizeCredits,
+                    `Coastal Highway Grand Prix P${standings.rank}`
+                  );
+                }
+                onCoastalRaceUpdateRef.current?.({
+                  phase: 'FINISHED',
+                  countdownSeconds: 0,
+                  elapsedSec,
+                  rank: standings.rank,
+                  totalRacers: rivalsEngine.rivals.length + 1,
+                  checkpointIdx: RIVAL_RACE_CHECKPOINTS.length,
+                  totalCheckpoints: RIVAL_RACE_CHECKPOINTS.length,
+                  distanceRemainingMeters: 0,
+                  leaderboard: standings.leaderboard,
+                  prizeCredits,
+                });
+              }
+            }
+          }
+        }
+
+        if (
+          coastalRace.phase !== 'FINISHED' &&
+          (lastCoastalEmitRef.current === 0 || currentTime - lastCoastalEmitRef.current > 160)
+        ) {
+          lastCoastalEmitRef.current = currentTime;
+          const activeCP =
+            RIVAL_RACE_CHECKPOINTS[coastalRace.checkpointIdx] || finishCP;
+          const distToNext = Math.hypot(activeCP.x - cs.x, activeCP.z - cs.z);
+          const standings = rivalsEngine.getRaceStandings({
+            checkpointIdx: coastalRace.checkpointIdx,
+            distToNext,
+            isFinished: false,
+          });
+          onCoastalRaceUpdateRef.current?.({
+            phase: coastalRace.phase,
+            countdownSeconds: Math.max(1, Math.ceil(coastalRace.countdownRemaining)),
+            elapsedSec:
+              coastalRace.phase === 'ACTIVE'
+                ? Math.max(0, (currentTime - coastalRace.startTimeMs) / 1000)
+                : 0,
+            rank: standings.rank,
+            totalRacers: rivalsEngine.rivals.length + 1,
+            checkpointIdx: coastalRace.checkpointIdx,
+            totalCheckpoints: RIVAL_RACE_CHECKPOINTS.length,
+            distanceRemainingMeters: Math.max(
+              0,
+              Math.round(Math.hypot(finishCP.x - cs.x, finishCP.z - cs.z) * 1.5)
+            ),
+            leaderboard: standings.leaderboard,
+            prizeCredits: 0,
+          });
+        }
+      }
+
       // Build collider boxes for visible nearby remote online players so no cars ever clip through each other
       remoteBoxesScratch.length = 0;
       const remotePool = remoteCarMeshesRef.current;
@@ -1581,7 +1825,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       }
 
       const trafficBoxes = trafficEngine.getTrafficBoundingBoxes();
-      const rivalBoxes = rivalsEngine.isRaceActive ? rivalsEngine.getRivalsBoundingBoxes() : [];
+      const rivalBoxes =
+        rivalsEngine.isRaceActive || coastalRaceSessionRef.current
+          ? rivalsEngine.getRivalsBoundingBoxes()
+          : [];
 
       // Substepped + Multi-Iteration Physics Loop (prevents tunneling through thin walls, dividers & cars at any speed)
       const substeps = Math.max(1, Math.min(8, Math.ceil(stepDistance / 0.65)));
@@ -2083,6 +2330,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           } else if (speedKmh > 100) {
             onAwardCreditsRef.current?.(150, 'Speed Trap Record Passed');
           }
+        }
+      }
+
+      // 6. Victoria Island Coastal Highway Race Grid (strictly on Coastal Highway)
+      if (!coastalRaceSessionRef.current && !activeMissionSessionRef.current) {
+        const coastalStart = RIVAL_RACE_CHECKPOINTS[0];
+        const distToCoastalRace = Math.hypot(cs.x - coastalStart.x, cs.z - coastalStart.z);
+        if (distToCoastalRace < 18) {
+          detectedZone = 'coastal-race';
         }
       }
 

@@ -420,9 +420,13 @@ export function buildDetailedInteriorAndDriver(
   addPart(interiorGroup, new THREE.BoxGeometry(cabinWidth - 0.08, 0.22, 0.48), trimMat, 0, dashY, dashZ + 0.08, 0.06);
   // Upper soft-touch stitched dash brow
   addPart(interiorGroup, new THREE.BoxGeometry(cabinWidth - 0.1, 0.05, 0.46), bolsterMat, 0, dashY + 0.11, dashZ + 0.06, 0.05);
-  // Instrument cluster hood + illuminated gauge dial plane facing driver
+  // Instrument cluster hood + illuminated gauge dial plane facing driver + triple metallic bezel rings
   addPart(interiorGroup, new THREE.BoxGeometry(0.38, 0.15, 0.24), trimMat, steerOffset.x, dashY + 0.12, dashZ - 0.02);
   addPart(interiorGroup, new THREE.PlaneGeometry(0.32, 0.12), gaugeMat, steerOffset.x, dashY + 0.115, dashZ - 0.142, 0, Math.PI, 0);
+  [-0.095, 0, 0.095].forEach((gx, idx) => {
+    const r = idx === 1 ? 0.044 : 0.036;
+    addPart(interiorGroup, new THREE.TorusGeometry(r, 0.004, 8, 18), chromeMat, steerOffset.x + gx, dashY + 0.115, dashZ - 0.145);
+  });
 
   // Center Infotainment Screen + Metallic Trim Bezel + Air Vents
   addPart(interiorGroup, new THREE.BoxGeometry(0.34, 0.19, 0.045), chromeMat, 0, dashY + 0.13, dashZ - 0.06, -0.14);
@@ -488,14 +492,16 @@ export function buildDetailedInteriorAndDriver(
   steeringWheelGroup.add(rimTorus);
   addPart(steeringWheelGroup, new THREE.BoxGeometry(0.03, 0.044, 0.044), stitchMat, 0, wheelR, 0);
 
-  // Center Airbag Hub + Chrome MANIFOLD Horn Ring + 3 Brushed Aluminum Spokes
+  // Center Airbag Hub + Chrome MANIFOLD Horn Ring + Gold Crest + Twin Lower Brushed Aluminum Spokes
   addPart(steeringWheelGroup, new THREE.CylinderGeometry(0.054, 0.058, 0.045, 16), trimMat, 0, 0, 0.006, Math.PI / 2);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.004, 8, 16), chromeMat);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.0045, 8, 18), chromeMat);
   ring.position.z = -0.019;
   steeringWheelGroup.add(ring);
+  addPart(steeringWheelGroup, new THREE.CylinderGeometry(0.014, 0.014, 0.006, 12), stitchMat, 0, 0, -0.02, Math.PI / 2);
 
   addPart(steeringWheelGroup, new THREE.BoxGeometry(wheelR * 1.85, 0.028, 0.018), chromeMat, 0, 0, 0.008);
-  addPart(steeringWheelGroup, new THREE.BoxGeometry(0.032, wheelR * 0.92, 0.018), chromeMat, 0, -wheelR * 0.48, 0.008);
+  addPart(steeringWheelGroup, new THREE.BoxGeometry(0.016, wheelR * 0.92, 0.018), chromeMat, -0.018, -wheelR * 0.48, 0.008, 0, 0, -0.14);
+  addPart(steeringWheelGroup, new THREE.BoxGeometry(0.016, wheelR * 0.92, 0.018), chromeMat, 0.018, -wheelR * 0.48, 0.008, 0, 0, 0.14);
 
   // 6. Articulated Seated 3D Human Driver
   const { driverGroup, driverHeadGroup, driverArmGroups } = buildHumanDriver(

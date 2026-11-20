@@ -23,11 +23,15 @@ export interface LagosTexturePack {
   streetlightBulbMat: THREE.MeshStandardMaterial;
   nightWindowWarmMat: THREE.MeshStandardMaterial;
   nightWindowCoolMat: THREE.MeshStandardMaterial;
+  racingCurbMat: THREE.MeshStandardMaterial;
+  coastalGrassMat: THREE.MeshStandardMaterial;
+  coastalRockMat: THREE.MeshStandardMaterial;
   createSignTexture: (
     title: string,
     subtitle: string,
     opts?: { bg?: string; border?: string; accent?: string; text?: string }
   ) => THREE.CanvasTexture;
+  createKmSignTexture: (kmLabel: string, subtitle: string) => THREE.CanvasTexture;
   createPavementStencilTexture: (label: string, bgAlpha?: boolean) => THREE.CanvasTexture;
   updateTimeOfDay: (mode: 'DAYLIGHT' | 'SUNSET' | 'MIDNIGHT' | 'GOLDEN_HOUR') => void;
   dispose: () => void;
@@ -210,6 +214,67 @@ export function createLagosTexturePack(maxAnisotropy: number = 4): LagosTextureP
       color: 0x3f7d44,
       roughness: 0.88,
       metalness: 0.02,
+    })
+  );
+
+  // 3b. COASTAL RACING CURB, GREEN GRASS EMBANKMENT & GRANITE ROCK MATERIALS
+  const racingCurbCanvas = makeNoiseCanvas(128, (ctx, s) => {
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, s, s);
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(0, 0, s, s / 2);
+    ctx.fillStyle = 'rgba(15,23,42,0.12)';
+    ctx.fillRect(0, s / 2 - 2, s, 4);
+    ctx.fillRect(0, s - 2, s, 2);
+  });
+  const racingCurbTex = registerTex(racingCurbCanvas, { srgb: true, repeatX: 1, repeatY: 16 });
+  const racingCurbMat = registerMat(
+    new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      map: racingCurbTex,
+      roughness: 0.55,
+      metalness: 0.08,
+    })
+  );
+
+  const coastalGrassCanvas = makeNoiseCanvas(256, (ctx, s) => {
+    ctx.fillStyle = '#5a8f29';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 2200; i++) {
+      const x = (i * 59) % s;
+      const y = (i * 107) % s;
+      ctx.fillStyle =
+        i % 3 === 0 ? '#74ad38' : i % 3 === 1 ? '#44741d' : 'rgba(180, 198, 84, 0.32)';
+      ctx.fillRect(x, y, 4, 4);
+    }
+  });
+  const coastalGrassTex = registerTex(coastalGrassCanvas, { srgb: true, repeatX: 32, repeatY: 6 });
+  const coastalGrassMat = registerMat(
+    new THREE.MeshStandardMaterial({
+      color: 0x84cc16,
+      map: coastalGrassTex,
+      roughness: 0.9,
+      metalness: 0.02,
+    })
+  );
+
+  const coastalRockCanvas = makeNoiseCanvas(128, (ctx, s) => {
+    ctx.fillStyle = '#78716c';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 900; i++) {
+      const x = (i * 37) % s;
+      const y = (i * 71) % s;
+      ctx.fillStyle = i % 2 === 0 ? '#57534e' : '#a8a29e';
+      ctx.fillRect(x, y, 3, 3);
+    }
+  });
+  const coastalRockTex = registerTex(coastalRockCanvas, { srgb: true, repeatX: 2, repeatY: 2 });
+  const coastalRockMat = registerMat(
+    new THREE.MeshStandardMaterial({
+      color: 0x8c857e,
+      map: coastalRockTex,
+      roughness: 0.88,
+      metalness: 0.05,
     })
   );
 
@@ -449,6 +514,40 @@ export function createLagosTexturePack(maxAnisotropy: number = 4): LagosTextureP
     return registerTex(canvas, { srgb: true, repeatX: 1, repeatY: 1 });
   };
 
+  const createKmSignTexture = (kmLabel: string, subtitle: string): THREE.CanvasTexture => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 160;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#065f46';
+      ctx.fillRect(0, 0, 512, 160);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(6, 6, 500, 148);
+
+      // Shield badge on left
+      ctx.fillStyle = '#facc15';
+      ctx.fillRect(20, 22, 132, 116);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 42px "Plus Jakarta Sans", Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kmLabel, 86, 80);
+
+      // Highway title & subtitle on right
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 26px "Plus Jakarta Sans", Arial, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('LAGOS COASTAL HWY', 172, 54);
+
+      ctx.fillStyle = '#fde047';
+      ctx.font = 'bold 20px "Plus Jakarta Sans", Arial, sans-serif';
+      ctx.fillText(subtitle, 172, 102);
+    }
+    return registerTex(canvas, { srgb: true, repeatX: 1, repeatY: 1 });
+  };
+
   const createPavementStencilTexture = (label: string, bgAlpha = true): THREE.CanvasTexture => {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
@@ -546,7 +645,11 @@ export function createLagosTexturePack(maxAnisotropy: number = 4): LagosTextureP
     streetlightBulbMat,
     nightWindowWarmMat,
     nightWindowCoolMat,
+    racingCurbMat,
+    coastalGrassMat,
+    coastalRockMat,
     createSignTexture,
+    createKmSignTexture,
     createPavementStencilTexture,
     updateTimeOfDay,
     dispose,

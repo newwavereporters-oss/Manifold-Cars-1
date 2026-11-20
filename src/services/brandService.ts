@@ -5,7 +5,7 @@ import { CAR_BRANDS } from '../data/brandsAndTypes';
 class BrandService {
   private cache: CarBrand[] = [];
 
-  public async getBrands(): Promise<CarBrand[]> {
+  public async getBrands(allowSeed = true): Promise<CarBrand[]> {
     if (!isSupabaseConfigured) {
       throw new Error('Supabase is not configured.');
     }
@@ -34,9 +34,13 @@ class BrandService {
       return [...this.cache];
     }
 
-    // Auto-seed table if brand table is empty in Supabase
+    if (!allowSeed) {
+      return [];
+    }
+
+    // Auto-seed table at most once if brand table is empty in Supabase
     await this.seedInitialBrands();
-    return this.getBrands();
+    return this.getBrands(false);
   }
 
   public getBrandsSync(): CarBrand[] {

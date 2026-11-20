@@ -16,6 +16,8 @@ import {
   DynamicPropCollider,
   getRoadSurfaceY,
   getEdgeDistToElevatedRamps,
+  getRoadSegmentProfile,
+  RoadProfile,
   WORLD_XZ_SCALE,
   WORLD_BOUNDS,
 } from './lagosCityData';
@@ -53,6 +55,7 @@ interface RoadSegment {
   isExpressway: boolean;
   isDualCarriageway: boolean;
   isBridge: boolean;
+  profile: RoadProfile;
   width: number;
   length: number;
   angle: number;
@@ -234,6 +237,14 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
   epeLand.receiveShadow = true;
   cityGroup.add(epeLand);
 
+  // C2. Continuous Reclaimed Lagos Coastal Highway Strip (Victoria Island -> Epe Coast, z = 238*S..356*S)
+  const coastalLandGeo = trackGeo(new THREE.PlaneGeometry(2880 * S, 118 * S, 24, 4));
+  const coastalLand = new THREE.Mesh(coastalLandGeo, texPack.groundTerrainMat);
+  coastalLand.rotation.x = -Math.PI / 2;
+  coastalLand.position.set(980 * S, -0.075, 297 * S);
+  coastalLand.receiveShadow = true;
+  cityGroup.add(coastalLand);
+
   // D. Mainland North: Iyana-Oworo -> Oshodi -> Ikeja -> MMIA Airport -> Mile 2 -> LASU -> Iyanoba
   const northMainlandGeo = trackGeo(new THREE.PlaneGeometry(3400 * S, 900 * S, 20, 10));
   const northMainland = new THREE.Mesh(northMainlandGeo, texPack.groundTerrainMat);
@@ -274,6 +285,17 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
         isDualCarriageway ||
         (node.speedLimit || 50) >= 65 ||
         (neighbor.speedLimit || 50) >= 65;
+      const profile = getRoadSegmentProfile(node, neighbor);
+      const width =
+        profile === 'COASTAL_4LANE'
+          ? 32.0
+          : profile === 'INLET_2LANE'
+          ? 11.6
+          : isDualCarriageway
+          ? 27.6
+          : isExpressway
+          ? 20.4
+          : 17.6;
 
       roadSegments.push({
         aId: node.id,
@@ -287,7 +309,8 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
         isExpressway,
         isDualCarriageway,
         isBridge,
-        width: isDualCarriageway ? 27.6 : isExpressway ? 20.4 : 17.6,
+        profile,
+        width,
         length,
         angle,
       });
@@ -323,7 +346,14 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       const n = groundRoadNodes[i];
       const isDual = Boolean(n.isDualCarriageway);
       const isExpress = isDual || (n.speedLimit || 50) >= 65;
-      const jctRadius = isDual ? 16.8 : isExpress ? 14.2 : 13.0;
+      const jctRadius =
+        n.roadProfile === 'COASTAL_4LANE'
+          ? 18.0
+          : isDual
+          ? 16.8
+          : isExpress
+          ? 14.2
+          : 13.0;
       const d = Math.hypot(px - n.x, pz - n.z) - jctRadius;
       if (d < minEdge) minEdge = d;
     }
@@ -356,7 +386,14 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       const n = groundRoadNodes[i];
       const isDual = Boolean(n.isDualCarriageway);
       const isExpress = isDual || (n.speedLimit || 50) >= 65;
-      const jctRadius = isDual ? 16.8 : isExpress ? 14.2 : 13.0;
+      const jctRadius =
+        n.roadProfile === 'COASTAL_4LANE'
+          ? 18.0
+          : isDual
+          ? 16.8
+          : isExpress
+          ? 14.2
+          : 13.0;
       const d = Math.hypot(px - n.x, pz - n.z) - jctRadius;
       if (d < minEdge) minEdge = d;
     }
@@ -522,18 +559,21 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     const trimHalf = Math.max(2, (roadLength - 24.0) * 0.5);
 
     // Sunken Concrete Drainage Channels + Raised Curbs + Sidewalks (strictly clipped at junctions & forks!)
+    const isCoastalSeg = seg.profile === 'COASTAL_4LANE';
     [-1, 1].forEach((side) => {
       const drainOffset = side * (roadWidth / 2 + 0.35);
-      const curbOffset = side * (roadWidth / 2 + 0.85);
+      const curbOffset = side * (roadWidth / 2 + (isCoastalSeg ? 0.65 : 0.85));
       const walkOffset = side * (roadWidth / 2 + 2.45);
       const railOffset = side * (roadWidth / 2 + 1.35);
 
       const curbRuns = computeClearRuns(trimHalf, curbOffset, 0.75);
-      curbRuns.forEach(([s0, s1]) => {
+      curbRuns.forEach(([s0, s1], cIdx) => {
         const runLen = s1 - s0;
         const sMid = (s0 + s1) * 0.5;
         const rMidX = midX + fwdX * sMid;
         const rMidZ = midZ + fwdZ * sMid;
+        const curbX = rMidX + rightX * curbOffset;
+        const curbZ = rMidZ + rightZ * curbOffset;
 
         // Drainage gutter (between road edge and curb)
         const drainGeo = trackGeo(new THREE.BoxGeometry(0.65, 0.08, runLen));
@@ -543,31 +583,52 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
         drainMesh.receiveShadow = true;
         cityGroup.add(drainMesh);
 
-        // Raised Concrete Curb
-        const curbGeo = trackGeo(new THREE.BoxGeometry(0.42, 0.24, runLen));
-        const curbMesh = new THREE.Mesh(curbGeo, texPack.curbMat);
-        curbMesh.rotation.y = angle;
-        curbMesh.position.set(rMidX + rightX * curbOffset, 0.12, rMidZ + rightZ * curbOffset);
-        curbMesh.receiveShadow = true;
-        cityGroup.add(curbMesh);
+        // Raised Concrete or Red-White Coastal Racing Curb
+        if (isCoastalSeg) {
+          const curbGeo = trackGeo(new THREE.BoxGeometry(0.85, 0.36, runLen));
+          const curbMesh = new THREE.Mesh(curbGeo, texPack.racingCurbMat);
+          curbMesh.rotation.y = angle;
+          curbMesh.position.set(curbX, 0.18, curbZ);
+          curbMesh.receiveShadow = true;
+          cityGroup.add(curbMesh);
+          addBarricade(
+            `COASTAL_CURB_${seg.aId}_${seg.bId}_${side}_${cIdx}`,
+            curbX,
+            0,
+            curbZ,
+            0.46,
+            runLen * 0.5,
+            angle,
+            'MEDIAN'
+          );
+        } else {
+          const curbGeo = trackGeo(new THREE.BoxGeometry(0.42, 0.24, runLen));
+          const curbMesh = new THREE.Mesh(curbGeo, texPack.curbMat);
+          curbMesh.rotation.y = angle;
+          curbMesh.position.set(curbX, 0.12, curbZ);
+          curbMesh.receiveShadow = true;
+          cityGroup.add(curbMesh);
+        }
       });
 
-      // Paved Pedestrian Sidewalk (clipped wider so outer 2.8m slab never protrudes into angled forks)
-      const walkRuns = computeClearRuns(trimHalf, walkOffset, 0.85);
-      walkRuns.forEach(([s0, s1]) => {
-        const runLen = s1 - s0;
-        const sMid = (s0 + s1) * 0.5;
-        const walkGeo = trackGeo(new THREE.BoxGeometry(2.8, 0.18, runLen));
-        const walkMesh = new THREE.Mesh(walkGeo, texPack.sidewalkMat);
-        walkMesh.rotation.y = angle;
-        walkMesh.position.set(
-          midX + fwdX * sMid + rightX * walkOffset,
-          0.09,
-          midZ + fwdZ * sMid + rightZ * walkOffset
-        );
-        walkMesh.receiveShadow = true;
-        cityGroup.add(walkMesh);
-      });
+      // Paved Pedestrian Sidewalk (skip on ocean edge of Coastal Highway so Atlantic view stays clean)
+      if (!(isCoastalSeg && rightZ * side > 0)) {
+        const walkRuns = computeClearRuns(trimHalf, walkOffset, 0.85);
+        walkRuns.forEach(([s0, s1]) => {
+          const runLen = s1 - s0;
+          const sMid = (s0 + s1) * 0.5;
+          const walkGeo = trackGeo(new THREE.BoxGeometry(2.8, 0.18, runLen));
+          const walkMesh = new THREE.Mesh(walkGeo, texPack.sidewalkMat);
+          walkMesh.rotation.y = angle;
+          walkMesh.position.set(
+            midX + fwdX * sMid + rightX * walkOffset,
+            0.09,
+            midZ + fwdZ * sMid + rightZ * walkOffset
+          );
+          walkMesh.receiveShadow = true;
+          cityGroup.add(walkMesh);
+        });
+      }
 
       // Shoulder solid white edge line
       const edgeOffset = side * (roadWidth / 2 - 0.55);
@@ -578,8 +639,8 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       edgeLine.position.set(midX + rightX * edgeOffset, 0.022, midZ + rightZ * edgeOffset);
       cityGroup.add(edgeLine);
 
-      // Expressway outer steel guardrails along straight stretches (HARDENED COLLIDER + strictly clear of cross streets/ramps)
-      if (seg.isExpressway && trimHalf > 12) {
+      // Expressway outer steel guardrails along inland expressways (skipped on Coastal Highway to preserve open sea & red-white curbs)
+      if (seg.isExpressway && !isCoastalSeg && trimHalf > 12) {
         const railRuns = computeClearRuns(Math.max(2, trimHalf - 2), railOffset, 1.35);
         railRuns.forEach(([s0, s1], rIdx) => {
           const railLen = s1 - s0;
@@ -622,6 +683,7 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     // Dashed white lane dividers & reflective road studs
     const dashStep = 7.0;
     const numDashes = Math.floor(centerLineLen / dashStep);
+    const laneSplitFactor = isCoastalSeg ? 0.25 : 0.24;
     for (let i = -Math.floor(numDashes / 2); i <= Math.floor(numDashes / 2); i++) {
       const along = i * dashStep;
       const px = midX + fwdX * along;
@@ -632,7 +694,7 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
 
       // Expressway 4-lane dashed splits
       if (seg.isExpressway) {
-        [-roadWidth * 0.24, roadWidth * 0.24].forEach((laneOff) => {
+        [-roadWidth * laneSplitFactor, roadWidth * laneSplitFactor].forEach((laneOff) => {
           const dash = new THREE.Mesh(dashGeo, texPack.whiteMarkMat);
           dash.rotation.x = -Math.PI / 2;
           dash.rotation.z = -angle;
@@ -695,9 +757,10 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       const baseX = seg.aX + (seg.bX - seg.aX) * t;
       const baseZ = seg.aZ + (seg.bZ - seg.aZ) * t;
 
-      // Alternate or bilateral streetlights strictly on sidewalk edge & clear of cross-streets & ramps
+      // Alternate or bilateral streetlights strictly on sidewalk edge & clear of cross-streets, ramps & coastal sea edge
       const sides = seg.isExpressway ? [-1, 1] : [i % 2 === 0 ? 1 : -1];
       sides.forEach((s) => {
+        if (seg.profile === 'COASTAL_4LANE' && rightZ * s > 0) return;
         const lx = baseX + rightX * (s * (roadWidth / 2 + 2.15));
         const lz = baseZ + rightZ * (s * (roadWidth / 2 + 2.15));
         if (edgeDistToRoad(lx, lz) >= 2.0) {
@@ -908,7 +971,14 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     if ((node.y ?? 0) > 0 || node.isBridge) return; // Elevated deck nodes live above ground
     const isDual = Boolean(node.isDualCarriageway);
     const isExpress = isDual || (node.speedLimit || 50) >= 65;
-    const jctRadius = isDual ? 16.8 : isExpress ? 14.2 : 13.0;
+    const jctRadius =
+      node.roadProfile === 'COASTAL_4LANE'
+        ? 18.0
+        : isDual
+        ? 16.8
+        : isExpress
+        ? 14.2
+        : 13.0;
     const jctGeo = trackGeo(new THREE.CircleGeometry(jctRadius, 28));
     const jctMesh = new THREE.Mesh(
       jctGeo,
@@ -1226,6 +1296,19 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
         bGroup.add(finFront, finBack);
       }
 
+      // Stepped architectural horizontal balcony terrace bands on modern tall towers
+      if (b.height >= 26) {
+        const floorStep = 5.5;
+        const bandGeo = trackGeo(new THREE.BoxGeometry(b.width * 0.98, 0.36, b.depth * 0.98));
+        for (let by = podiumH + floorStep; by < b.height - 1.5; by += floorStep) {
+          const band = new THREE.Mesh(bandGeo, texPack.stuccoCreamMat);
+          band.position.y = by;
+          band.castShadow = true;
+          band.receiveShadow = true;
+          bGroup.add(band);
+        }
+      }
+
       // Roof crown parapet & HVAC mechanical unit + telecom spire
       const crown = new THREE.Mesh(
         trackGeo(new THREE.BoxGeometry(b.width * 0.94, 1.1, b.depth * 0.94)),
@@ -1427,6 +1510,7 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     trackGeo,
     trackMat,
     distToNearestRoad,
+    edgeDistToRoad,
     allCollidableBuildings,
     buildCompositeBuilding,
     addBarricade,

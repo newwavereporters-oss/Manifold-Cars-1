@@ -67,10 +67,163 @@ function isMissingRpcError(err: any): boolean {
   );
 }
 
+function withTimeout<T>(promise: PromiseLike<T>, ms: number, fallbackValue: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(fallbackValue);
+      }
+    }, ms);
+    Promise.resolve(promise)
+      .then((val) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(val);
+        }
+      })
+      .catch(() => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(fallbackValue);
+        }
+      });
+  });
+}
+
+export function buildDealerDirectoryFromTables(params: {
+  dealerRows: any[];
+  accountRows?: any[];
+  profileRows?: any[];
+  addressRows?: any[];
+  carRows?: any[];
+}): AdminDealerAccountRecord[] {
+  const {
+    dealerRows = [],
+    accountRows = [],
+    profileRows = [],
+    addressRows = [],
+    carRows = [],
+  } = params;
+
+  const dealerMap = new Map<string, any>();
+  dealerRows.forEach((d: any) => {
+    if (d && d.id !== undefined && d.id !== null) {
+      dealerMap.set(String(d.id), d);
+    }
+  });
+
+  const accountMap = new Map<string, any>();
+  accountRows.forEach((a: any) => {
+    if (a && a.dealer_id !== undefined && a.dealer_id !== null) {
+      accountMap.set(String(a.dealer_id), a);
+    }
+  });
+
+  const profileMap = new Map<string, any>();
+  profileRows.forEach((p: any) => {
+    if (p && p.dealer_id !== undefined && p.dealer_id !== null) {
+      profileMap.set(String(p.dealer_id), p);
+    }
+  });
+
+  const addrMap = new Map<string, any>();
+  addressRows.forEach((ad: any) => {
+    if (ad && ad.dealer_id !== undefined && ad.dealer_id !== null) {
+      addrMap.set(String(ad.dealer_id), ad);
+    }
+  });
+
+  const allIds = new Set<string>([
+    ...Array.from(dealerMap.keys()),
+    ...Array.from(accountMap.keys()),
+  ]);
+
+  const merged: AdminDealerAccountRecord[] = Array.from(allIds).map((id) => {
+    const d = dealerMap.get(id) || {};
+    const da = accountMap.get(id) || null;
+    const prof = profileMap.get(id) || {};
+    const addr = addrMap.get(id) || {};
+
+    const hasExplicitVerified =
+      typeof d.is_verified === 'boolean' || typeof d.verified_partner === 'boolean';
+    const rawDealerStatus = d.dealer_status ?? undefined;
+    const isVerified =
+      typeof d.is_verified === 'boolean'
+        ? d.is_verified
+        : typeof d.verified_partner === 'boolean'
+        ? d.verified_partner
+        : rawDealerStatus === 'approved';
+    const rawStatus =
+      da?.account_status ||
+      (rawDealerStatus === 'approved'
+        ? 'active'
+        : rawDealerStatus === 'disapproved'
+        ? 'rejected'
+        : isVerified
+        ? 'active'
+        : 'pending');
+    const resolved = resolveDealerApprovalState(rawStatus, isVerified, rawDealerStatus);
+    const approvalStatus: DealerApprovalState =
+      !da && !hasExplicitVerified && !rawDealerStatus ? 'pending' : resolved.approvalStatus;
+
+    const dealerCars = carRows.filter((c: any) => String(c.dealer_id || '') === id);
+
+    return {
+      dealerId: id,
+      dealerAccountId: da?.id ? String(da.id) : null,
+      userId: da?.user_id ? String(da.user_id) : null,
+      hasPortalAccount: Boolean(da?.user_id),
+      businessName: d.business_name || d.name || prof.trading_name || 'Unnamed Dealership',
+      tradingName: prof.trading_name || null,
+      contactName: d.contact_name || null,
+      email: d.email || null,
+      phone: d.phone || null,
+      city: addr.city || d.city || 'Lagos',
+      state: addr.state || d.state || 'Lagos',
+      country: addr.country || d.country || 'Nigeria',
+      addressLine1: addr.address_line_1 || d.address || null,
+      addressLine2: addr.address_line_2 || null,
+      businessType: prof.business_type || null,
+      businessDescription: prof.business_description || d.description || null,
+      website: prof.website || null,
+      cacRegistrationNumber: prof.cac_registration_number || null,
+      accountStatus: resolved.accountStatus,
+      dealerStatus: resolved.dealerStatus,
+      onboardingStatus: da?.onboarding_status || (da?.user_id ? 'completed' : 'directory_only'),
+      isVerified,
+      approvalStatus,
+      canListCars: da?.user_id
+        ? resolved.isApproved
+        : rawDealerStatus
+        ? resolved.dealerStatus === 'approved' && isVerified
+        : isVerified,
+      approvalNotes: da?.approval_notes || null,
+      approvedAt: da?.approved_at || null,
+      disapprovedAt: da?.disapproved_at || null,
+      joinedYear: Number(d.joined_year) || new Date().getFullYear(),
+      createdAt: da?.created_at || d.created_at || new Date().toISOString(),
+      totalVehicles: dealerCars.length,
+      publishedVehicles: dealerCars.filter(
+        (c: any) => String(c.status || '').toUpperCase() === 'PUBLISHED'
+      ).length,
+      inReviewVehicles: dealerCars.filter(
+        (c: any) => String(c.status || '').toUpperCase() === 'PENDING_REVIEW'
+      ).length,
+    };
+  });
+
+  merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return merged;
+}
+
 class DealerService {
   private cache: DealerFullRecord[] = [];
 
-  public async getDealers(): Promise<DealerFullRecord[]> {
+  public async getDealers(allowSeed = true): Promise<DealerFullRecord[]> {
     if (!checkIsSupabaseConfigured()) {
       throw new Error('Supabase is not configured.');
     }
@@ -88,7 +241,12 @@ class DealerService {
           name: d.business_name || d.name || 'Unnamed Dealership',
           city: d.city || 'Lagos',
           state: d.state || 'Lagos',
-          verified_partner: d.is_verified ?? d.verified_partner ?? true,
+          verified_partner:
+            d.dealer_status === 'approved'
+              ? true
+              : d.dealer_status === 'disapproved'
+              ? false
+              : d.is_verified ?? d.verified_partner ?? false,
           joined_year: d.joined_year || 2024,
           address: d.address,
           phone: d.phone,
@@ -98,8 +256,13 @@ class DealerService {
       return [...this.cache];
     }
 
+    if (!allowSeed) {
+      this.cache = [];
+      return [];
+    }
+
     await this.seedInitialDealer();
-    return this.getDealers();
+    return this.getDealers(false);
   }
 
   public getDealersSync(): DealerFullRecord[] {
@@ -108,8 +271,9 @@ class DealerService {
 
   /**
    * Authoritative Admin Dealer Directory:
-   * Combines all registered dealer_accounts (portal signups) AND all public.dealers rows.
-   * Uses admin_list_dealer_accounts() RPC first, with graceful direct-query fallback.
+   * Combines all public.dealers rows AND registered dealer_accounts (portal signups).
+   * Uses admin_list_dealer_accounts() RPC first, with resilient direct-query fallback
+   * to Supabase public.dealers so the admin list always populates promptly.
    */
   public async getAllDealerAccountsForAdmin(): Promise<AdminDealerDirectoryResult> {
     if (!checkIsSupabaseConfigured()) {
@@ -117,9 +281,14 @@ class DealerService {
     }
 
     try {
-      const { data, error } = await supabase.rpc('admin_list_dealer_accounts');
+      const rpcRes = await withTimeout<{ data: any; error: any }>(
+        supabase.rpc('admin_list_dealer_accounts') as any,
+        7000,
+        { data: null, error: { code: 'TIMEOUT', message: 'RPC timed out; falling back to dealers table' } }
+      );
+      const { data, error } = rpcRes;
 
-      if (!error && Array.isArray(data)) {
+      if (!error && Array.isArray(data) && data.length > 0) {
         const mapped: AdminDealerAccountRecord[] = data.map((row: any) => {
           const resolved = resolveDealerApprovalState(
             row.accountStatus,
@@ -164,120 +333,68 @@ class DealerService {
         return { accounts: mapped, migrationRequired: false };
       }
 
-      if (error && !isMissingRpcError(error)) {
+      if (error && !isMissingRpcError(error) && error.code !== 'TIMEOUT') {
         console.warn('admin_list_dealer_accounts notice:', error.message);
       }
 
-      // Fallback: assemble directory directly from tables when migration RPC is not yet installed
+      // Direct Supabase fallback: always load public.dealers directly, and enrich with auxiliary tables
       const migrationRequired = isMissingRpcError(error);
-      const [dealersRes, accountsRes, profilesRes, addressesRes, carsRes] = await Promise.all([
-        supabase.from('dealers').select('*'),
-        supabase.from('dealer_accounts').select('*'),
-        supabase.from('dealer_business_profiles').select('*'),
-        supabase.from('dealer_addresses').select('*'),
-        supabase.from('cars').select('id, dealer_id, status'),
-      ]);
+      const [dealersSettled, accountsSettled, profilesSettled, addressesSettled, carsSettled] =
+        await Promise.allSettled([
+          withTimeout(supabase.from('dealers').select('*') as any, 8000, {
+            data: null,
+            error: { message: 'Timed out reading public.dealers' },
+          }),
+          withTimeout(supabase.from('dealer_accounts').select('*') as any, 6000, { data: [], error: null }),
+          withTimeout(supabase.from('dealer_business_profiles').select('*') as any, 6000, {
+            data: [],
+            error: null,
+          }),
+          withTimeout(supabase.from('dealer_addresses').select('*') as any, 6000, { data: [], error: null }),
+          withTimeout(supabase.from('cars').select('id, dealer_id, status') as any, 6000, {
+            data: [],
+            error: null,
+          }),
+        ]);
 
-      const dealerRows = dealersRes.data || [];
-      const accountRows = accountsRes.data || [];
-      const profileRows = profilesRes.data || [];
-      const addressRows = addressesRes.data || [];
-      const carRows = carsRes.data || [];
+      const dealersRes: any =
+        dealersSettled.status === 'fulfilled'
+          ? dealersSettled.value
+          : { data: null, error: { message: 'Failed to query dealers table' } };
+      const accountsRes: any =
+        accountsSettled.status === 'fulfilled' ? accountsSettled.value : { data: [] };
+      const profilesRes: any =
+        profilesSettled.status === 'fulfilled' ? profilesSettled.value : { data: [] };
+      const addressesRes: any =
+        addressesSettled.status === 'fulfilled' ? addressesSettled.value : { data: [] };
+      const carsRes: any =
+        carsSettled.status === 'fulfilled' ? carsSettled.value : { data: [] };
 
-      const dealerMap = new Map<string, any>();
-      dealerRows.forEach((d: any) => dealerMap.set(String(d.id), d));
+      const dealerRows = Array.isArray(dealersRes?.data) ? dealersRes.data : [];
+      const accountRows = Array.isArray(accountsRes?.data) ? accountsRes.data : [];
+      const profileRows = Array.isArray(profilesRes?.data) ? profilesRes.data : [];
+      const addressRows = Array.isArray(addressesRes?.data) ? addressesRes.data : [];
+      const carRows = Array.isArray(carsRes?.data) ? carsRes.data : [];
 
-      const accountMap = new Map<string, any>();
-      accountRows.forEach((a: any) => {
-        if (a.dealer_id) accountMap.set(String(a.dealer_id), a);
+      const merged = buildDealerDirectoryFromTables({
+        dealerRows,
+        accountRows,
+        profileRows,
+        addressRows,
+        carRows,
       });
 
-      const profileMap = new Map<string, any>();
-      profileRows.forEach((p: any) => {
-        if (p.dealer_id) profileMap.set(String(p.dealer_id), p);
-      });
-
-      const addrMap = new Map<string, any>();
-      addressRows.forEach((ad: any) => {
-        if (ad.dealer_id) addrMap.set(String(ad.dealer_id), ad);
-      });
-
-      const allIds = new Set<string>([
-        ...Array.from(dealerMap.keys()),
-        ...Array.from(accountMap.keys()),
-      ]);
-
-      const merged: AdminDealerAccountRecord[] = Array.from(allIds).map((id) => {
-        const d = dealerMap.get(id) || {};
-        const da = accountMap.get(id) || null;
-        const prof = profileMap.get(id) || {};
-        const addr = addrMap.get(id) || {};
-
-        const isVerified =
-          typeof d.is_verified === 'boolean'
-            ? d.is_verified
-            : typeof d.verified_partner === 'boolean'
-            ? d.verified_partner
-            : false;
-        const rawStatus =
-          da?.account_status || (isVerified ? 'active' : 'pending');
-        const rawDealerStatus = d.dealer_status ?? undefined;
-        const resolved = resolveDealerApprovalState(rawStatus, isVerified, rawDealerStatus);
-        const approvalStatus: DealerApprovalState =
-          !da && !isVerified && !rawDealerStatus ? 'pending' : resolved.approvalStatus;
-
-        const dealerCars = carRows.filter((c: any) => String(c.dealer_id || '') === id);
-
-        return {
-          dealerId: id,
-          dealerAccountId: da?.id ? String(da.id) : null,
-          userId: da?.user_id ? String(da.user_id) : null,
-          hasPortalAccount: Boolean(da?.user_id),
-          businessName: d.business_name || d.name || prof.trading_name || 'Unnamed Dealership',
-          tradingName: prof.trading_name || null,
-          contactName: d.contact_name || null,
-          email: d.email || null,
-          phone: d.phone || null,
-          city: addr.city || d.city || 'Lagos',
-          state: addr.state || d.state || 'Lagos',
-          country: addr.country || d.country || 'Nigeria',
-          addressLine1: addr.address_line_1 || d.address || null,
-          addressLine2: addr.address_line_2 || null,
-          businessType: prof.business_type || null,
-          businessDescription: prof.business_description || d.description || null,
-          website: prof.website || null,
-          cacRegistrationNumber: prof.cac_registration_number || null,
-          accountStatus: resolved.accountStatus,
-          dealerStatus: resolved.dealerStatus,
-          onboardingStatus: da?.onboarding_status || (da?.user_id ? 'completed' : 'directory_only'),
-          isVerified,
-          approvalStatus,
-          canListCars: da?.user_id
-            ? resolved.isApproved
-            : rawDealerStatus
-            ? resolved.dealerStatus === 'approved' && isVerified
-            : isVerified,
-          approvalNotes: da?.approval_notes || null,
-          approvedAt: da?.approved_at || null,
-          disapprovedAt: da?.disapproved_at || null,
-          joinedYear: Number(d.joined_year) || new Date().getFullYear(),
-          createdAt: da?.created_at || d.created_at || new Date().toISOString(),
-          totalVehicles: dealerCars.length,
-          publishedVehicles: dealerCars.filter(
-            (c: any) => String(c.status || '').toUpperCase() === 'PUBLISHED'
-          ).length,
-          inReviewVehicles: dealerCars.filter(
-            (c: any) => String(c.status || '').toUpperCase() === 'PENDING_REVIEW'
-          ).length,
-        };
-      });
-
-      merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const resolvedError =
+        merged.length === 0 && dealersRes?.error?.message
+          ? dealersRes.error.message
+          : error && !migrationRequired && error.code !== 'TIMEOUT' && merged.length === 0
+          ? error.message
+          : undefined;
 
       return {
         accounts: merged,
         migrationRequired,
-        error: error && !migrationRequired ? error.message : undefined,
+        error: resolvedError,
       };
     } catch (err: any) {
       return {
@@ -311,15 +428,15 @@ class DealerService {
     });
 
     if (!error) {
-      await this.getDealers().catch(() => undefined);
+      await this.getDealers(false).catch(() => undefined);
       return { success: true };
     }
 
     if (!isMissingRpcError(error)) {
-      return { success: false, error: error.message || 'Failed to update dealer approval status.' };
+      console.warn('admin_set_dealer_approval_status notice, trying direct update:', error.message);
     }
 
-    // Fallback if migration RPC is not installed yet
+    // Fallback direct update to public.dealers (+ best-effort public.dealer_accounts sync)
     const nextAccountStatus: DealerRawAccountStatus =
       action === 'approve'
         ? 'active'
@@ -346,9 +463,6 @@ class DealerService {
           .update({ dealer_status: nextDealerStatus })
           .eq('id', dealerId);
         dealerErr = retryStatusOnly.error;
-        if (dealerErr && dealerErr.code === '42703') {
-          dealerErr = null;
-        }
       } else {
         const retryVerifiedOnly = await supabase
           .from('dealers')
@@ -363,16 +477,25 @@ class DealerService {
       .update({ account_status: nextAccountStatus })
       .eq('dealer_id', dealerId);
 
-    if (dealerErr || accErr) {
+    if (dealerErr && accErr) {
       return {
         success: false,
         migrationRequired: true,
         error:
-          'Dealer approval RPCs are not installed yet. Run src/db/dealer-approval-migration.sql in Supabase SQL Editor to enable full dealer account management.',
+          dealerErr.message ||
+          'Dealer approval RPCs are not installed yet. Run src/db/dealer-approval-migration.sql in Supabase SQL Editor.',
       };
     }
 
-    await this.getDealers().catch(() => undefined);
+    if (dealerErr) {
+      return {
+        success: false,
+        migrationRequired: isMissingRpcError(error),
+        error: dealerErr.message,
+      };
+    }
+
+    await this.getDealers(false).catch(() => undefined);
     return { success: true, data } as any;
   }
 
