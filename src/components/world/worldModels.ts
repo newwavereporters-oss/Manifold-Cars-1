@@ -49,8 +49,8 @@ export const TRANSMISSION_GEAR_PROFILES: Record<TransmissionGear, TransmissionGe
     gear: 'D1',
     label: 'Fast Drive',
     shortDesc: 'Full performance & top speed',
-    maxSpeedMultiplier: 1.0,
-    accelMultiplier: 1.18,
+    maxSpeedMultiplier: 1.16,
+    accelMultiplier: 1.34,
     shortcut: '4',
   },
   R: {

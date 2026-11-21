@@ -585,11 +585,11 @@ export const MissionHUDOverlay: React.FC<MissionHUDOverlayProps> = ({
 
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/88"
+        className="fixed inset-0 z-50 flex items-center justify-center px-3 pt-14 pb-36 sm:pb-24 bg-black/70"
         onKeyDown={(e) => e.stopPropagation()}
       >
         <div
-          className={`relative w-full max-w-md max-h-[90dvh] overflow-y-auto bg-[#071A2B] border rounded-3xl p-5 sm:p-6 shadow-2xl text-white ${
+          className={`relative w-full max-w-md max-h-[60dvh] overflow-y-auto bg-[#071A2B] border rounded-3xl p-5 sm:p-6 shadow-2xl text-white ${
             isSuccess
               ? 'border-emerald-500/50'
               : isUnpersisted

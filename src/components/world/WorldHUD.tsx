@@ -1018,90 +1018,6 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           </div>
         )}
 
-        {coastalRaceState && coastalRaceState.phase === 'COUNTDOWN' && (
-          <div className="bg-[#071A2B]/96 border-2 border-[#EF233C] px-7 py-4 rounded-3xl shadow-2xl text-center space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
-              Coastal Highway Grand Prix
-            </div>
-            <div className="text-5xl font-black font-mono text-white">
-              {coastalRaceState.countdownSeconds}
-            </div>
-            <div className="text-[11px] font-semibold text-sky-200">
-              Victoria Island -&gt; Epe 4-Lane Express vs 4 AI Racers
-            </div>
-          </div>
-        )}
-
-        {coastalRaceState && coastalRaceState.phase === 'FINISHED' && (
-          <div
-            className="pointer-events-auto bg-[#071A2B]/98 border border-emerald-400/50 p-5 rounded-3xl shadow-2xl w-full space-y-3"
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                  Epe Coastal Finish Gantry
-                </div>
-                <h3 className="text-base font-black text-white">
-                  Finished P{coastalRaceState.rank} of {coastalRaceState.totalRacers}
-                </h3>
-              </div>
-              <div className="text-right font-mono">
-                <div className="text-xs font-black text-amber-400">
-                  +{coastalRaceState.prizeCredits.toLocaleString()} MC
-                </div>
-                <div className="text-[11px] text-gray-300">
-                  {coastalRaceState.elapsedSec.toFixed(1)}s
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              {coastalRaceState.leaderboard.map((entry) => (
-                <div
-                  key={`${entry.position}-${entry.name}`}
-                  className={`flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-bold ${
-                    entry.isPlayer
-                      ? 'bg-[#EF233C]/25 border border-[#EF233C]/50 text-white'
-                      : 'bg-white/5 text-gray-300'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="font-mono text-amber-300 w-5">#{entry.position}</span>
-                    <span>{entry.isPlayer ? `${playerNickname} (You)` : entry.name}</span>
-                  </span>
-                  <span className="font-mono text-[11px] text-sky-300">
-                    {entry.finishTime != null
-                      ? `${entry.finishTime.toFixed(1)}s`
-                      : `CP ${entry.cpIdx}/${coastalRaceState.totalCheckpoints}`}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-2 pt-1">
-              {onStartCoastalRace && (
-                <button
-                  type="button"
-                  onClick={onStartCoastalRace}
-                  className="flex-1 py-2 rounded-xl bg-[#EF233C] hover:bg-red-700 text-white text-xs font-black uppercase tracking-wider cursor-pointer"
-                >
-                  Race Again
-                </button>
-              )}
-              {onExitCoastalRace && (
-                <button
-                  type="button"
-                  onClick={onExitCoastalRace}
-                  className="flex-1 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase tracking-wider cursor-pointer"
-                >
-                  Exit to Free Roam
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
         {activeZone && !coastalRaceState && (
           <div className="pointer-events-auto bg-[#071A2B]/96 border border-[#EF233C] px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 w-full">
             <div className="w-8 h-8 rounded-xl bg-[#EF233C]/20 border border-[#EF233C]/40 flex items-center justify-center text-[#EF233C] font-black text-xs shrink-0">
@@ -1147,6 +1063,95 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
           </div>
         )}
       </div>
+
+      {/* CENTERED COASTAL RACE COUNTDOWN & FINISH RESULT MODAL (WELL CLEAR OF CAR CONTROLS) */}
+      {coastalRaceState && coastalRaceState.phase === 'COUNTDOWN' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4 pb-28 sm:pb-16 pointer-events-none">
+          <div className="bg-[#071A2B]/96 border-2 border-[#EF233C] px-8 py-5 rounded-3xl shadow-2xl text-center space-y-1.5">
+            <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
+              Coastal Highway Grand Prix
+            </div>
+            <div className="text-6xl font-black font-mono text-white animate-pulse">
+              {coastalRaceState.countdownSeconds}
+            </div>
+            <div className="text-[11px] font-semibold text-sky-200">
+              Victoria Island -&gt; Epe 4-Lane Express vs 4 AI Racers
+            </div>
+          </div>
+        </div>
+      )}
+
+      {coastalRaceState && coastalRaceState.phase === 'FINISHED' && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 pt-14 pb-36 sm:pb-24 bg-black/50 pointer-events-auto"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="bg-[#071A2B]/98 border border-emerald-400/50 p-4 sm:p-5 rounded-3xl shadow-2xl max-w-md w-full max-h-[58dvh] overflow-y-auto space-y-2.5">
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
+                  Epe Coastal Finish Gantry
+                </div>
+                <h3 className="text-base sm:text-lg font-black text-white">
+                  Finished P{coastalRaceState.rank} of {coastalRaceState.totalRacers}
+                </h3>
+              </div>
+              <div className="text-right font-mono">
+                <div className="text-sm font-black text-amber-400">
+                  +{coastalRaceState.prizeCredits.toLocaleString()} MC
+                </div>
+                <div className="text-xs text-gray-300">
+                  {coastalRaceState.elapsedSec.toFixed(1)}s
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              {coastalRaceState.leaderboard.map((entry) => (
+                <div
+                  key={`${entry.position}-${entry.name}`}
+                  className={`flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-bold ${
+                    entry.isPlayer
+                      ? 'bg-[#EF233C]/25 border border-[#EF233C]/50 text-white'
+                      : 'bg-white/5 text-gray-300'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono text-amber-300 w-5">#{entry.position}</span>
+                    <span>{entry.isPlayer ? `${playerNickname} (You)` : entry.name}</span>
+                  </span>
+                  <span className="font-mono text-[11px] text-sky-300">
+                    {entry.finishTime != null
+                      ? `${entry.finishTime.toFixed(1)}s`
+                      : `CP ${entry.cpIdx}/${coastalRaceState.totalCheckpoints}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2.5 pt-1">
+              {onStartCoastalRace && (
+                <button
+                  type="button"
+                  onClick={onStartCoastalRace}
+                  className="flex-1 py-2 rounded-xl bg-[#EF233C] hover:bg-red-700 text-white text-xs font-black uppercase tracking-wider cursor-pointer"
+                >
+                  Race Again
+                </button>
+              )}
+              {onExitCoastalRace && (
+                <button
+                  type="button"
+                  onClick={onExitCoastalRace}
+                  className="flex-1 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  Exit to Free Roam
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 4. ON-SCREEN DRIVING CONTROLS: STEERING, ACCELERATION, TRANSMISSION GEAR & HORN ONLY */}
       {touchControlsEnabled ? (

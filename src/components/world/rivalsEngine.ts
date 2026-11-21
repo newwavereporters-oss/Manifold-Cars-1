@@ -108,9 +108,9 @@ export class RivalsEngine {
         interiorTheme: 'SPORT',
         width: 1.9,
         length: 4.35,
-        maxSpeed: 46, // ~212 km/h coastal express pace
-        accel: 24,
-        cornerSpeed: 30,
+        maxSpeed: 68, // ~313 km/h hyper coastal pace
+        accel: 42,
+        cornerSpeed: 54,
         gridOffsetX: -4.5,
         gridOffsetZ: -10.5,
         preferredLaneOffset: -10.5,
@@ -127,9 +127,9 @@ export class RivalsEngine {
         interiorTheme: 'BROWN',
         width: 2.06,
         length: 4.82,
-        maxSpeed: 41, // ~189 km/h
-        accel: 20,
-        cornerSpeed: 28,
+        maxSpeed: 60, // ~276 km/h
+        accel: 35,
+        cornerSpeed: 46,
         gridOffsetX: -11.5,
         gridOffsetZ: -3.8,
         preferredLaneOffset: -3.8,
@@ -146,9 +146,9 @@ export class RivalsEngine {
         interiorTheme: 'CREAM',
         width: 1.92,
         length: 4.7,
-        maxSpeed: 43, // ~198 km/h
-        accel: 22,
-        cornerSpeed: 29,
+        maxSpeed: 63, // ~290 km/h
+        accel: 37,
+        cornerSpeed: 49,
         gridOffsetX: -5.5,
         gridOffsetZ: 10.6,
         preferredLaneOffset: 10.6,
@@ -165,9 +165,9 @@ export class RivalsEngine {
         interiorTheme: 'SPORT',
         width: 1.9,
         length: 4.35,
-        maxSpeed: 45, // ~207 km/h
-        accel: 23,
-        cornerSpeed: 30,
+        maxSpeed: 66, // ~304 km/h
+        accel: 40,
+        cornerSpeed: 52,
         gridOffsetX: -12.5,
         gridOffsetZ: 4.0,
         preferredLaneOffset: 4.0,
@@ -289,9 +289,14 @@ export class RivalsEngine {
     }
   }
 
-  public update(delta: number, currentTime: number) {
+  public update(
+    delta: number,
+    currentTime: number,
+    playerState?: { x: number; z: number; speed: number }
+  ) {
     if (!this.isRaceActive) return;
     const dt = Math.min(delta, 0.06);
+    const laneChoices = [-10.8, -4.0, 4.0, 10.8];
 
     this.rivals.forEach((rival) => {
       if (rival.isFinished) {
@@ -302,8 +307,48 @@ export class RivalsEngine {
       const targetCP = RIVAL_RACE_CHECKPOINTS[rival.currentCheckpointIdx];
       if (!targetCP) return;
 
+      // Dynamic aggressive overtaking: if player or another rival blocks right ahead in same lane, swerve to clearest lane
+      let desiredLaneOffset = rival.preferredLaneOffset;
+      let laneBlocked = false;
+      const blockers: { x: number; z: number }[] = [];
+      for (let i = 0; i < this.rivals.length; i++) {
+        const other = this.rivals[i];
+        if (other.id !== rival.id) blockers.push({ x: other.x, z: other.z });
+      }
+      if (playerState) blockers.push({ x: playerState.x, z: playerState.z });
+
+      for (let b = 0; b < blockers.length; b++) {
+        const relX = blockers[b].x - rival.x;
+        const relZ = blockers[b].z - rival.z;
+        if (relX > 0.5 && relX < 17 && Math.abs(relZ) < 2.9) {
+          laneBlocked = true;
+          break;
+        }
+      }
+
+      if (laneBlocked) {
+        let bestLane = desiredLaneOffset;
+        let bestClearScore = -Infinity;
+        for (let l = 0; l < laneChoices.length; l++) {
+          const candZ = targetCP.z + laneChoices[l];
+          let minClear = 999;
+          for (let b = 0; b < blockers.length; b++) {
+            const relX = blockers[b].x - rival.x;
+            if (relX > -4 && relX < 22) {
+              const latGap = Math.abs(blockers[b].z - candZ);
+              if (latGap < minClear) minClear = latGap;
+            }
+          }
+          if (minClear > bestClearScore) {
+            bestClearScore = minClear;
+            bestLane = laneChoices[l];
+          }
+        }
+        desiredLaneOffset = bestLane;
+      }
+
       const dx = targetCP.x - rival.x;
-      const targetZ = targetCP.z + rival.preferredLaneOffset;
+      const targetZ = targetCP.z + desiredLaneOffset;
       const dz = targetZ - rival.z;
       const dist = Math.hypot(dx, targetCP.z - rival.z);
       rival.distanceToNextCP = dist;
@@ -316,17 +361,32 @@ export class RivalsEngine {
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-      rival.rotation += Math.min(Math.max(angleDiff * 4.5 * dt, -2.8 * dt), 2.8 * dt);
+      rival.rotation += Math.min(Math.max(angleDiff * 5.2 * dt, -3.4 * dt), 3.4 * dt);
 
-      // Brake if entering a sharp adjustment, accelerate down the long Coastal straight
+      // Competitive pace adaptation: crazy speed on straights + aggressive catch-up surge when behind
+      let competitivePaceFactor = 1.0;
+      let accelBoost = 1.0;
+      if (playerState) {
+        const xGap = rival.x - playerState.x;
+        if (xGap < -10) {
+          // Behind player: engage high-boost slipstream/turbo catch-up
+          competitivePaceFactor = 1.15;
+          accelBoost = 1.35;
+        } else if (xGap > 70) {
+          // Slightly ease off only when very far ahead so battles remain intense & competitive
+          competitivePaceFactor = 0.88;
+        }
+      }
+
       const isSharpTurn = Math.abs(angleDiff) > 0.45;
-      const effectiveMax = isSharpTurn ? rival.cornerSpeed : rival.maxSpeed;
-      const isBraking = rival.speed > effectiveMax + 1.0;
+      const baseTarget = isSharpTurn ? rival.cornerSpeed : rival.maxSpeed;
+      const effectiveMax = baseTarget * competitivePaceFactor;
+      const isBraking = rival.speed > effectiveMax + 1.5;
 
       if (rival.speed < effectiveMax) {
-        rival.speed = Math.min(effectiveMax, rival.speed + rival.accel * dt);
+        rival.speed = Math.min(effectiveMax, rival.speed + rival.accel * accelBoost * dt);
       } else {
-        rival.speed = Math.max(effectiveMax, rival.speed - 22 * dt);
+        rival.speed = Math.max(effectiveMax, rival.speed - 20 * dt);
       }
 
       if (rival.vehicle.brakeLightMats) {
@@ -353,9 +413,9 @@ export class RivalsEngine {
       rival.wheelSpinAngle += (rival.speed * dt) / rivalWheelR;
       animateVehicleModel(rival.vehicle, {
         speed: rival.speed,
-        steeringAngle: THREE.MathUtils.clamp(angleDiff * 0.6, -0.38, 0.38),
+        steeringAngle: THREE.MathUtils.clamp(angleDiff * 0.65, -0.4, 0.4),
         wheelSpinAngle: rival.wheelSpinAngle,
-        accelLoad: isBraking ? -0.6 : 0.4,
+        accelLoad: isBraking ? -0.6 : 1.0,
         delta: dt,
         isCockpitCamera: false,
       });

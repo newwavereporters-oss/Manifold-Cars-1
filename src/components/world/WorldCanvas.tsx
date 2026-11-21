@@ -204,6 +204,12 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   } | null>(null);
   const lastCoastalEmitRef = useRef<number>(0);
   const lastHandledRaceCmdSeqRef = useRef<number>(-1);
+  const raceBadgeContainerRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const raceBadgeBoxRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const raceBadgeNumRefs = useRef<Record<string, HTMLSpanElement | null>>({});
+  const raceBadgePrevRankRef = useRef<Record<string, number>>({});
+  const raceBadgePopTimeRef = useRef<Record<string, number>>({});
+  const raceBadgeLastStyleKeyRef = useRef<Record<string, string>>({});
 
   // Dynamic Component Refs
   const wheelsRef = useRef<{
@@ -570,6 +576,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
     if (activeMissionSession.missionId === 'MISSION_B_RACE') {
       if (stateChanged && activeMissionSession.state === 'COUNTDOWN') {
+        onSelectGearRef.current?.('D1');
         const startCP = RIVAL_RACE_CHECKPOINTS[0];
         cs.x = startCP.x - 2.0;
         cs.z = startCP.z + 4.0;
@@ -686,6 +693,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         345 * WORLD_XZ_SCALE
       );
 
+      onSelectGearRef.current?.('D1');
       cs.x = startCP.x - 2.0;
       cs.z = startCP.z + 4.0;
       cs.y = resolveSurfaceY(cs.x, cs.z, 0);
@@ -1692,7 +1700,11 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         cs.speed,
         perfProfileRef.current.trafficCullDistance
       );
-      rivalsEngine.update(delta, currentTime);
+      rivalsEngine.update(delta, currentTime, {
+        x: cs.x,
+        z: cs.z,
+        speed: cs.speed,
+      });
       cityData.updateTrafficSignals?.(currentTime / 1000);
       cityData.updateFallingProps(delta);
       cityData.updateDynamicWorld?.(delta, currentTime / 1000);
@@ -2758,6 +2770,162 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         }
         onProjectedRemotePlayersRef.current(projected);
       }
+
+      // 60fps Overhead Animated Race Position Numbers (above every racer's roof during race)
+      const isMissionRaceActive =
+        activeMissionSessionRef.current?.missionId === 'MISSION_B_RACE' &&
+        (activeMissionSessionRef.current.state === 'COUNTDOWN' ||
+          activeMissionSessionRef.current.state === 'ACTIVE');
+      const activeCoastalRace = coastalRaceSessionRef.current;
+      const isCoastalRaceLive =
+        Boolean(activeCoastalRace) && activeCoastalRace?.phase !== 'FINISHED';
+      const showOverheadRanks = isCoastalRaceLive || isMissionRaceActive;
+
+      if (showOverheadRanks) {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        const raceCpIdx = isCoastalRaceLive
+          ? activeCoastalRace!.checkpointIdx
+          : playerRaceCheckpointIdx.current;
+        const raceTargetCP =
+          RIVAL_RACE_CHECKPOINTS[Math.min(raceCpIdx, RIVAL_RACE_CHECKPOINTS.length - 1)];
+        const playerDistToCp = raceTargetCP
+          ? Math.hypot(raceTargetCP.x - cs.x, raceTargetCP.z - cs.z)
+          : 0;
+        const liveStandings = rivalsEngine.getRaceStandings({
+          checkpointIdx: raceCpIdx,
+          distToNext: playerDistToCp,
+          isFinished: false,
+        });
+
+        const getRankStyleClasses = (pos: number, isPlayerSlot: boolean) => {
+          if (pos === 1) {
+            return isPlayerSlot
+              ? 'px-2.5 py-0.5 rounded-xl border-2 shadow-[0_0_18px_rgba(251,191,36,0.9)] flex items-center gap-1 font-mono font-black bg-amber-400 text-slate-950 border-white'
+              : 'px-2 py-0.5 rounded-xl border-2 shadow-[0_0_14px_rgba(251,191,36,0.7)] flex items-center gap-1 font-mono font-black bg-amber-400 text-slate-950 border-amber-100';
+          }
+          if (pos === 2) {
+            return 'px-2 py-0.5 rounded-xl border-2 shadow-xl flex items-center gap-1 font-mono font-black bg-slate-100 text-slate-950 border-sky-300';
+          }
+          if (pos === 3) {
+            return 'px-2 py-0.5 rounded-xl border-2 shadow-xl flex items-center gap-1 font-mono font-black bg-orange-500 text-white border-amber-200';
+          }
+          return isPlayerSlot
+            ? 'px-2.5 py-0.5 rounded-xl border-2 shadow-xl flex items-center gap-1 font-mono font-black bg-[#EF233C] text-white border-white/80'
+            : 'px-2 py-0.5 rounded-xl border-2 shadow-xl flex items-center gap-1 font-mono font-black bg-[#071A2B]/92 text-white border-[#EF233C]';
+        };
+
+        const racerEntries: Array<{
+          key: string;
+          x: number;
+          y: number;
+          z: number;
+          pos: number;
+          isPlayer: boolean;
+          bobPhase: number;
+        }> = [
+          {
+            key: 'player',
+            x: cs.x,
+            y: carY,
+            z: cs.z,
+            pos: liveStandings.rank,
+            isPlayer: true,
+            bobPhase: 0,
+          },
+          ...rivalsEngine.rivals.map((r, idx) => {
+            const lbEntry = liveStandings.leaderboard.find(
+              (entry) => !entry.isPlayer && entry.name === r.name
+            );
+            return {
+              key: r.id,
+              x: r.x,
+              y: r.y,
+              z: r.z,
+              pos: lbEntry?.position ?? idx + 2,
+              isPlayer: false,
+              bobPhase: (idx + 1) * 1.35,
+            };
+          }),
+        ];
+
+        for (let i = 0; i < racerEntries.length; i++) {
+          const item = racerEntries[i];
+          const el = raceBadgeContainerRefs.current[item.key];
+          const boxEl = raceBadgeBoxRefs.current[item.key];
+          const numEl = raceBadgeNumRefs.current[item.key];
+          if (!el || !numEl || !boxEl) continue;
+
+          if (raceBadgePrevRankRef.current[item.key] !== item.pos) {
+            raceBadgePrevRankRef.current[item.key] = item.pos;
+            raceBadgePopTimeRef.current[item.key] = currentTime;
+          }
+
+          const headHeight = item.isPlayer ? 2.45 : 2.55;
+          tmpProjVec.set(item.x, item.y + headHeight, item.z);
+          tmpProjVec.project(camera);
+
+          const inFront =
+            tmpProjVec.z > -1 &&
+            tmpProjVec.z < 1 &&
+            tmpProjVec.x >= -1.06 &&
+            tmpProjVec.x <= 1.06 &&
+            tmpProjVec.y >= -1.06 &&
+            tmpProjVec.y <= 1.06;
+
+          if (!inFront || w <= 0 || h <= 0) {
+            el.style.opacity = '0';
+            continue;
+          }
+
+          const camDist = Math.hypot(
+            item.x - camera.position.x,
+            item.y + headHeight - camera.position.y,
+            item.z - camera.position.z
+          );
+          if (camDist > 420) {
+            el.style.opacity = '0';
+            continue;
+          }
+
+          const sx = (tmpProjVec.x * 0.5 + 0.5) * w;
+          const floatOffsetPx = Math.sin(currentTime * 0.0075 + item.bobPhase) * 6;
+          const sy = (-tmpProjVec.y * 0.5 + 0.5) * h + floatOffsetPx;
+
+          const popElapsed = currentTime - (raceBadgePopTimeRef.current[item.key] || 0);
+          const popScale =
+            popElapsed >= 0 && popElapsed < 420
+              ? 1 + 0.38 * Math.sin((popElapsed / 420) * Math.PI)
+              : 1;
+          const distScale = item.isPlayer
+            ? 1.05
+            : THREE.MathUtils.clamp(22 / Math.max(8, camDist), 0.72, 1.05);
+          const pulseScale = 1 + 0.05 * Math.sin(currentTime * 0.009 + item.bobPhase);
+          const finalScale = distScale * popScale * pulseScale;
+
+          const rankLabel = `#${item.pos}`;
+          if (numEl.textContent !== rankLabel) {
+            numEl.textContent = rankLabel;
+          }
+          const styleKey = `${item.pos}:${item.isPlayer ? 1 : 0}`;
+          if (raceBadgeLastStyleKeyRef.current[item.key] !== styleKey) {
+            raceBadgeLastStyleKeyRef.current[item.key] = styleKey;
+            boxEl.className = getRankStyleClasses(item.pos, item.isPlayer);
+          }
+
+          el.style.opacity = '1';
+          el.style.transform = `translate3d(${sx.toFixed(1)}px, ${sy.toFixed(
+            1
+          )}px, 0) translate(-50%, -100%) scale(${finalScale.toFixed(3)})`;
+        }
+      } else {
+        for (const key of Object.keys(raceBadgeContainerRefs.current)) {
+          const el = raceBadgeContainerRefs.current[key];
+          if (el && el.style.opacity !== '0') {
+            el.style.opacity = '0';
+          }
+        }
+      }
     };
 
     animationFrameId = requestAnimationFrame(animate);
@@ -2825,12 +2993,55 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     };
   }, []);
 
+  const raceBadgeSlots: Array<{ key: string; label: string }> = [
+    { key: 'player', label: 'YOU' },
+    { key: 'rival_tariq', label: 'TARIQ' },
+    { key: 'rival_chidi', label: 'CHIDI' },
+    { key: 'rival_amara', label: 'AMARA' },
+    { key: 'rival_tunde', label: 'TUNDE' },
+  ];
+
   return (
-    <div
-      ref={mountRef}
-      className="absolute inset-0 w-full h-full overflow-hidden touch-none cursor-grab active:cursor-grabbing"
-      tabIndex={0}
-      title="MANIFOLD WORLD 3D Proving Ground"
-    />
+    <div className="absolute inset-0 w-full h-full overflow-hidden">
+      <div
+        ref={mountRef}
+        className="absolute inset-0 w-full h-full overflow-hidden touch-none cursor-grab active:cursor-grabbing"
+        tabIndex={0}
+        title="MANIFOLD WORLD 3D Proving Ground"
+      />
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+        {raceBadgeSlots.map((slot) => (
+          <div
+            key={slot.key}
+            ref={(el) => {
+              raceBadgeContainerRefs.current[slot.key] = el;
+            }}
+            className="absolute top-0 left-0 will-change-transform opacity-0 transition-opacity duration-150"
+          >
+            <div className="flex flex-col items-center">
+              <div
+                ref={(el) => {
+                  raceBadgeBoxRefs.current[slot.key] = el;
+                }}
+                className="px-2 py-0.5 rounded-xl border-2 shadow-xl flex items-center gap-1 font-mono font-black bg-[#071A2B]/92 text-white border-amber-400"
+              >
+                <span
+                  ref={(el) => {
+                    raceBadgeNumRefs.current[slot.key] = el;
+                  }}
+                  className="text-base sm:text-lg leading-none tracking-tight"
+                >
+                  #1
+                </span>
+                <span className="text-[9px] uppercase tracking-wider opacity-90">
+                  {slot.label}
+                </span>
+              </div>
+              <div className="w-0 h-0 border-l-[5px] border-r-[5px] border-t-[6px] border-l-transparent border-r-transparent border-t-white/80" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 };
