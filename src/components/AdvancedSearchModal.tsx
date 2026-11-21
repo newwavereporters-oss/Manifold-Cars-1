@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, RotateCcw, Check, ChevronDown, SlidersHorizontal } from 'lucide-react';
-import { CAR_BRANDS, BODY_TYPES, NIGERIAN_LOCATIONS, PRICE_OPTIONS } from '../data/brandsAndTypes';
-import { FilterState } from '../types';
+import { BODY_TYPES, NIGERIAN_LOCATIONS } from '../data/brandsAndTypes';
+import { CarBrand, FilterState } from '../types';
+import { brandService } from '../services/brandService';
+import { modelService } from '../services/modelService';
 
 interface AdvancedSearchModalProps {
   isOpen: boolean;
@@ -22,10 +24,48 @@ export const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
   totalMatchingCars,
   onApply,
 }) => {
-  if (!isOpen) return null;
+  const [brands, setBrands] = useState<CarBrand[]>(() =>
+    brandService.getBrandsSync().filter((b) => b.is_active !== false)
+  );
+  const [models, setModels] = useState<string[]>([]);
 
-  const currentBrand = CAR_BRANDS.find((b) => b.name === filters.make);
-  const models = currentBrand ? currentBrand.popular_models : [];
+  useEffect(() => {
+    if (!isOpen) return;
+    let mounted = true;
+    brandService
+      .getActiveBrands()
+      .then((data) => {
+        if (mounted) setBrands(data);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !filters.make) {
+      setModels([]);
+      return;
+    }
+    let mounted = true;
+    const currentBrand = brands.find((b) => b.name === filters.make);
+    modelService
+      .getModelsByBrand(filters.make)
+      .then((list) => {
+        if (mounted) {
+          setModels(list.length > 0 ? list : currentBrand?.popular_models || []);
+        }
+      })
+      .catch(() => {
+        if (mounted) setModels(currentBrand?.popular_models || []);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen, filters.make, brands]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
@@ -63,7 +103,7 @@ export const AdvancedSearchModal: React.FC<AdvancedSearchModalProps> = ({
                 className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-900 font-medium focus:bg-white focus:border-[#071A2B] outline-none"
               >
                 <option value="">Any Make</option>
-                {CAR_BRANDS.map((b) => (
+                {brands.map((b) => (
                   <option key={b.id} value={b.name}>
                     {b.name}
                   </option>

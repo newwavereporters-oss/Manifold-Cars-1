@@ -90,13 +90,28 @@ export interface CarBrand {
   id: string;
   name: string;
   slug: string;
-  car_count: number;
-  popular_models: string[];
-  country: string;
-  logo_url?: string;
-  is_active?: boolean;
+  logo_url?: string | null;
+  description?: string | null;
   is_featured?: boolean;
+  is_active?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  car_count: number;
+  // Optional legacy UI helpers (not persisted in public.car_brands)
+  popular_models?: string[];
+  country?: string;
 }
+
+export type CreateCarBrandInput = {
+  name: string;
+  slug?: string;
+  logo_url?: string | null;
+  description?: string | null;
+  is_featured?: boolean;
+  is_active?: boolean;
+};
+
+export type UpdateCarBrandInput = Partial<CreateCarBrandInput>;
 
 export interface CarModelRecord {
   id: string;

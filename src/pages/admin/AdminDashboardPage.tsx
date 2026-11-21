@@ -216,10 +216,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [carToDuplicate, setCarToDuplicate] = useState<Car | null>(null);
   const [videoToDelete, setVideoToDelete] = useState<MediaVideoItem | null>(null);
 
-  // Create Modals for other entities
+  // Create / Edit Brand Modal State
   const [newBrandModal, setNewBrandModal] = useState(false);
+  const [editingBrand, setEditingBrand] = useState<CarBrand | null>(null);
   const [newBrandName, setNewBrandName] = useState('');
-  const [newBrandCountry, setNewBrandCountry] = useState('Japan');
+  const [newBrandSlug, setNewBrandSlug] = useState('');
+  const [newBrandSlugTouched, setNewBrandSlugTouched] = useState(false);
+  const [newBrandLogoUrl, setNewBrandLogoUrl] = useState('');
+  const [newBrandDescription, setNewBrandDescription] = useState('');
+  const [newBrandIsFeatured, setNewBrandIsFeatured] = useState(false);
+  const [newBrandIsActive, setNewBrandIsActive] = useState(true);
+  const [savingBrand, setSavingBrand] = useState(false);
+  const [brandFormError, setBrandFormError] = useState<string | null>(null);
 
   const [newTypeModal, setNewTypeModal] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
@@ -623,21 +631,105 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   };
 
   // Brand Actions
-  const handleCreateBrand = async (e: React.FormEvent) => {
+  const formatBrandSlug = (value: string) =>
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+
+  const openCreateBrandModal = () => {
+    setEditingBrand(null);
+    setNewBrandName('');
+    setNewBrandSlug('');
+    setNewBrandSlugTouched(false);
+    setNewBrandLogoUrl('');
+    setNewBrandDescription('');
+    setNewBrandIsFeatured(false);
+    setNewBrandIsActive(true);
+    setBrandFormError(null);
+    setNewBrandModal(true);
+  };
+
+  const openEditBrandModal = (brand: CarBrand) => {
+    setEditingBrand(brand);
+    setNewBrandName(brand.name);
+    setNewBrandSlug(brand.slug);
+    setNewBrandSlugTouched(true);
+    setNewBrandLogoUrl(brand.logo_url || '');
+    setNewBrandDescription(brand.description || '');
+    setNewBrandIsFeatured(Boolean(brand.is_featured));
+    setNewBrandIsActive(brand.is_active ?? true);
+    setBrandFormError(null);
+    setNewBrandModal(true);
+  };
+
+  const handleSaveBrand = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newBrandName.trim()) return;
+    const trimmedName = newBrandName.trim();
+    if (!trimmedName) {
+      setBrandFormError('Brand name is required.');
+      return;
+    }
+
+    setSavingBrand(true);
+    setBrandFormError(null);
+
     try {
-      const created = await brandService.createBrand({
-        name: newBrandName.trim(),
-        country: newBrandCountry,
-        is_active: true,
-      });
-      setBrands((prev) => [...prev, created]);
-      setNewBrandName('');
+      const payload = {
+        name: trimmedName,
+        slug: (newBrandSlug.trim() || formatBrandSlug(trimmedName)),
+        logo_url: newBrandLogoUrl.trim() || null,
+        description: newBrandDescription.trim() || null,
+        is_featured: newBrandIsFeatured,
+        is_active: newBrandIsActive,
+      };
+
+      if (editingBrand) {
+        const updated = await brandService.updateBrand(editingBrand.id, payload);
+        const refreshed = await brandService.getBrands().catch(() => null);
+        if (refreshed) {
+          setBrands(refreshed);
+        } else {
+          setBrands((prev) =>
+            prev.map((b) => (b.id === editingBrand.id ? updated : b))
+          );
+        }
+        notify(`Brand "${updated.name}" updated in public.car_brands!`);
+      } else {
+        const created = await brandService.createBrand(payload);
+        const refreshed = await brandService.getBrands().catch(() => null);
+        if (refreshed) {
+          setBrands(refreshed);
+        } else {
+          setBrands((prev) =>
+            [...prev, created].sort((a, b) => a.name.localeCompare(b.name))
+          );
+        }
+        notify(`Brand "${created.name}" created in public.car_brands!`);
+      }
+
       setNewBrandModal(false);
-      notify(`Brand "${created.name}" created in public.car_brands!`);
-    } catch (e: any) {
-      notify(`Error: ${e.message}`);
+      setEditingBrand(null);
+    } catch (err: any) {
+      const message = err?.message || 'Failed to save brand.';
+      setBrandFormError(message);
+      notify(`Error: ${message}`);
+    } finally {
+      setSavingBrand(false);
+    }
+  };
+
+  const handleToggleBrandActive = async (brand: CarBrand) => {
+    try {
+      const nextActive = !(brand.is_active ?? true);
+      const updated = await brandService.updateBrand(brand.id, { is_active: nextActive });
+      setBrands((prev) => prev.map((b) => (b.id === brand.id ? updated : b)));
+      notify(`Brand "${brand.name}" ${nextActive ? 'activated' : 'deactivated'}.`);
+    } catch (err: any) {
+      notify(`Error: ${err?.message || 'Failed to update brand status.'}`);
     }
   };
 
@@ -1751,41 +1843,114 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </div>
         )}
 
-        {/* TAB 5: BRANDS (public.car_brands) */}
+        {/* TAB 5: BRANDS (public.car_brand_inventory / public.car_brands) */}
         {activeTab === 'brands' && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="p-4 sm:p-5 border-b border-gray-100 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-gray-900 text-sm">
-                  Active Car Brands (public.car_brands)
+                  Car Brands Inventory ({brands.length})
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Manufacturers indexed for search, filtering, and video catalogues.
+                  Registered manufacturers with live published vehicle counts from car_brand_inventory.
                 </p>
               </div>
               <button
-                onClick={() => setNewBrandModal(true)}
-                className="inline-flex items-center gap-1 text-xs font-bold text-white bg-[#EF233C] px-3 py-1.5 rounded-lg shadow"
+                onClick={openCreateBrandModal}
+                className="inline-flex items-center gap-1 text-xs font-bold text-white bg-[#EF233C] px-3 py-1.5 rounded-lg shadow hover:bg-[#d91b32] transition"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Brand</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 p-5">
-              {brands.map((b) => (
-                <div
-                  key={b.id}
-                  className="p-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-white hover:shadow transition flex flex-col items-center text-center space-y-2"
-                >
-                  <div className="w-10 h-10 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center font-bold text-gray-800 text-sm">
-                    {b.name.substring(0, 2).toUpperCase()}
-                  </div>
-                  <span className="font-bold text-xs text-gray-900">{b.name}</span>
-                  <span className="text-[10px] text-gray-400">{b.country}</span>
-                </div>
-              ))}
-            </div>
+            {brands.length === 0 ? (
+              <div className="p-10 text-center space-y-2">
+                <p className="text-sm font-semibold text-gray-800">No car brands registered yet</p>
+                <p className="text-xs text-gray-500">
+                  Add a manufacturer to make it available for vehicle listings and search filters.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 p-5">
+                {brands.map((b) => {
+                  const isActive = b.is_active ?? true;
+                  return (
+                    <div
+                      key={b.id}
+                      className={`p-4 rounded-xl border transition flex flex-col items-center text-center space-y-2 ${
+                        isActive
+                          ? 'border-gray-200 bg-gray-50 hover:bg-white hover:shadow'
+                          : 'border-gray-200 bg-gray-100/70 opacity-75'
+                      }`}
+                    >
+                      <div className="w-11 h-11 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center font-bold text-gray-800 text-sm overflow-hidden">
+                        {b.logo_url ? (
+                          <img
+                            src={b.logo_url}
+                            alt={b.name}
+                            className="w-full h-full object-contain p-1.5"
+                            onError={(ev) => {
+                              ev.currentTarget.style.display = 'none';
+                              const fallback = ev.currentTarget.nextElementSibling as HTMLElement | null;
+                              if (fallback) fallback.style.display = 'inline';
+                            }}
+                          />
+                        ) : null}
+                        <span style={{ display: b.logo_url ? 'none' : 'inline' }}>
+                          {b.name.substring(0, 2).toUpperCase()}
+                        </span>
+                      </div>
+
+                      <div className="space-y-0.5 w-full">
+                        <span className="font-bold text-xs text-gray-900 block truncate">
+                          {b.name}
+                        </span>
+                        <span className="text-[10px] text-gray-400 block truncate">/{b.slug}</span>
+                      </div>
+
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 tabular-nums">
+                        {FORMAT_NUMBER(b.car_count ?? 0)} {(b.car_count ?? 0) === 1 ? 'car' : 'cars'}
+                      </span>
+
+                      <div className="flex flex-wrap items-center justify-center gap-1 pt-0.5">
+                        {b.is_featured && (
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
+                            Featured
+                          </span>
+                        )}
+                        <span
+                          className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                            isActive
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-gray-200 text-gray-600'
+                          }`}
+                        >
+                          {isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 pt-1 w-full">
+                        <button
+                          type="button"
+                          onClick={() => openEditBrandModal(b)}
+                          className="flex-1 py-1 text-[10px] font-semibold text-gray-700 bg-white border border-gray-200 rounded hover:border-gray-300 transition"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleBrandActive(b)}
+                          className="flex-1 py-1 text-[10px] font-semibold text-gray-600 bg-white border border-gray-200 rounded hover:border-gray-300 transition"
+                        >
+                          {isActive ? 'Disable' : 'Enable'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -2358,49 +2523,138 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         onSave={handleSaveMedia}
       />
 
-      {/* ADD BRAND MODAL */}
+      {/* ADD / EDIT BRAND MODAL */}
       {newBrandModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-gray-200 p-6 space-y-4">
-            <h3 className="font-bold text-gray-900 text-sm">Add New Car Brand</h3>
-            <form onSubmit={handleCreateBrand} className="space-y-3">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-gray-200 p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="font-bold text-gray-900 text-sm">
+                {editingBrand ? `Edit Brand: ${editingBrand.name}` : 'Add New Car Brand'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewBrandModal(false);
+                  setEditingBrand(null);
+                  setBrandFormError(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {brandFormError && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 font-medium">
+                {brandFormError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveBrand} className="space-y-3">
               <div>
                 <label className="text-[11px] font-bold text-gray-700 uppercase block mb-1">
-                  Brand Name
+                  Brand Name <span className="text-[#EF233C]">*</span>
                 </label>
                 <input
                   type="text"
                   required
                   value={newBrandName}
-                  onChange={(e) => setNewBrandName(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewBrandName(val);
+                    if (!newBrandSlugTouched) {
+                      setNewBrandSlug(formatBrandSlug(val));
+                    }
+                  }}
                   placeholder="e.g. Porsche, Bentley"
                   className="w-full h-10 px-3 border border-gray-200 rounded-lg text-xs"
                 />
               </div>
+
               <div>
                 <label className="text-[11px] font-bold text-gray-700 uppercase block mb-1">
-                  Country
+                  Slug
                 </label>
                 <input
                   type="text"
-                  value={newBrandCountry}
-                  onChange={(e) => setNewBrandCountry(e.target.value)}
+                  value={newBrandSlug}
+                  onChange={(e) => {
+                    setNewBrandSlugTouched(true);
+                    setNewBrandSlug(e.target.value);
+                  }}
+                  placeholder="e.g. porsche"
+                  className="w-full h-10 px-3 border border-gray-200 rounded-lg text-xs font-mono text-gray-700"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-gray-700 uppercase block mb-1">
+                  Logo URL (Optional)
+                </label>
+                <input
+                  type="url"
+                  value={newBrandLogoUrl}
+                  onChange={(e) => setNewBrandLogoUrl(e.target.value)}
+                  placeholder="https://example.com/logo.png"
                   className="w-full h-10 px-3 border border-gray-200 rounded-lg text-xs"
                 />
               </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-gray-700 uppercase block mb-1">
+                  Description (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={newBrandDescription}
+                  onChange={(e) => setNewBrandDescription(e.target.value)}
+                  placeholder="Brief overview of the manufacturer..."
+                  className="w-full p-3 border border-gray-200 rounded-lg text-xs resize-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-5 pt-1">
+                <label className="inline-flex items-center gap-2 text-xs text-gray-700 font-medium cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newBrandIsFeatured}
+                    onChange={(e) => setNewBrandIsFeatured(e.target.checked)}
+                    className="rounded text-[#EF233C] focus:ring-[#EF233C]"
+                  />
+                  <span>Featured Brand</span>
+                </label>
+
+                <label className="inline-flex items-center gap-2 text-xs text-gray-700 font-medium cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newBrandIsActive}
+                    onChange={(e) => setNewBrandIsActive(e.target.checked)}
+                    className="rounded text-[#EF233C] focus:ring-[#EF233C]"
+                  />
+                  <span>Active</span>
+                </label>
+              </div>
+
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setNewBrandModal(false)}
-                  className="flex-1 py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg"
+                  disabled={savingBrand}
+                  onClick={() => {
+                    setNewBrandModal(false);
+                    setEditingBrand(null);
+                    setBrandFormError(null);
+                  }}
+                  className="flex-1 py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 text-xs font-bold text-white bg-[#EF233C] rounded-lg"
+                  disabled={savingBrand}
+                  className="flex-1 py-2 text-xs font-bold text-white bg-[#EF233C] rounded-lg flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
-                  Save Brand
+                  {savingBrand ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                  <span>{editingBrand ? 'Update Brand' : 'Save Brand'}</span>
                 </button>
               </div>
             </form>

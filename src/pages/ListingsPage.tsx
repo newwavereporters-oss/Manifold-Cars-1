@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Search, SlidersHorizontal, X, RotateCcw, ChevronDown, Compass, Filter } from 'lucide-react';
 import { VideoCarCard } from '../components/VideoCarCard';
-import { Car, FilterState } from '../types';
-import { CAR_BRANDS, BODY_TYPES, NIGERIAN_LOCATIONS, PRICE_OPTIONS } from '../data/brandsAndTypes';
+import { Car, CarBrand, FilterState } from '../types';
+import { BODY_TYPES, NIGERIAN_LOCATIONS, PRICE_OPTIONS } from '../data/brandsAndTypes';
+import { brandService } from '../services/brandService';
+import { modelService } from '../services/modelService';
 import { FORMAT_NUMBER } from '../data/mockCars';
 
 interface ListingsPageProps {
@@ -46,6 +48,51 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
   const [sortBy, setSortBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'views' | 'featured'>('newest');
   const [visibleCount, setVisibleCount] = useState<number>(9);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [brands, setBrands] = useState<CarBrand[]>(() =>
+    brandService.getBrandsSync().filter((b) => b.is_active !== false)
+  );
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    brandService
+      .getActiveBrands()
+      .then((data) => {
+        if (mounted) setBrands(data);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!filters.make) {
+      setAvailableModels([]);
+      return;
+    }
+
+    const selectedBrandObj = brands.find((b) => b.name === filters.make);
+    modelService
+      .getModelsByBrand(filters.make)
+      .then((list) => {
+        if (mounted) {
+          setAvailableModels(
+            list.length > 0 ? list : selectedBrandObj?.popular_models || []
+          );
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setAvailableModels(selectedBrandObj?.popular_models || []);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [filters.make, brands]);
 
   // Update filter helper
   const updateFilter = (key: keyof FilterState, value: any) => {
@@ -121,8 +168,7 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
     activeChips.push({ key: 'maxPrice', label: `${minText} – ${maxText}` });
   }
 
-  const selectedBrandObj = CAR_BRANDS.find((b) => b.name === filters.make);
-  const availableModels = selectedBrandObj ? selectedBrandObj.popular_models : [];
+  // Models are dynamically fetched via modelService effect above
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] pt-24 pb-16">
@@ -258,9 +304,9 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
                 className="w-full h-9 px-2.5 bg-gray-50 border border-gray-200 rounded text-xs text-gray-800 font-medium focus:bg-white focus:border-[#071A2B] outline-none"
               >
                 <option value="">All Makes</option>
-                {CAR_BRANDS.map((b) => (
+                {brands.map((b) => (
                   <option key={b.id} value={b.name}>
-                    {b.name} ({b.car_count})
+                    {b.name} ({b.car_count ?? 0})
                   </option>
                 ))}
               </select>
@@ -482,9 +528,9 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
                     className="w-full h-9 px-2 bg-gray-50 border border-gray-200 rounded text-xs"
                   >
                     <option value="">All Makes</option>
-                    {CAR_BRANDS.map((b) => (
+                    {brands.map((b) => (
                       <option key={b.id} value={b.name}>
-                        {b.name}
+                        {b.name} ({b.car_count ?? 0})
                       </option>
                     ))}
                   </select>

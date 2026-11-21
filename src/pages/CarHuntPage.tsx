@@ -70,10 +70,11 @@ export const CarHuntPage: React.FC<CarHuntPageProps> = ({ navigate }) => {
     async function loadInitialOptions() {
       setLoadingBrands(true);
       try {
-        // Load brands from public.car_brands using .select('id, name')
+        // Load active brands from public.car_brands using .select('id, name')
         const { data: brandsData, error: brandsError } = await supabase
           .from('car_brands')
           .select('id, name')
+          .eq('is_active', true)
           .order('name');
 
         if (!brandsError && brandsData && brandsData.length > 0) {

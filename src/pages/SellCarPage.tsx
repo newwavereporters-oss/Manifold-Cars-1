@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Video, PhoneCall, CheckCircle2, ArrowRight } from 'lucide-react';
-import { CAR_BRANDS } from '../data/brandsAndTypes';
+import { CarBrand } from '../types';
+import { brandService } from '../services/brandService';
 
 interface SellCarPageProps {
   navigate: (route: string) => void;
@@ -17,6 +18,22 @@ export const SellCarPage: React.FC<SellCarPageProps> = ({ navigate }) => {
   const [phone, setPhone] = useState('');
   const [location, setLocation] = useState('Lagos');
   const [submitted, setSubmitted] = useState(false);
+  const [brands, setBrands] = useState<CarBrand[]>(() =>
+    brandService.getBrandsSync().filter((b) => b.is_active !== false)
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    brandService
+      .getActiveBrands()
+      .then((data) => {
+        if (mounted) setBrands(data);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,7 +112,7 @@ export const SellCarPage: React.FC<SellCarPageProps> = ({ navigate }) => {
                     className="w-full h-10 px-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-900 font-medium focus:bg-white focus:border-[#071A2B] outline-none"
                   >
                     <option value="">Select Make</option>
-                    {CAR_BRANDS.map((b) => (
+                    {brands.map((b) => (
                       <option key={b.id} value={b.name}>
                         {b.name}
                       </option>

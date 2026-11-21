@@ -15,7 +15,7 @@ import {
   Loader2,
   Info,
 } from 'lucide-react';
-import { Car, ListingStatus } from '../../types';
+import { Car, CarBrand, ListingStatus } from '../../types';
 import {
   extractYouTubeVideoId,
   getYouTubeThumbnailUrl,
@@ -122,10 +122,23 @@ export const CarForm: React.FC<CarFormProps> = ({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const isInitialMount = useRef(true);
 
-  // Popular Models for current brand
+  // Popular Models for current brand & live brands
   const [popularModels, setPopularModels] = useState<string[]>([]);
-  const brands = brandService.getBrandsSync();
+  const [brands, setBrands] = useState<CarBrand[]>(() => brandService.getBrandsSync());
   const bodyTypes = categoryService.getBodyTypesSync();
+
+  useEffect(() => {
+    let mounted = true;
+    brandService
+      .getBrands()
+      .then((list) => {
+        if (mounted) setBrands(list);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Load models on make change
   useEffect(() => {

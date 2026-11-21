@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { brandService } from './brandService';
+import { CAR_BRANDS } from '../data/brandsAndTypes';
 
 export interface CarModelRecord {
   id: string;
@@ -33,11 +34,19 @@ class ModelService {
         return data.map((m: any) => m.name);
       }
 
-      // 3. Fallback to brand popular_models if car_models is not populated
-      if (brand && Array.isArray(brand.popular_models) && brand.popular_models.length > 0) {
-        // Auto-seed to car_models for consistency
-        this.seedModelsForBrand(brandId, brand.popular_models).catch(() => {});
-        return brand.popular_models;
+      // 3. Fallback to popular_models lookup if car_models is not populated
+      const fallbackBrand = CAR_BRANDS.find(
+        (fb) =>
+          fb.id === brandId ||
+          fb.slug === brandNameOrId.toLowerCase() ||
+          fb.name.toLowerCase() === brandNameOrId.toLowerCase()
+      );
+      const fallbackModels =
+        (brand && Array.isArray(brand.popular_models) && brand.popular_models.length > 0
+          ? brand.popular_models
+          : fallbackBrand?.popular_models) || [];
+      if (fallbackModels.length > 0) {
+        return fallbackModels;
       }
     } catch (e) {
       console.warn('Failed to fetch models from Supabase:', e);

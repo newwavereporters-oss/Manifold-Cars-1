@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, SlidersHorizontal, ChevronDown, CheckCircle2 } from 'lucide-react';
-import { CAR_BRANDS, NIGERIAN_LOCATIONS, PRICE_OPTIONS } from '../data/brandsAndTypes';
+import { NIGERIAN_LOCATIONS } from '../data/brandsAndTypes';
+import { CarBrand } from '../types';
+import { brandService } from '../services/brandService';
+import { modelService } from '../services/modelService';
 
 interface HeroSearchBoxProps {
   onSearch: (filters: {
@@ -26,8 +29,47 @@ export const HeroSearchBox: React.FC<HeroSearchBoxProps> = ({
   const [minPrice, setMinPrice] = useState<number | ''>('');
   const [maxPrice, setMaxPrice] = useState<number | ''>('');
 
-  const currentBrand = CAR_BRANDS.find((b) => b.name === selectedMake);
-  const availableModels = currentBrand ? currentBrand.popular_models : [];
+  const [brands, setBrands] = useState<CarBrand[]>(() =>
+    brandService.getBrandsSync().filter((b) => b.is_active !== false)
+  );
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    brandService
+      .getActiveBrands()
+      .then((data) => {
+        if (mounted) setBrands(data);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!selectedMake) {
+      setAvailableModels([]);
+      return;
+    }
+    const currentBrand = brands.find((b) => b.name === selectedMake);
+    modelService
+      .getModelsByBrand(selectedMake)
+      .then((list) => {
+        if (mounted) {
+          setAvailableModels(list.length > 0 ? list : currentBrand?.popular_models || []);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setAvailableModels(currentBrand?.popular_models || []);
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [selectedMake, brands]);
 
   const handleMakeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedMake(e.target.value);
@@ -118,7 +160,7 @@ export const HeroSearchBox: React.FC<HeroSearchBoxProps> = ({
                     className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-900 font-medium focus:bg-white focus:border-[#071A2B] focus:ring-1 focus:ring-[#071A2B] outline-none transition appearance-none cursor-pointer"
                   >
                     <option value="">Any Make</option>
-                    {CAR_BRANDS.map((brand) => (
+                    {brands.map((brand) => (
                       <option key={brand.id} value={brand.name}>
                         {brand.name}
                       </option>
