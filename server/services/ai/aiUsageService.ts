@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getSupabaseClient } from '../../lib/supabaseServer';
+import { getSupabaseClient } from '../../lib/supabaseServer.js';
 
 export type AiFeatureModuleKey =
   | 'listing_copy'

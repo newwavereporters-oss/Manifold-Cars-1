@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { runStructuredJsonResponse } from '../../lib/openai';
-import { getSupabaseClient } from '../../lib/supabaseServer';
+import { runStructuredJsonResponse } from '../../lib/openai.js';
+import { getSupabaseClient } from '../../lib/supabaseServer.js';
 
 export const PriceIntelligenceRequestSchema = z.object({
   carId: z.string().trim().max(120).optional(),

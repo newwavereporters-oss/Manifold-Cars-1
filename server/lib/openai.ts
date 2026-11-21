@@ -1,5 +1,5 @@
 import OpenAI, { toFile } from 'openai';
-import { getServerEnv } from '../config/env';
+import { getServerEnv } from '../config/env.js';
 
 export class AiConfigurationError extends Error {
   public readonly status = 503;

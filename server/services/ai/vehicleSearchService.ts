@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { runStructuredJsonResponse } from '../../lib/openai';
-import { getSupabaseClient } from '../../lib/supabaseServer';
+import { runStructuredJsonResponse } from '../../lib/openai.js';
+import { getSupabaseClient } from '../../lib/supabaseServer.js';
 
 export const VehicleSearchRequestSchema = z.object({
   query: z.string().trim().min(2, 'Please enter a vehicle search query.').max(400),

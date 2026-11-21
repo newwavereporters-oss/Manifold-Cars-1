@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
-import { getServerEnv } from '../config/env';
+import { getServerEnv } from '../config/env.js';
 
 export function getSupabaseClient(authHeader?: string): SupabaseClient | null {
   const { supabaseUrl, supabaseAnonKey } = getServerEnv();

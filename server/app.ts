@@ -1,10 +1,10 @@
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
-import { getServerEnv } from './config/env';
-import { dealersRouter } from './routes/dealers';
-import { marketIntelligenceRouter } from './routes/marketIntelligence';
-import { worldRouter } from './routes/world';
-import { aiRouter } from './routes/ai';
+import { getServerEnv } from './config/env.js';
+import { dealersRouter } from './routes/dealers.js';
+import { marketIntelligenceRouter } from './routes/marketIntelligence.js';
+import { worldRouter } from './routes/world.js';
+import { aiRouter } from './routes/ai.js';
 
 export function createApp() {
   // Ensure server environment variables are loaded

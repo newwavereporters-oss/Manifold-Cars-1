@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { runStructuredJsonResponse } from '../../lib/openai';
-import { getSupabaseClient } from '../../lib/supabaseServer';
+import { runStructuredJsonResponse } from '../../lib/openai.js';
+import { getSupabaseClient } from '../../lib/supabaseServer.js';
 
 const MARKET_INSIGHTS_SCHEMA = {
   type: 'object',

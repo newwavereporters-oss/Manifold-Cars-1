@@ -5,7 +5,7 @@ import {
   verifyActiveAdmin,
   verifyDealerAccount,
   verifySupabaseUser,
-} from '../lib/supabaseServer';
+} from '../lib/supabaseServer.js';
 
 export interface AuthContext {
   user?: User;

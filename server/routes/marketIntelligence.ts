@@ -1,23 +1,23 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { getServerEnv } from '../config/env';
-import { getSupabaseClient } from '../lib/supabaseServer';
-import { sendMigrationSqlFile } from '../lib/migrationSql';
-import { requireAdmin, requireAuth } from '../middleware/auth';
-import { aiIngestionLimiter, standardApiLimiter } from '../middleware/rateLimit';
+import { getServerEnv } from '../config/env.js';
+import { getSupabaseClient } from '../lib/supabaseServer.js';
+import { sendMigrationSqlFile } from '../lib/migrationSql.js';
+import { requireAdmin, requireAuth } from '../middleware/auth.js';
+import { aiIngestionLimiter, standardApiLimiter } from '../middleware/rateLimit.js';
 import {
   validateEmbedBody,
   validateExtractTextBody,
   validateFetchUrlBody,
   validateSearchKnowledgeBody,
-} from '../middleware/validate';
+} from '../middleware/validate.js';
 import {
   extractVehiclesWithGemini,
   fetchListingPageSafe,
   getGenAI,
   isGeminiConfigured,
   persistExtractionTrace,
-} from '../services/marketIntelligenceBackend';
+} from '../services/marketIntelligenceBackend.js';
 
 const router = Router();
 

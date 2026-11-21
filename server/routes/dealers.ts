@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { getSupabaseClient } from '../lib/supabaseServer';
-import { sendMigrationSqlFile } from '../lib/migrationSql';
-import { standardApiLimiter } from '../middleware/rateLimit';
+import { getSupabaseClient } from '../lib/supabaseServer.js';
+import { sendMigrationSqlFile } from '../lib/migrationSql.js';
+import { standardApiLimiter } from '../middleware/rateLimit.js';
 
 const router = Router();
 

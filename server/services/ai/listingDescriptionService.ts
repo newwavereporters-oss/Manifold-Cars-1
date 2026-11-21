@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { runStructuredJsonResponse } from '../../lib/openai';
+import { runStructuredJsonResponse } from '../../lib/openai.js';
 
 export const ListingCopyInputSchema = z.object({
   carId: z.string().trim().max(120).optional(),

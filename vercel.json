@@ -4,11 +4,15 @@
   "outputDirectory": "dist",
   "functions": {
     "api/index.ts": {
-      "includeFiles": "src/db/*.sql",
+      "includeFiles": "{api/_server.mjs,src/db/*.sql}",
       "maxDuration": 30
     }
   },
   "rewrites": [
+    {
+      "source": "/api",
+      "destination": "/api/index.ts"
+    },
     {
       "source": "/api/(.*)",
       "destination": "/api/index.ts?__route=$1"

@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import type { AuthenticatedRequest } from './auth';
+import type { AuthenticatedRequest } from './auth.js';
 
 /**
  * In-memory sliding/fixed-window rate limiter for Express + Vercel serverless.

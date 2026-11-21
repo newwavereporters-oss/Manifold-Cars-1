@@ -1,4 +1,4 @@
-import { transcribeAudioBuffer, AiProviderError } from '../../lib/openai';
+import { transcribeAudioBuffer, AiProviderError } from '../../lib/openai.js';
 
 const ALLOWED_AUDIO_MIME_TYPES = new Set([
   'audio/webm',

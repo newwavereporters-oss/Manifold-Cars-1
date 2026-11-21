@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import crypto from 'crypto';
-import { getServerEnv } from '../config/env';
-import { getSupabaseClient } from '../lib/supabaseServer';
+import { getServerEnv } from '../config/env.js';
+import { getSupabaseClient } from '../lib/supabaseServer.js';
 
 let cachedGenAI: GoogleGenAI | null | undefined;
 

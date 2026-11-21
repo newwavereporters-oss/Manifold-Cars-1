@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { getSupabaseClient } from '../lib/supabaseServer';
-import { sendMigrationSqlFile } from '../lib/migrationSql';
-import { requireAuth } from '../middleware/auth';
-import { chatModerationLimiter, standardApiLimiter } from '../middleware/rateLimit';
-import { validateModerateChatBody } from '../middleware/validate';
-import { getGenAI } from '../services/marketIntelligenceBackend';
+import { getSupabaseClient } from '../lib/supabaseServer.js';
+import { sendMigrationSqlFile } from '../lib/migrationSql.js';
+import { requireAuth } from '../middleware/auth.js';
+import { chatModerationLimiter, standardApiLimiter } from '../middleware/rateLimit.js';
+import { validateModerateChatBody } from '../middleware/validate.js';
+import { getGenAI } from '../services/marketIntelligenceBackend.js';
 
 const router = Router();
 

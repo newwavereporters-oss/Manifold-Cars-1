@@ -9,7 +9,7 @@ import {
   requireAdmin,
   requireApprovedDealer,
   requireAuth,
-} from '../middleware/auth';
+} from '../middleware/auth.js';
 import {
   aiAssistantLimiter,
   aiHealthLimiter,
@@ -18,14 +18,14 @@ import {
   aiVoiceLimiter,
   dealerListingAiLimiter,
   standardApiLimiter,
-} from '../middleware/rateLimit';
+} from '../middleware/rateLimit.js';
 import {
   getOpenAiConfigStatus,
   runTextResponse,
   sanitizeOpenAiError,
-} from '../lib/openai';
-import { sendMigrationSqlFile } from '../lib/migrationSql';
-import { getSupabaseClient } from '../lib/supabaseServer';
+} from '../lib/openai.js';
+import { sendMigrationSqlFile } from '../lib/migrationSql.js';
+import { getSupabaseClient } from '../lib/supabaseServer.js';
 import {
   checkAiDatabaseStatus,
   getAdminAiOverview,
@@ -33,28 +33,28 @@ import {
   recordAiUsage,
   updateModuleSetting,
   type AiFeatureModuleKey,
-} from '../services/ai/aiUsageService';
+} from '../services/ai/aiUsageService.js';
 import {
   generateDealerListingCopy,
   ListingCopyInputSchema,
-} from '../services/ai/listingDescriptionService';
+} from '../services/ai/listingDescriptionService.js';
 import {
   runVehicleIntelligenceSearch,
   VehicleSearchRequestSchema,
-} from '../services/ai/vehicleSearchService';
+} from '../services/ai/vehicleSearchService.js';
 import {
   MAX_VOICE_AUDIO_BYTES,
   processVoiceSearchAudio,
-} from '../services/ai/transcriptionService';
+} from '../services/ai/transcriptionService.js';
 import {
   PriceIntelligenceRequestSchema,
   runVehiclePriceIntelligence,
-} from '../services/ai/vehiclePricingService';
-import { generateMarketIntelligenceInsights } from '../services/ai/marketIntelligenceService';
+} from '../services/ai/vehiclePricingService.js';
+import { generateMarketIntelligenceInsights } from '../services/ai/marketIntelligenceService.js';
 import {
   AssistantChatRequestSchema,
   runAutomotiveAssistant,
-} from '../services/ai/automotiveAssistantService';
+} from '../services/ai/automotiveAssistantService.js';
 
 export const aiRouter = Router();
 
@@ -715,7 +715,7 @@ aiRouter.post(
     }
 
     // Determine authoritative server role (Admin OR Approved Dealer)
-    const { verifyActiveAdmin, verifyDealerAccount } = await import('../lib/supabaseServer');
+    const { verifyActiveAdmin, verifyDealerAccount } = await import('../lib/supabaseServer.js');
     const adminCheck = await verifyActiveAdmin(req.auth.supabase, req.auth.user);
     let authorizedRole: 'admin' | 'dealer' | null = adminCheck.isAdmin ? 'admin' : null;
     let dealerId: string | undefined;
