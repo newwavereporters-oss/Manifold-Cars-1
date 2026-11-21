@@ -56,7 +56,10 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   const [models, setModels] = useState<string[]>([]);
   const [bodyTypes, setBodyTypes] = useState<BodyTypeCategory[]>([]);
   const [loadingBrands, setLoadingBrands] = useState(true);
+  const [loadingTypes, setLoadingTypes] = useState(true);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [brandsError, setBrandsError] = useState<string | null>(null);
+  const [typesError, setTypesError] = useState<string | null>(null);
 
   // Form State
   const [brandId, setBrandId] = useState('');
@@ -65,7 +68,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   const [trim, setTrim] = useState('');
   const [year, setYear] = useState<number>(2021);
   const [typeId, setTypeId] = useState('');
-  const [bodyType, setBodyType] = useState('SUV');
+  const [bodyType, setBodyType] = useState('');
   const [condition, setCondition] = useState('Foreign Used (Tokunbo)');
   const [mileage, setMileage] = useState<string>('45000');
   const [fuelType, setFuelType] = useState('Petrol');
@@ -120,61 +123,86 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
     };
   }, [price]);
 
-  // Load Brands and Body Types dynamically from Supabase
+  // Load Active Brands (from public.car_brand_inventory) & Vehicle Types (from public.car_types) independently
+  const loadDropdownOptions = React.useCallback(async (isMountedCheck?: () => boolean) => {
+    setLoadingBrands(true);
+    setLoadingTypes(true);
+    setBrandsError(null);
+    setTypesError(null);
+
+    const [brandsResult, typesResult] = await Promise.allSettled([
+      brandService.getActiveBrands(),
+      categoryService.getActiveBodyTypes(),
+    ]);
+
+    if (isMountedCheck && !isMountedCheck()) return;
+
+    if (brandsResult.status === 'fulfilled') {
+      const activeBrands = brandsResult.value;
+      setBrands(activeBrands);
+      if (activeBrands.length === 0) {
+        console.warn('[DealerAddCarPage] public.car_brand_inventory returned 0 active brands.');
+      }
+    } else {
+      const errMsg =
+        brandsResult.reason instanceof Error
+          ? brandsResult.reason.message
+          : 'Unable to load brands from database.';
+      console.error('[DealerAddCarPage] Brand / Make load failed:', brandsResult.reason);
+      setBrands([]);
+      setBrandsError(errMsg);
+    }
+    setLoadingBrands(false);
+
+    if (typesResult.status === 'fulfilled') {
+      const activeTypes = typesResult.value;
+      setBodyTypes(activeTypes);
+      if (activeTypes.length === 0) {
+        console.warn('[DealerAddCarPage] public.car_types returned 0 active vehicle types.');
+      }
+    } else {
+      const errMsg =
+        typesResult.reason instanceof Error
+          ? typesResult.reason.message
+          : 'Unable to load vehicle types from database.';
+      console.error('[DealerAddCarPage] Vehicle Type load failed:', typesResult.reason);
+      setBodyTypes([]);
+      setTypesError(errMsg);
+    }
+    setLoadingTypes(false);
+  }, []);
+
   useEffect(() => {
     let mounted = true;
-    async function loadOptions() {
-      try {
-        const [brandsData, typesData] = await Promise.all([
-          brandService.getBrands(),
-          categoryService.getBodyTypes(),
-        ]);
-        if (mounted) {
-          setBrands(brandsData);
-          setBodyTypes(typesData);
-          if (brandsData.length > 0 && !make) {
-            setBrandId(brandsData[0].id);
-            setMake(brandsData[0].name);
-          }
-          if (typesData.length > 0) {
-            setTypeId(typesData[0].id);
-            setBodyType(typesData[0].name);
-          }
-          setLoadingBrands(false);
-        }
-      } catch (err) {
-        console.warn('Error loading vehicle options:', err);
-        if (mounted) setLoadingBrands(false);
-      }
-    }
-    loadOptions();
+    loadDropdownOptions(() => mounted);
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [loadDropdownOptions]);
 
-  // When Make changes, dynamically load Models from car_models
+  // When Brand / Make changes, dynamically load Models from car_models
   useEffect(() => {
     let mounted = true;
-    if (!make) {
+    if (!brandId && !make) {
       setModels([]);
+      setLoadingModels(false);
       return;
     }
 
     async function loadModels() {
       setLoadingModels(true);
       try {
-        const modelList = await modelService.getModelsByBrand(make);
+        const modelList = await modelService.getModelsByBrand(make, brandId || undefined);
         if (mounted) {
           setModels(modelList);
-          if (modelList.length > 0) {
-            setModel(modelList[0]);
-          } else {
-            setModel('');
-          }
+          setModel(modelList.length > 0 ? modelList[0] : '');
         }
       } catch (err) {
-        console.warn('Error loading models:', err);
+        console.error('[DealerAddCarPage] Error loading models for brand:', { make, brandId, err });
+        if (mounted) {
+          setModels([]);
+          setModel('');
+        }
       } finally {
         if (mounted) setLoadingModels(false);
       }
@@ -184,7 +212,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
     return () => {
       mounted = false;
     };
-  }, [make]);
+  }, [brandId, make]);
 
   // Derive YouTube video ID in real-time
   useEffect(() => {
@@ -197,7 +225,15 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   }, [youtubeUrl]);
 
   const handleBrandChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selected = brands.find((b) => b.id === e.target.value);
+    const selectedId = e.target.value;
+    setModels([]);
+    setModel('');
+    if (!selectedId) {
+      setBrandId('');
+      setMake('');
+      return;
+    }
+    const selected = brands.find((b) => b.id === selectedId);
     if (selected) {
       setBrandId(selected.id);
       setMake(selected.name);
@@ -205,7 +241,13 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   };
 
   const handleBodyTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selected = bodyTypes.find((t) => t.id === e.target.value);
+    const selectedId = e.target.value;
+    if (!selectedId) {
+      setTypeId('');
+      setBodyType('');
+      return;
+    }
+    const selected = bodyTypes.find((t) => t.id === selectedId);
     if (selected) {
       setTypeId(selected.id);
       setBodyType(selected.name);
@@ -225,7 +267,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
       trim: trim.trim() || undefined,
       year: Number(year) || 2024,
       type_id: typeId || undefined,
-      body_type: bodyType,
+      body_type: bodyType || 'SUV',
       condition,
       mileage: cleanMileage,
       fuel_type: fuelType,
@@ -287,12 +329,16 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
       return;
     }
 
-    if (!make.trim()) {
-      setSubmitError('Vehicle Brand is required.');
+    if (!brandId || !make.trim()) {
+      setSubmitError('Vehicle Brand / Make is required.');
       return;
     }
     if (!model.trim()) {
       setSubmitError('Vehicle Model is required.');
+      return;
+    }
+    if (!typeId || !bodyType.trim()) {
+      setSubmitError('Vehicle Type is required.');
       return;
     }
     if (!price.trim() || Number(price.replace(/[^0-9.]/g, '')) <= 0) {
@@ -500,17 +546,44 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                   Brand / Make <span className="text-[#EF233C]">*</span>
                 </label>
                 <select
+                  aria-label="Brand / Make"
                   value={brandId}
                   onChange={handleBrandChange}
                   disabled={loadingBrands}
-                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
+                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C] disabled:opacity-60"
                 >
+                  <option value="">
+                    {loadingBrands
+                      ? 'Loading brands...'
+                      : brandsError
+                      ? 'Failed to load brands'
+                      : brands.length === 0
+                      ? 'No active brands available'
+                      : 'Select Brand / Make'}
+                  </option>
                   {brands.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name}
                     </option>
                   ))}
                 </select>
+                {brandsError && (
+                  <p className="mt-1 text-[11px] text-[#EF233C] flex items-center justify-between gap-2">
+                    <span className="truncate">{brandsError}</span>
+                    <button
+                      type="button"
+                      onClick={() => loadDropdownOptions()}
+                      className="font-bold underline shrink-0"
+                    >
+                      Retry
+                    </button>
+                  </p>
+                )}
+                {!loadingBrands && !brandsError && brands.length === 0 && (
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    No active brands found in inventory.
+                  </p>
+                )}
               </div>
 
               {/* Model (Dynamic based on Brand) */}
@@ -524,10 +597,12 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                   </div>
                 ) : models.length > 0 ? (
                   <select
+                    aria-label="Model"
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
                   >
+                    <option value="">Select Model</option>
                     {models.map((m) => (
                       <option key={m} value={m}>
                         {m}
@@ -539,7 +614,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                     type="text"
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
-                    placeholder="e.g. Camry, RX350, GLE450"
+                    placeholder={brandId ? 'e.g. Camry, RX350, GLE450' : 'Select a brand or enter model'}
                     className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
                   />
                 )}
@@ -583,16 +658,44 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                   Vehicle Type <span className="text-[#EF233C]">*</span>
                 </label>
                 <select
+                  aria-label="Vehicle Type"
                   value={typeId}
                   onChange={handleBodyTypeChange}
-                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
+                  disabled={loadingTypes}
+                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C] disabled:opacity-60"
                 >
+                  <option value="">
+                    {loadingTypes
+                      ? 'Loading vehicle types...'
+                      : typesError
+                      ? 'Failed to load vehicle types'
+                      : bodyTypes.length === 0
+                      ? 'No active vehicle types available'
+                      : 'Select Vehicle Type'}
+                  </option>
                   {bodyTypes.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>
                   ))}
                 </select>
+                {typesError && (
+                  <p className="mt-1 text-[11px] text-[#EF233C] flex items-center justify-between gap-2">
+                    <span className="truncate">{typesError}</span>
+                    <button
+                      type="button"
+                      onClick={() => loadDropdownOptions()}
+                      className="font-bold underline shrink-0"
+                    >
+                      Retry
+                    </button>
+                  </p>
+                )}
+                {!loadingTypes && !typesError && bodyTypes.length === 0 && (
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    No active vehicle types found.
+                  </p>
+                )}
               </div>
 
               {/* Condition */}

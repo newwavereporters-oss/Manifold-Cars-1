@@ -15,7 +15,7 @@ import {
   Loader2,
   Info,
 } from 'lucide-react';
-import { Car, CarBrand, ListingStatus } from '../../types';
+import { BodyTypeCategory, Car, CarBrand, ListingStatus } from '../../types';
 import {
   extractYouTubeVideoId,
   getYouTubeThumbnailUrl,
@@ -43,6 +43,7 @@ export const CarForm: React.FC<CarFormProps> = ({
 }) => {
   // Basic Information State
   const [title, setTitle] = useState(initialCar?.title || '');
+  const [brandId, setBrandId] = useState(initialCar?.brand_id || '');
   const [make, setMake] = useState(initialCar?.make || 'Toyota');
   const [model, setModel] = useState(initialCar?.model || 'Highlander');
   const [trim, setTrim] = useState(initialCar?.trim || 'XLE AWD');
@@ -57,6 +58,7 @@ export const CarForm: React.FC<CarFormProps> = ({
   const [condition, setCondition] = useState<Car['condition']>(
     initialCar?.condition || 'Foreign Used'
   );
+  const [typeId, setTypeId] = useState(initialCar?.type_id || '');
   const [bodyType, setBodyType] = useState<Car['body_type']>(
     initialCar?.body_type || 'SUV'
   );
@@ -122,19 +124,65 @@ export const CarForm: React.FC<CarFormProps> = ({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const isInitialMount = useRef(true);
 
-  // Popular Models for current brand & live brands
+  // Popular Models for current brand & live brands/types
   const [popularModels, setPopularModels] = useState<string[]>([]);
   const [brands, setBrands] = useState<CarBrand[]>(() => brandService.getBrandsSync());
-  const bodyTypes = categoryService.getBodyTypesSync();
+  const [bodyTypes, setBodyTypes] = useState<BodyTypeCategory[]>(() => categoryService.getBodyTypesSync());
+  const [loadingBrands, setLoadingBrands] = useState<boolean>(brands.length === 0);
+  const [loadingTypes, setLoadingTypes] = useState<boolean>(bodyTypes.length === 0);
+  const [brandsError, setBrandsError] = useState<string | null>(null);
+  const [typesError, setTypesError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    brandService
-      .getBrands()
-      .then((list) => {
-        if (mounted) setBrands(list);
-      })
-      .catch(() => {});
+    setBrandsError(null);
+    setTypesError(null);
+
+    Promise.allSettled([brandService.getActiveBrands(), categoryService.getActiveBodyTypes()]).then(
+      ([brandsRes, typesRes]) => {
+        if (!mounted) return;
+        if (brandsRes.status === 'fulfilled') {
+          const loadedBrands = brandsRes.value;
+          setBrands(loadedBrands);
+          const matchedBrand =
+            (initialCar?.brand_id
+              ? loadedBrands.find((b) => b.id === initialCar.brand_id)
+              : undefined) ||
+            loadedBrands.find((b) => b.name.toLowerCase() === (make || '').toLowerCase());
+          if (matchedBrand) {
+            setBrandId(matchedBrand.id);
+            setMake(matchedBrand.name);
+          }
+        } else {
+          const msg =
+            brandsRes.reason instanceof Error ? brandsRes.reason.message : 'Unable to load brands.';
+          console.error('[CarForm] Failed to load active brands:', brandsRes.reason);
+          setBrandsError(msg);
+        }
+        setLoadingBrands(false);
+
+        if (typesRes.status === 'fulfilled') {
+          const loadedTypes = typesRes.value;
+          setBodyTypes(loadedTypes);
+          const matchedType =
+            (initialCar?.type_id
+              ? loadedTypes.find((t) => t.id === initialCar.type_id)
+              : undefined) ||
+            loadedTypes.find((t) => t.name.toLowerCase() === (bodyType || '').toLowerCase());
+          if (matchedType) {
+            setTypeId(matchedType.id);
+            setBodyType(matchedType.name);
+          }
+        } else {
+          const msg =
+            typesRes.reason instanceof Error ? typesRes.reason.message : 'Unable to load vehicle types.';
+          console.error('[CarForm] Failed to load active vehicle types:', typesRes.reason);
+          setTypesError(msg);
+        }
+        setLoadingTypes(false);
+      }
+    );
+
     return () => {
       mounted = false;
     };
@@ -142,8 +190,26 @@ export const CarForm: React.FC<CarFormProps> = ({
 
   // Load models on make change
   useEffect(() => {
-    modelService.getModelsByBrand(make).then(setPopularModels);
-  }, [make]);
+    let mounted = true;
+    if (!brandId && !make) {
+      setPopularModels([]);
+      return;
+    }
+    const matchedBrand = brands.find(
+      (b) => (brandId && b.id === brandId) || b.name.toLowerCase() === make.toLowerCase()
+    );
+    modelService
+      .getModelsByBrand(make, brandId || matchedBrand?.id)
+      .then((list) => {
+        if (mounted) setPopularModels(list);
+      })
+      .catch((err) => {
+        console.error('[CarForm] Failed to load models for brand:', make, err);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [brandId, make, brands]);
 
   // YouTube URL parsing effect
   useEffect(() => {
@@ -300,6 +366,7 @@ export const CarForm: React.FC<CarFormProps> = ({
 
     const carPayload: Partial<Car> = {
       title: title.trim(),
+      brand_id: brandId || undefined,
       make: make.trim(),
       model: model.trim(),
       trim: trim.trim(),
@@ -309,6 +376,7 @@ export const CarForm: React.FC<CarFormProps> = ({
       is_price_reduced: !!(parsedOriginalPrice && parsedOriginalPrice > parsedPrice),
       mileage: parsedMileage,
       condition,
+      type_id: typeId || undefined,
       body_type: bodyType,
       fuel_type: fuelType,
       transmission,
@@ -443,16 +511,55 @@ export const CarForm: React.FC<CarFormProps> = ({
               Brand / Make <span className="text-[#EF233C]">*</span>
             </label>
             <select
-              value={make}
-              onChange={(e) => setMake(e.target.value)}
-              className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 focus:bg-white focus:border-[#071A2B] outline-none"
+              value={brandId || (make ? `__legacy__:${make}` : '')}
+              disabled={loadingBrands}
+              onChange={(e) => {
+                const selectedVal = e.target.value;
+                if (!selectedVal) {
+                  setBrandId('');
+                  setMake('');
+                  setModel('');
+                  return;
+                }
+                if (selectedVal.startsWith('__legacy__:')) {
+                  const legacyMake = selectedVal.slice('__legacy__:'.length);
+                  setBrandId('');
+                  if (legacyMake !== make) setModel('');
+                  setMake(legacyMake);
+                  return;
+                }
+                const selectedBrand = brands.find((b) => b.id === selectedVal);
+                if (selectedBrand) {
+                  if (selectedBrand.id !== brandId || selectedBrand.name !== make) {
+                    setModel('');
+                  }
+                  setBrandId(selectedBrand.id);
+                  setMake(selectedBrand.name);
+                }
+              }}
+              className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 focus:bg-white focus:border-[#071A2B] outline-none disabled:opacity-60"
             >
+              <option value="">
+                {loadingBrands
+                  ? 'Loading brands...'
+                  : brandsError
+                  ? 'Failed to load brands'
+                  : brands.length === 0
+                  ? 'No active brands available'
+                  : 'Select Brand / Make'}
+              </option>
+              {make && !brands.some((b) => b.id === brandId || b.name.toLowerCase() === make.toLowerCase()) && (
+                <option value={`__legacy__:${make}`}>{make}</option>
+              )}
               {brands.map((b) => (
-                <option key={b.id} value={b.name}>
+                <option key={b.id} value={b.id}>
                   {b.name}
                 </option>
               ))}
             </select>
+            {brandsError && (
+              <p className="mt-1 text-[11px] text-[#EF233C]">{brandsError}</p>
+            )}
           </div>
 
           {/* Model */}
@@ -571,16 +678,49 @@ export const CarForm: React.FC<CarFormProps> = ({
               Body Type <span className="text-[#EF233C]">*</span>
             </label>
             <select
-              value={bodyType}
-              onChange={(e) => setBodyType(e.target.value as Car['body_type'])}
-              className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 focus:bg-white focus:border-[#071A2B] outline-none"
+              value={typeId || (bodyType ? `__legacy__:${bodyType}` : '')}
+              disabled={loadingTypes}
+              onChange={(e) => {
+                const selectedVal = e.target.value;
+                if (!selectedVal) {
+                  setTypeId('');
+                  setBodyType('');
+                  return;
+                }
+                if (selectedVal.startsWith('__legacy__:')) {
+                  setTypeId('');
+                  setBodyType(selectedVal.slice('__legacy__:'.length));
+                  return;
+                }
+                const selectedType = bodyTypes.find((bt) => bt.id === selectedVal);
+                if (selectedType) {
+                  setTypeId(selectedType.id);
+                  setBodyType(selectedType.name);
+                }
+              }}
+              className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 focus:bg-white focus:border-[#071A2B] outline-none disabled:opacity-60"
             >
+              <option value="">
+                {loadingTypes
+                  ? 'Loading vehicle types...'
+                  : typesError
+                  ? 'Failed to load vehicle types'
+                  : bodyTypes.length === 0
+                  ? 'No active vehicle types available'
+                  : 'Select Vehicle Type'}
+              </option>
+              {bodyType && !bodyTypes.some((bt) => bt.id === typeId || bt.name.toLowerCase() === bodyType.toLowerCase()) && (
+                <option value={`__legacy__:${bodyType}`}>{bodyType}</option>
+              )}
               {bodyTypes.map((bt) => (
-                <option key={bt.id} value={bt.name}>
+                <option key={bt.id} value={bt.id}>
                   {bt.name}
                 </option>
               ))}
             </select>
+            {typesError && (
+              <p className="mt-1 text-[11px] text-[#EF233C]">{typesError}</p>
+            )}
           </div>
 
           {/* Fuel Type */}

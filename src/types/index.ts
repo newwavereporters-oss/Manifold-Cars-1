@@ -48,10 +48,12 @@ export interface Car {
   slug: string;
   title: string;
   year: number;
+  brand_id?: string | null;
   make: string;
   model: string;
   trim: string;
-  body_type: 'SUV' | 'Sedan' | 'Hatchback' | 'Pickup' | 'Coupe' | 'Van' | 'Truck' | 'Luxury';
+  type_id?: string | null;
+  body_type: 'SUV' | 'Sedan' | 'Hatchback' | 'Pickup' | 'Coupe' | 'Van' | 'Truck' | 'Luxury' | (string & {});
   condition: 'Foreign Used' | 'Brand New' | 'Nigerian Used';
   price: number; // in Naira (NGN)
   original_price?: number;

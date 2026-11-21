@@ -1,6 +1,10 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../utils/youtube';
 import { resolveDealerApprovalState } from './dealerOnboardingService';
+import { categoryService } from './categoryService';
+import { brandService } from './brandService';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function getDealerListingBlockReason(
   accountStatus: unknown,
@@ -55,9 +59,11 @@ export interface DealerCarRecord {
   slug: string;
   title: string;
   year: number;
+  brand_id?: string | null;
   make: string;
   model: string;
   trim?: string;
+  type_id?: string | null;
   body_type: string;
   condition: string;
   price: number;
@@ -90,6 +96,25 @@ export interface DealerCarRecord {
 }
 
 class DealerVehicleService {
+  private async resolveBrandUuid(brandIdOrName?: string | null, makeName?: string | null): Promise<string | null> {
+    const raw = (brandIdOrName || '').trim();
+    if (raw && UUID_REGEX.test(raw)) return raw;
+
+    const candidates = [raw, (makeName || '').trim()].filter(Boolean);
+    for (const candidate of candidates) {
+      const cleaned = candidate.replace(/^__legacy__:/, '').trim();
+      if (!cleaned) continue;
+      if (UUID_REGEX.test(cleaned)) return cleaned;
+
+      const byName = await brandService.getBrandByName(cleaned);
+      if (byName && UUID_REGEX.test(byName.id)) return byName.id;
+
+      const bySlug = await brandService.getBrandBySlug(cleaned);
+      if (bySlug && UUID_REGEX.test(bySlug.id)) return bySlug.id;
+    }
+
+    return null;
+  }
   /**
    * Fetches only vehicles belonging to the authenticated dealer
    * Database RLS and application filter guarantee dealer isolation
@@ -236,16 +261,21 @@ class DealerVehicleService {
       // Security boundary: Enforcement of dealer ownership and status machine
       const status: DealerCarRecord['status'] = isDraft ? 'DRAFT' : 'PENDING_REVIEW';
 
+      const [resolvedBrandId, resolvedTypeId] = await Promise.all([
+        this.resolveBrandUuid(input.brand_id, input.make),
+        categoryService.resolveTypeId(input.type_id, input.body_type),
+      ]);
+
       const insertPayload: any = {
         id,
         slug,
         title,
-        brand_id: input.brand_id || null,
+        brand_id: resolvedBrandId,
         make: input.make,
         model: input.model,
         variant: input.trim || null,
         trim: input.trim || null,
-        type_id: input.type_id || null,
+        type_id: resolvedTypeId,
         body_type: input.body_type || 'SUV',
         year: Number(input.year) || 2024,
         price: Number(input.price) || 0,
@@ -415,14 +445,19 @@ class DealerVehicleService {
         nextStatus = 'PUBLISHED';
       }
 
+      const [resolvedBrandId, resolvedTypeId] = await Promise.all([
+        this.resolveBrandUuid(input.brand_id, input.make),
+        categoryService.resolveTypeId(input.type_id, input.body_type),
+      ]);
+
       const updates: any = {
         title,
-        brand_id: input.brand_id || null,
+        brand_id: resolvedBrandId,
         make: input.make,
         model: input.model,
         variant: input.trim || null,
         trim: input.trim || null,
-        type_id: input.type_id || null,
+        type_id: resolvedTypeId,
         body_type: input.body_type || 'SUV',
         year: Number(input.year) || 2024,
         price: Number(input.price) || 0,
@@ -552,9 +587,11 @@ class DealerVehicleService {
       slug: row.slug,
       title: row.title,
       year: Number(row.year) || 2024,
+      brand_id: row.brand_id ?? null,
       make: row.make,
       model: row.model,
       trim: row.trim || row.variant || undefined,
+      type_id: row.type_id ?? null,
       body_type: row.body_type || 'SUV',
       condition: row.condition || 'Foreign Used',
       price: Number(row.price) || 0,

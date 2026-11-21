@@ -10,46 +10,67 @@ export interface CarModelRecord {
   is_active: boolean;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 class ModelService {
-  public async getModelsByBrand(brandNameOrId: string): Promise<string[]> {
-    if (!isSupabaseConfigured || !brandNameOrId) return [];
+  public async getModelsByBrand(brandNameOrId: string, explicitBrandId?: string): Promise<string[]> {
+    if (!isSupabaseConfigured || (!brandNameOrId && !explicitBrandId)) return [];
 
     try {
-      // 1. Resolve brand ID
-      let brandId = brandNameOrId;
-      const brand = await brandService.getBrandByName(brandNameOrId);
-      if (brand) {
-        brandId = brand.id;
+      // 1. Resolve brand ID without unnecessary lookup when UUID is already known
+      let brandId = (explicitBrandId || '').trim();
+      let resolvedBrandName = brandNameOrId;
+
+      if (!brandId) {
+        if (UUID_REGEX.test(brandNameOrId.trim())) {
+          brandId = brandNameOrId.trim();
+        } else {
+          const brand = await brandService.getBrandByName(brandNameOrId);
+          if (brand) {
+            brandId = brand.id;
+            resolvedBrandName = brand.name;
+          } else {
+            brandId = brandNameOrId;
+          }
+        }
       }
 
       // 2. Query public.car_models
       const { data, error } = await supabase
         .from('car_models')
-        .select('name')
+        .select('id, name, slug')
         .eq('brand_id', brandId)
         .eq('is_active', true)
-        .order('name');
+        .order('name', { ascending: true });
 
-      if (!error && data && data.length > 0) {
+      if (error) {
+        console.error('[ModelService] Failed to query public.car_models:', {
+          brandId,
+          brandNameOrId,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+        return [];
+      }
+
+      if (data && data.length > 0) {
         return data.map((m: any) => m.name);
       }
 
-      // 3. Fallback to popular_models lookup if car_models is not populated
+      // 3. Secondary helper only when car_models query succeeded with 0 rows
       const fallbackBrand = CAR_BRANDS.find(
         (fb) =>
           fb.id === brandId ||
-          fb.slug === brandNameOrId.toLowerCase() ||
-          fb.name.toLowerCase() === brandNameOrId.toLowerCase()
+          fb.slug === resolvedBrandName.toLowerCase() ||
+          fb.name.toLowerCase() === resolvedBrandName.toLowerCase()
       );
-      const fallbackModels =
-        (brand && Array.isArray(brand.popular_models) && brand.popular_models.length > 0
-          ? brand.popular_models
-          : fallbackBrand?.popular_models) || [];
-      if (fallbackModels.length > 0) {
-        return fallbackModels;
+      if (fallbackBrand?.popular_models && fallbackBrand.popular_models.length > 0) {
+        return fallbackBrand.popular_models;
       }
     } catch (e) {
-      console.warn('Failed to fetch models from Supabase:', e);
+      console.error('[ModelService] Unexpected error fetching models from Supabase:', e);
     }
 
     return [];

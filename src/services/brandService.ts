@@ -44,6 +44,12 @@ class BrandService {
       .order('name', { ascending: true });
 
     if (error) {
+      console.error('[BrandService] Failed to query public.car_brand_inventory:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
       throw new Error(`Failed to load brands from Supabase: ${error.message}`);
     }
 
@@ -52,7 +58,7 @@ class BrandService {
   }
 
   /**
-   * Reads active brands (including those with car_count = 0) for public catalogues & filters.
+   * Reads active brands (including those with car_count = 0) from public.car_brand_inventory.
    */
   public async getActiveBrands(): Promise<CarBrand[]> {
     if (!isSupabaseConfigured) {
@@ -66,6 +72,12 @@ class BrandService {
       .order('name', { ascending: true });
 
     if (error) {
+      console.error('[BrandService] Failed to query active brands from public.car_brand_inventory:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
       throw new Error(`Failed to load active brands from Supabase: ${error.message}`);
     }
 
@@ -89,7 +101,18 @@ class BrandService {
       .ilike('name', name.trim())
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error) {
+      console.error('[BrandService] Failed to look up brand by name from public.car_brand_inventory:', {
+        name,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+      return null;
+    }
+
+    if (!data) return null;
     return this.mapBrandRow(data);
   }
 
@@ -102,7 +125,18 @@ class BrandService {
       .eq('slug', slug.trim().toLowerCase())
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error) {
+      console.error('[BrandService] Failed to look up brand by slug from public.car_brand_inventory:', {
+        slug,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+      return null;
+    }
+
+    if (!data) return null;
     return this.mapBrandRow(data);
   }
 

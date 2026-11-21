@@ -51,6 +51,12 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
   const [brands, setBrands] = useState<CarBrand[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [bodyTypes, setBodyTypes] = useState<BodyTypeCategory[]>([]);
+  const [loadingBrands, setLoadingBrands] = useState(true);
+  const [loadingTypes, setLoadingTypes] = useState(true);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [brandsError, setBrandsError] = useState<string | null>(null);
+  const [typesError, setTypesError] = useState<string | null>(null);
+  const modelRequestSeqRef = React.useRef(0);
 
   // Form State
   const [brandId, setBrandId] = useState('');
@@ -59,7 +65,7 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
   const [trim, setTrim] = useState('');
   const [year, setYear] = useState<number>(2021);
   const [typeId, setTypeId] = useState('');
-  const [bodyType, setBodyType] = useState('SUV');
+  const [bodyType, setBodyType] = useState('');
   const [condition, setCondition] = useState('Foreign Used (Tokunbo)');
   const [mileage, setMileage] = useState<string>('0');
   const [fuelType, setFuelType] = useState('Petrol');
@@ -112,36 +118,116 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
     };
   }, [price]);
 
-  // Load car and options
+  const reloadDropdownOptions = React.useCallback(
+    async (carFallback?: DealerCarRecord | null) => {
+      setLoadingBrands(true);
+      setLoadingTypes(true);
+      setBrandsError(null);
+      setTypesError(null);
+
+      const [brandsResult, typesResult] = await Promise.allSettled([
+        brandService.getActiveBrands(),
+        categoryService.getActiveBodyTypes(),
+      ]);
+
+      const refCar = carFallback ?? originalCar;
+
+      if (brandsResult.status === 'fulfilled') {
+        const activeBrands = brandsResult.value;
+        setBrands(activeBrands);
+        if (refCar) {
+          const matchedBrand =
+            (refCar.brand_id ? activeBrands.find((br) => br.id === refCar.brand_id) : undefined) ||
+            activeBrands.find((br) => br.name.toLowerCase() === refCar.make.toLowerCase());
+          if (matchedBrand) {
+            setBrandId(matchedBrand.id);
+            setMake(matchedBrand.name);
+          } else if (refCar.brand_id) {
+            setBrandId(refCar.brand_id);
+          }
+        }
+      } else {
+        const msg =
+          brandsResult.reason instanceof Error
+            ? brandsResult.reason.message
+            : 'Unable to load brands from database.';
+        console.error('[DealerEditCarPage] Brand / Make load failed:', brandsResult.reason);
+        setBrands([]);
+        setBrandsError(msg);
+      }
+      setLoadingBrands(false);
+
+      if (typesResult.status === 'fulfilled') {
+        const activeTypes = typesResult.value;
+        setBodyTypes(activeTypes);
+        if (refCar) {
+          const matchedType =
+            (refCar.type_id ? activeTypes.find((ty) => ty.id === refCar.type_id) : undefined) ||
+            activeTypes.find((ty) => ty.name.toLowerCase() === refCar.body_type.toLowerCase());
+          if (matchedType) {
+            setTypeId(matchedType.id);
+            setBodyType(matchedType.name);
+          } else if (refCar.type_id) {
+            setTypeId(refCar.type_id);
+          }
+        }
+      } else {
+        const msg =
+          typesResult.reason instanceof Error
+            ? typesResult.reason.message
+            : 'Unable to load vehicle types from database.';
+        console.error('[DealerEditCarPage] Vehicle Type load failed:', typesResult.reason);
+        setBodyTypes([]);
+        setTypesError(msg);
+      }
+      setLoadingTypes(false);
+    },
+    [originalCar]
+  );
+
+  // Load car and options independently
   useEffect(() => {
     let mounted = true;
     async function loadCarAndMetadata() {
       if (!dealerAccount?.dealerId) return;
 
+      setLoading(true);
+      setLoadingBrands(true);
+      setLoadingTypes(true);
+      setBrandsError(null);
+      setTypesError(null);
+
       try {
-        const [car, brandsData, typesData] = await Promise.all([
+        const [carResult, brandsResult, typesResult] = await Promise.allSettled([
           dealerVehicleService.getDealerCarById(carId, dealerAccount.dealerId),
-          brandService.getBrands(),
-          categoryService.getBodyTypes(),
+          brandService.getActiveBrands(),
+          categoryService.getActiveBodyTypes(),
         ]);
 
         if (!mounted) return;
 
+        const car = carResult.status === 'fulfilled' ? carResult.value : null;
+        if (carResult.status === 'rejected') {
+          console.error('[DealerEditCarPage] Failed to load vehicle record:', carResult.reason);
+        }
+
         if (!car) {
           setUnauthorized(true);
           setLoading(false);
+          setLoadingBrands(false);
+          setLoadingTypes(false);
           return;
         }
 
         setOriginalCar(car);
-        setBrands(brandsData);
-        setBodyTypes(typesData);
 
         // Prepopulate form fields
+        setBrandId(car.brand_id || '');
         setMake(car.make);
         setModel(car.model);
         setTrim(car.trim || '');
         setYear(car.year);
+        setTypeId(car.type_id || '');
         setBodyType(car.body_type);
         setCondition(car.condition);
         setMileage(String(car.mileage));
@@ -163,22 +249,67 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
         setImage1Url(car.gallery_image_1_url || '');
         setImage2Url(car.gallery_image_2_url || '');
 
-        const b = brandsData.find((br) => br.name.toLowerCase() === car.make.toLowerCase());
-        if (b) setBrandId(b.id);
+        let resolvedBrandId = car.brand_id || '';
+        if (brandsResult.status === 'fulfilled') {
+          const activeBrands = brandsResult.value;
+          setBrands(activeBrands);
+          const matchedBrand =
+            (car.brand_id ? activeBrands.find((br) => br.id === car.brand_id) : undefined) ||
+            activeBrands.find((br) => br.name.toLowerCase() === car.make.toLowerCase());
+          if (matchedBrand) {
+            setBrandId(matchedBrand.id);
+            setMake(matchedBrand.name);
+            resolvedBrandId = matchedBrand.id;
+          }
+        } else {
+          const msg =
+            brandsResult.reason instanceof Error
+              ? brandsResult.reason.message
+              : 'Unable to load brands from database.';
+          console.error('[DealerEditCarPage] Brand / Make load failed:', brandsResult.reason);
+          setBrands([]);
+          setBrandsError(msg);
+        }
+        setLoadingBrands(false);
 
-        const t = typesData.find((ty) => ty.name.toLowerCase() === car.body_type.toLowerCase());
-        if (t) setTypeId(t.id);
-
-        // Load models for this make
-        const modelList = await modelService.getModelsByBrand(car.make);
-        if (mounted) setModels(modelList);
+        if (typesResult.status === 'fulfilled') {
+          const activeTypes = typesResult.value;
+          setBodyTypes(activeTypes);
+          const matchedType =
+            (car.type_id ? activeTypes.find((ty) => ty.id === car.type_id) : undefined) ||
+            activeTypes.find((ty) => ty.name.toLowerCase() === car.body_type.toLowerCase());
+          if (matchedType) {
+            setTypeId(matchedType.id);
+            setBodyType(matchedType.name);
+          }
+        } else {
+          const msg =
+            typesResult.reason instanceof Error
+              ? typesResult.reason.message
+              : 'Unable to load vehicle types from database.';
+          console.error('[DealerEditCarPage] Vehicle Type load failed:', typesResult.reason);
+          setBodyTypes([]);
+          setTypesError(msg);
+        }
+        setLoadingTypes(false);
 
         setLoading(false);
+
+        // Load models for this make
+        setLoadingModels(true);
+        const modelList = await modelService.getModelsByBrand(car.make, resolvedBrandId || undefined);
+        if (mounted) {
+          setModels(modelList);
+          setLoadingModels(false);
+        }
       } catch (e) {
-        console.error('Failed to load vehicle for editing:', e);
+        console.error('[DealerEditCarPage] Unexpected error loading vehicle for editing:', e);
         if (mounted) {
           setUnauthorized(true);
           setLoading(false);
+          setLoadingBrands(false);
+          setLoadingTypes(false);
+          setLoadingModels(false);
         }
       }
     }
@@ -200,13 +331,67 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
   }, [youtubeUrl]);
 
   const handleBrandChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selected = brands.find((b) => b.id === e.target.value);
-    if (selected) {
-      setBrandId(selected.id);
-      setMake(selected.name);
-      const modelList = await modelService.getModelsByBrand(selected.name);
+    const selectedId = e.target.value;
+    const seq = ++modelRequestSeqRef.current;
+
+    // Clear dependent model selection immediately
+    setModels([]);
+    setModel('');
+
+    if (!selectedId) {
+      setBrandId('');
+      setMake('');
+      setLoadingModels(false);
+      return;
+    }
+
+    const selected = brands.find((b) => b.id === selectedId);
+    if (!selected) {
+      if (selectedId.startsWith('__legacy__:')) {
+        setBrandId('');
+        setMake(selectedId.slice('__legacy__:'.length));
+      }
+      return;
+    }
+
+    setBrandId(selected.id);
+    setMake(selected.name);
+    setLoadingModels(true);
+
+    try {
+      const modelList = await modelService.getModelsByBrand(selected.name, selected.id);
+      if (modelRequestSeqRef.current !== seq) return;
       setModels(modelList);
-      if (modelList.length > 0) setModel(modelList[0]);
+      setModel(modelList.length > 0 ? modelList[0] : '');
+    } catch (err) {
+      console.error('[DealerEditCarPage] Error loading models on brand change:', err);
+      if (modelRequestSeqRef.current === seq) {
+        setModels([]);
+        setModel('');
+      }
+    } finally {
+      if (modelRequestSeqRef.current === seq) {
+        setLoadingModels(false);
+      }
+    }
+  };
+
+  const handleBodyTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedId = e.target.value;
+    if (!selectedId) {
+      setTypeId('');
+      setBodyType('');
+      return;
+    }
+    if (selectedId.startsWith('__legacy__:')) {
+      setTypeId('');
+      setBodyType(selectedId.slice('__legacy__:'.length));
+      return;
+    }
+    const found = bodyTypes.find((t) => t.id === selectedId);
+    if (found) {
+      setTypeId(found.id);
+      setBodyType(found.name);
     }
   };
 
@@ -258,6 +443,18 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
     }
 
     if (!isDraft) {
+      if (!make.trim()) {
+        setSubmitError('Please select a Vehicle Brand / Make.');
+        return;
+      }
+      if (!model.trim()) {
+        setSubmitError('Please select or enter a Vehicle Model.');
+        return;
+      }
+      if (!bodyType.trim()) {
+        setSubmitError('Please select a Vehicle Type.');
+        return;
+      }
       if (!price.trim() || Number(price.replace(/[^0-9.]/g, '')) <= 0) {
         setSubmitError('Please specify a valid vehicle price.');
         return;
@@ -391,31 +588,66 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  Brand / Make
+                  Brand / Make <span className="text-[#EF233C]">*</span>
                 </label>
                 <select
-                  value={brandId}
+                  aria-label="Brand / Make"
+                  value={brandId || (make ? `__legacy__:${make}` : '')}
                   onChange={handleBrandChange}
-                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
+                  disabled={loadingBrands}
+                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C] disabled:opacity-60"
                 >
+                  <option value="">
+                    {loadingBrands
+                      ? 'Loading brands...'
+                      : brandsError
+                      ? 'Failed to load brands'
+                      : brands.length === 0
+                      ? 'No active brands available'
+                      : 'Select Brand / Make'}
+                  </option>
+                  {make && !brands.some((b) => b.id === brandId || b.name.toLowerCase() === make.toLowerCase()) && (
+                    <option value={`__legacy__:${make}`}>{make}</option>
+                  )}
                   {brands.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name}
                     </option>
                   ))}
                 </select>
+                {brandsError && (
+                  <p className="mt-1 text-[11px] text-[#EF233C] flex items-center justify-between gap-2">
+                    <span className="truncate">{brandsError}</span>
+                    <button
+                      type="button"
+                      onClick={() => reloadDropdownOptions()}
+                      className="font-bold underline shrink-0"
+                    >
+                      Retry
+                    </button>
+                  </p>
+                )}
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  Model
+                  Model <span className="text-[#EF233C]">*</span>
                 </label>
-                {models.length > 0 ? (
+                {loadingModels ? (
+                  <div className="h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center text-xs text-gray-400">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" /> Loading models...
+                  </div>
+                ) : models.length > 0 ? (
                   <select
+                    aria-label="Model"
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
                   >
+                    <option value="">Select Model</option>
+                    {model && !models.includes(model) && (
+                      <option value={model}>{model}</option>
+                    )}
                     {models.map((m) => (
                       <option key={m} value={m}>
                         {m}
@@ -427,6 +659,7 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
                     type="text"
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
+                    placeholder="e.g. Camry, RX350, GLE450"
                     className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
                   />
                 )}
@@ -463,25 +696,46 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  Vehicle Type
+                  Vehicle Type <span className="text-[#EF233C]">*</span>
                 </label>
                 <select
-                  value={typeId}
-                  onChange={(e) => {
-                    const found = bodyTypes.find((t) => t.id === e.target.value);
-                    if (found) {
-                      setTypeId(found.id);
-                      setBodyType(found.name);
-                    }
-                  }}
-                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
+                  aria-label="Vehicle Type"
+                  value={typeId || (bodyType ? `__legacy__:${bodyType}` : '')}
+                  onChange={handleBodyTypeChange}
+                  disabled={loadingTypes}
+                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C] disabled:opacity-60"
                 >
+                  <option value="">
+                    {loadingTypes
+                      ? 'Loading vehicle types...'
+                      : typesError
+                      ? 'Failed to load vehicle types'
+                      : bodyTypes.length === 0
+                      ? 'No active vehicle types available'
+                      : 'Select Vehicle Type'}
+                  </option>
+                  {bodyType &&
+                    !bodyTypes.some((t) => t.id === typeId || t.name.toLowerCase() === bodyType.toLowerCase()) && (
+                      <option value={`__legacy__:${bodyType}`}>{bodyType}</option>
+                    )}
                   {bodyTypes.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>
                   ))}
                 </select>
+                {typesError && (
+                  <p className="mt-1 text-[11px] text-[#EF233C] flex items-center justify-between gap-2">
+                    <span className="truncate">{typesError}</span>
+                    <button
+                      type="button"
+                      onClick={() => reloadDropdownOptions()}
+                      className="font-bold underline shrink-0"
+                    >
+                      Retry
+                    </button>
+                  </p>
+                )}
               </div>
 
               <div>

@@ -1,6 +1,10 @@
 import { Car } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl, formatStandardYouTubeUrl } from '../utils/youtube';
+import { brandService } from './brandService';
+import { categoryService } from './categoryService';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type CarChangeListener = (cars: Car[]) => void;
 
@@ -68,9 +72,11 @@ function mapSupabaseToCar(row: any): Car {
     slug: row.slug,
     title: row.title,
     year: Number(row.year) || 2024,
+    brand_id: row.brand_id ?? null,
     make: row.make || row.car_brands?.name || 'Vehicle',
     model: row.model || 'Model',
     trim: row.trim || row.variant || '',
+    type_id: row.type_id ?? null,
     body_type: row.body_type || row.car_types?.name || 'SUV',
     condition: row.condition || 'Foreign Used',
     price: Number(row.price) || 0,
@@ -208,15 +214,31 @@ class CarService {
     const slugBase = (carData.slug || title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const slug = `${slugBase}-${Date.now().toString(36).substring(0, 4)}`;
 
+    const resolveBrandUuid = async (): Promise<string | null> => {
+      if (carData.brand_id && UUID_REGEX.test(carData.brand_id)) return carData.brand_id;
+      if (carData.make) {
+        const b = await brandService.getBrandByName(carData.make);
+        if (b && UUID_REGEX.test(b.id)) return b.id;
+      }
+      return null;
+    };
+
+    const [resolvedBrandId, resolvedTypeId] = await Promise.all([
+      resolveBrandUuid(),
+      categoryService.resolveTypeId(carData.type_id, carData.body_type),
+    ]);
+
     const carInsertRow = {
       id,
       slug,
       title,
       year: carData.year || 2024,
+      brand_id: resolvedBrandId,
       make: carData.make || 'Toyota',
       model: carData.model || 'Model',
       variant: carData.trim || 'Standard',
       trim: carData.trim || 'Standard',
+      type_id: resolvedTypeId,
       body_type: carData.body_type || 'SUV',
       condition: carData.condition || 'Foreign Used',
       price: carData.price || 0,
@@ -332,12 +354,25 @@ class CarService {
     if (updates.title !== undefined) carUpdateRow.title = updates.title;
     if (updates.year !== undefined) carUpdateRow.year = updates.year;
     if (updates.make !== undefined) carUpdateRow.make = updates.make;
+    if (updates.brand_id !== undefined || updates.make !== undefined) {
+      if (updates.brand_id && UUID_REGEX.test(updates.brand_id)) {
+        carUpdateRow.brand_id = updates.brand_id;
+      } else if (updates.make) {
+        const b = await brandService.getBrandByName(updates.make);
+        carUpdateRow.brand_id = b && UUID_REGEX.test(b.id) ? b.id : null;
+      } else {
+        carUpdateRow.brand_id = null;
+      }
+    }
     if (updates.model !== undefined) carUpdateRow.model = updates.model;
     if (updates.trim !== undefined) {
       carUpdateRow.trim = updates.trim;
       carUpdateRow.variant = updates.trim;
     }
     if (updates.body_type !== undefined) carUpdateRow.body_type = updates.body_type;
+    if (updates.type_id !== undefined || updates.body_type !== undefined) {
+      carUpdateRow.type_id = await categoryService.resolveTypeId(updates.type_id, updates.body_type);
+    }
     if (updates.condition !== undefined) carUpdateRow.condition = updates.condition;
     if (updates.price !== undefined) carUpdateRow.price = updates.price;
     if (updates.original_price !== undefined) {
