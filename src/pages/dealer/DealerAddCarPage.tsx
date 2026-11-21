@@ -34,6 +34,8 @@ import {
 import { CarBrand, BodyTypeCategory } from '../../types';
 import { commissionService, CommissionCalculationResult } from '../../services/commissionService';
 import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
+import { PriceIntelligenceCard } from '../../components/ai/PriceIntelligenceCard';
+import { DealerListingAiPanel } from '../../components/ai/DealerListingAiPanel';
 
 interface DealerAddCarPageProps {
   navigate: (route: string) => void;
@@ -956,6 +958,18 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                 Enter competitive market pricing for the Nigerian audience. Note: Dealership commissions and agreements are managed privately by MANIFOLD upon verified transaction closure.
               </p>
             </div>
+
+            <PriceIntelligenceCard
+              mode="dealer"
+              make={make}
+              model={model}
+              year={year}
+              trim={trim}
+              condition={condition}
+              mileage={Number(mileage.replace(/[^0-9.]/g, '')) || undefined}
+              location={location}
+              askingPrice={Number(price.replace(/[^0-9.]/g, '')) || undefined}
+            />
           </div>
 
           {/* SECTION 3: LOCATION (Section 15) */}
@@ -1025,6 +1039,31 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                 Mention key packages, panoramic roof, duty papers status, accident-free history, etc.
               </p>
             </div>
+
+            <DealerListingAiPanel
+              make={make}
+              model={model}
+              trim={trim}
+              year={year}
+              bodyType={bodyType}
+              condition={condition}
+              mileage={Number(mileage.replace(/[^0-9.]/g, '')) || undefined}
+              transmission={transmission}
+              fuelType={fuelType}
+              driveType={driveType}
+              engine={engine}
+              horsepower={horsepower ? Number(horsepower.replace(/[^0-9.]/g, '')) || null : null}
+              exteriorColor={exteriorColor}
+              interiorColor={interiorColor}
+              seats={seats}
+              doors={doors}
+              price={Number(price.replace(/[^0-9.]/g, '')) || undefined}
+              previousPrice={previousPrice ? Number(previousPrice.replace(/[^0-9.]/g, '')) || null : null}
+              location={location}
+              state={state}
+              currentDescription={description}
+              onApplyDescription={setDescription}
+            />
           </div>
 
           {/* SECTION 5: VIDEO-FIRST LISTING (Section 17) */}

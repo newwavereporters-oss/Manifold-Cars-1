@@ -753,9 +753,14 @@ export class WorldMultiplayerSession {
     if (!trimmed) return { delivered: false, error: 'Message cannot be empty.' };
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
       const modRes = await fetch('/api/world/moderate-chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ content: trimmed }),
         signal: AbortSignal.timeout(4000),
       });

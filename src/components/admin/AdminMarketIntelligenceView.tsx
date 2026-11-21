@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   marketIntelligenceService,
 } from '../../services/marketIntelligenceService';
+import { aiService, MarketInsightsResponse } from '../../services/aiService';
 import {
   MarketDataSource,
   MarketPriceObservation,
@@ -102,6 +103,25 @@ export const AdminMarketIntelligenceView: React.FC = () => {
   const [srcActive, setSrcActive] = useState(true);
   const [srcCrawlEnabled, setSrcCrawlEnabled] = useState(true);
   const [srcNotes, setSrcNotes] = useState('');
+
+  // OpenAI Market Synthesis state (preserves Gemini ingestion/embeddings untouched)
+  const [aiTopic, setAiTopic] = useState('');
+  const [aiInsights, setAiInsights] = useState<MarketInsightsResponse | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const handleGenerateAiSynthesis = async () => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const res = await aiService.getMarketInsights(true, aiTopic.trim() || undefined);
+      setAiInsights(res);
+    } catch (err: any) {
+      setAiError(err?.message || 'Unable to generate AI market synthesis.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const showNotify = (msg: string) => {
     setNotification(msg);
@@ -836,6 +856,171 @@ export const AdminMarketIntelligenceView: React.FC = () => {
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* OpenAI Executive Market Synthesis (Internal vs Verified External vs AI Interpretation) */}
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#EF233C]" />
+                  <h3 className="text-sm font-extrabold uppercase tracking-wider text-gray-900">
+                    Executive AI Market Synthesis
+                  </h3>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Synthesizes live MANIFOLD inventory, completed sales, and verified external observations while separating internal metrics, sourced external data, and AI interpretation.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={aiTopic}
+                  onChange={(e) => setAiTopic(e.target.value)}
+                  placeholder="Optional focus (e.g. Tokunbo SUVs, Lexus RX)"
+                  className="h-9 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl w-64 focus:outline-none focus:border-[#EF233C]"
+                />
+                <button
+                  type="button"
+                  onClick={handleGenerateAiSynthesis}
+                  disabled={aiLoading}
+                  className="h-9 px-4 bg-[#071A2B] hover:bg-[#0c263e] disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  {aiLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-[#EF233C]" />}
+                  <span>{aiLoading ? 'Synthesizing...' : 'Generate AI Market Brief'}</span>
+                </button>
+              </div>
+            </div>
+
+            {aiError && (
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-[#EF233C] shrink-0" />
+                <span>{aiError}</span>
+              </div>
+            )}
+
+            {!aiInsights && !aiLoading && !aiError && (
+              <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs text-gray-500">
+                Click <strong>Generate AI Market Brief</strong> to produce a grounded executive report from current database facts. Gemini vector extraction workflows remain intact in Submit Data.
+              </div>
+            )}
+
+            {aiInsights && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Internal MANIFOLD Data */}
+                  <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 space-y-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-800 block">
+                      1. Internal MANIFOLD Data ({aiInsights.internalPlatformData.scope})
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-white p-2.5 rounded-xl border border-blue-100">
+                        <span className="text-[10px] text-gray-400 block">Active Inventory</span>
+                        <span className="font-extrabold text-gray-900">
+                          {aiInsights.internalPlatformData.inventoryCount}
+                        </span>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-xl border border-blue-100">
+                        <span className="text-[10px] text-gray-400 block">Tracked AI Searches</span>
+                        <span className="font-extrabold text-gray-900">
+                          {aiInsights.internalPlatformData.searchVolumeTracked}
+                        </span>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-xl border border-blue-100">
+                        <span className="text-[10px] text-gray-400 block">Recent Car Hunts</span>
+                        <span className="font-extrabold text-gray-900">
+                          {aiInsights.internalPlatformData.totalRecentCarHunts ?? 0}
+                        </span>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-xl border border-blue-100">
+                        <span className="text-[10px] text-gray-400 block">Zero-Result Queries</span>
+                        <span className="font-extrabold text-gray-900">
+                          {aiInsights.internalPlatformData.zeroResultSearchCount}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Verified External Data */}
+                  <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100 space-y-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 block">
+                      2. Verified External Observations ({aiInsights.verifiedExternalData.approvedObservationCount})
+                    </span>
+                    {aiInsights.verifiedExternalData.byMakeSummary.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {aiInsights.verifiedExternalData.byMakeSummary.map((row, i) => (
+                          <span
+                            key={i}
+                            className="text-[11px] bg-white border border-emerald-200 text-emerald-900 px-2.5 py-1 rounded-lg font-semibold"
+                          >
+                            {row.make}: ₦{Math.round(row.avgAskingPriceNgn).toLocaleString()} ({row.sampleCount} · {row.sources.join(', ') || 'Verified'}) · {row.latestObservedDate}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-emerald-800">
+                        No verified external market observations matched yet. Approve observations in Review Queue to enrich external benchmarks.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* AI Interpretation */}
+                {aiInsights.aiInterpretation ? (
+                  <div className="p-5 rounded-2xl bg-gray-50 border border-gray-200 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#EF233C]">
+                        3. AI Interpretation ({aiInsights.roleScope.toUpperCase()} Scope)
+                      </span>
+                      <span className="text-[11px] text-gray-400 font-mono">
+                        Request {aiInsights.requestId}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-800 leading-relaxed font-medium">
+                      {aiInsights.aiInterpretation.executiveSummary}
+                    </p>
+                    {aiInsights.aiInterpretation.supplyAndPricingSignals.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase text-gray-500 mb-1">Supply &amp; Pricing Signals</p>
+                        <ul className="list-disc pl-4 space-y-1 text-xs text-gray-700">
+                          {aiInsights.aiInterpretation.supplyAndPricingSignals.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {aiInsights.aiInterpretation.unmetBuyerDemandSignals.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase text-gray-500 mb-1">Unmet Buyer Demand Signals</p>
+                        <ul className="list-disc pl-4 space-y-1 text-xs text-amber-800">
+                          {aiInsights.aiInterpretation.unmetBuyerDemandSignals.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {aiInsights.aiInterpretation.recommendedActions.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase text-gray-500 mb-1">Recommended Actions</p>
+                        <ul className="list-disc pl-4 space-y-1 text-xs text-gray-700">
+                          {aiInsights.aiInterpretation.recommendedActions.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-gray-400 pt-1 border-t border-gray-200">
+                      {aiInsights.aiInterpretation.disclaimer}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                    Deterministic platform and external data loaded above. Configure <code className="font-mono">OPENAI_API_KEY</code> and <code className="font-mono">OPENAI_MODEL</code> on the server to unlock AI narrative synthesis.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

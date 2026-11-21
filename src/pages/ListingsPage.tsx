@@ -6,6 +6,7 @@ import { BODY_TYPES, NIGERIAN_LOCATIONS, PRICE_OPTIONS } from '../data/brandsAnd
 import { brandService } from '../services/brandService';
 import { modelService } from '../services/modelService';
 import { FORMAT_NUMBER } from '../data/mockCars';
+import { VehicleIntelligenceSearchBar } from '../components/ai/VehicleIntelligenceSearchBar';
 
 interface ListingsPageProps {
   cars: Car[];
@@ -16,6 +17,7 @@ interface ListingsPageProps {
   onInterested: (car: Car) => void;
   navigate: (route: string) => void;
   initialFilters?: Partial<FilterState>;
+  initialAiQuery?: string;
 }
 
 export const ListingsPage: React.FC<ListingsPageProps> = ({
@@ -27,6 +29,7 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
   onInterested,
   navigate,
   initialFilters,
+  initialAiQuery,
 }) => {
   const [filters, setFilters] = useState<FilterState>({
     make: initialFilters?.make || '',
@@ -190,6 +193,17 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
             Browse verified vehicles with real video reviews. No direct dealer contact required.
           </p>
         </div>
+
+        {/* MANIFOLD Vehicle Intelligence Natural-Language & Voice Search */}
+        <VehicleIntelligenceSearchBar
+          initialQuery={initialAiQuery}
+          favorites={favorites}
+          onToggleFavorite={onToggleFavorite}
+          onSelectCar={onSelectCar}
+          onPlayVideo={onPlayVideo}
+          onInterested={onInterested}
+          navigate={navigate}
+        />
 
         {/* Top Search & Filter Bar */}
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">

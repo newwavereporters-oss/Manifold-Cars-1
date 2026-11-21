@@ -28,6 +28,8 @@ import {
 import { CarBrand, BodyTypeCategory } from '../../types';
 import { commissionService, CommissionCalculationResult } from '../../services/commissionService';
 import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
+import { PriceIntelligenceCard } from '../../components/ai/PriceIntelligenceCard';
+import { DealerListingAiPanel } from '../../components/ai/DealerListingAiPanel';
 
 interface DealerEditCarPageProps {
   carId: string;
@@ -942,6 +944,19 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
                 </div>
               </div>
             )}
+
+            <PriceIntelligenceCard
+              mode="dealer"
+              carId={carId}
+              make={make}
+              model={model}
+              year={year}
+              trim={trim}
+              condition={condition}
+              mileage={Number(mileage.replace(/[^0-9.]/g, '')) || undefined}
+              location={location}
+              askingPrice={Number(price.replace(/[^0-9.]/g, '')) || undefined}
+            />
           </div>
 
           {/* SECTION 3: LOCATION */}
@@ -999,6 +1014,32 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full p-3.5 text-xs bg-gray-50 border border-gray-200 rounded-xl font-normal text-gray-800 focus:outline-none focus:border-[#EF233C] leading-relaxed"
+            />
+
+            <DealerListingAiPanel
+              carId={carId}
+              make={make}
+              model={model}
+              trim={trim}
+              year={year}
+              bodyType={bodyType}
+              condition={condition}
+              mileage={Number(mileage.replace(/[^0-9.]/g, '')) || undefined}
+              transmission={transmission}
+              fuelType={fuelType}
+              driveType={driveType}
+              engine={engine}
+              horsepower={horsepower ? Number(horsepower.replace(/[^0-9.]/g, '')) || null : null}
+              exteriorColor={exteriorColor}
+              interiorColor={interiorColor}
+              seats={seats}
+              doors={doors}
+              price={Number(price.replace(/[^0-9.]/g, '')) || undefined}
+              previousPrice={previousPrice ? Number(previousPrice.replace(/[^0-9.]/g, '')) || null : null}
+              location={location}
+              state={state}
+              currentDescription={description}
+              onApplyDescription={setDescription}
             />
           </div>
 

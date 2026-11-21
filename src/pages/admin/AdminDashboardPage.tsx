@@ -47,6 +47,7 @@ import {
   Flag,
 } from 'lucide-react';
 import { AdminMarketIntelligenceView } from '../../components/admin/AdminMarketIntelligenceView';
+import { AdminAiControlCentreView } from '../../components/admin/AdminAiControlCentreView';
 import { AdminModerationView } from '../../components/admin/AdminModerationView';
 import { AdminGamePlayersView } from '../../components/admin/AdminGamePlayersView';
 import { AdminBillboardView } from '../../components/admin/AdminBillboardView';
@@ -93,6 +94,7 @@ export type AdminTabType =
   | 'sales'
   | 'commissions'
   | 'intelligence'
+  | 'ai-control'
   | 'players'
   | 'moderation'
   | 'billboards'
@@ -125,6 +127,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     if (route.startsWith('/admin/commissions') || route.startsWith('/admin/commission-rules')) return 'commissions';
     if (route.startsWith('/admin/sales')) return 'sales';
     if (route.startsWith('/admin/market-intelligence') || route.startsWith('/admin/intelligence')) return 'intelligence';
+    if (route.startsWith('/admin/ai-control') || route.startsWith('/admin/ai')) return 'ai-control';
     if (route.startsWith('/admin/players') || route.startsWith('/admin/game-players')) return 'players';
     if (route.startsWith('/admin/moderation')) return 'moderation';
     if (route.startsWith('/admin/billboards')) return 'billboards';
@@ -158,6 +161,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       sales: '/admin/sales',
       commissions: '/admin/commissions',
       intelligence: '/admin/market-intelligence',
+      'ai-control': '/admin/ai-control',
       players: '/admin/players',
       moderation: '/admin/moderation',
       billboards: '/admin/billboards',
@@ -1155,6 +1159,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             >
               <Globe className="w-4 h-4" />
               <span>Market Intelligence</span>
+            </button>
+
+            <button
+              onClick={() => handleTabChange('ai-control')}
+              className={`py-3 px-1 border-b-2 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer ${
+                activeTab === 'ai-control'
+                  ? 'border-[#EF233C] text-[#EF233C]'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>AI Control Centre</span>
             </button>
 
             <button
@@ -2394,6 +2410,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         {/* TAB 9: MARKET INTELLIGENCE CENTRE */}
         {activeTab === 'intelligence' && (
           <AdminMarketIntelligenceView />
+        )}
+
+        {/* TAB 9A: AI CONTROL CENTRE */}
+        {activeTab === 'ai-control' && (
+          <AdminAiControlCentreView />
         )}
 
         {/* TAB 9B: GAME PLAYERS DIRECTORY */}

@@ -250,21 +250,30 @@ export const HeroSearchBox: React.FC<HeroSearchBoxProps> = ({
               </button>
             </div>
 
-            {/* Bottom Row: Advanced Search trigger */}
-            <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+            {/* Bottom Row: Natural Language AI Search + Advanced Search trigger */}
+            <div className="mt-4 pt-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onOpenAdvancedSearch}
+                  className="inline-flex items-center gap-1.5 text-gray-600 hover:text-[#071A2B] font-semibold transition-colors group cursor-pointer"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-[#EF233C] group-hover:rotate-45 transition-transform" />
+                  <span>Advanced Search (Body type, Year, Mileage)</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:translate-y-0.5 transition-transform" />
+                </button>
+              </div>
+
               <button
                 type="button"
-                onClick={onOpenAdvancedSearch}
-                className="inline-flex items-center gap-1.5 text-gray-600 hover:text-[#071A2B] font-semibold transition-colors group cursor-pointer"
+                onClick={() => navigate('/cars?ai=Tokunbo%20SUV%20under%2045M%20Lagos')}
+                className="inline-flex items-center gap-1.5 text-[#071A2B] hover:text-[#EF233C] font-bold transition-colors cursor-pointer"
               >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-[#EF233C] group-hover:rotate-45 transition-transform" />
-                <span>Advanced Search (Body type, Year, Mileage, Transmission)</span>
-                <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:translate-y-0.5 transition-transform" />
+                <span className="px-1.5 py-0.5 rounded bg-red-50 text-[#EF233C] text-[10px] font-extrabold uppercase">
+                  AI &amp; Voice
+                </span>
+                <span>Search by natural language or microphone →</span>
               </button>
-
-              <div className="hidden sm:flex items-center gap-2 text-gray-400">
-                <span>Over 12,400+ verified vehicles reviewed across Lagos & Abuja</span>
-              </div>
             </div>
           </form>
         ) : activeTab === 'hunt' ? (

@@ -33,19 +33,36 @@ import { InquiryModal } from './components/InquiryModal';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
 import { FavoritesDrawer } from './components/FavoritesDrawer';
 import { AdvancedSearchModal } from './components/AdvancedSearchModal';
+import { NotFoundView } from './components/NotFoundView';
+import { AiAutomotiveAssistant } from './components/ai/AiAutomotiveAssistant';
+import {
+  normalizeBrowserLocation,
+  parseManifoldRoute,
+  ParsedRouteResult,
+} from './utils/routing';
 import { Car, FilterState } from './types';
 import { YouTubeMediaItem } from './data/brandsAndTypes';
 import { Loader2 } from 'lucide-react';
 
 export function App() {
-  const [currentRoute, setCurrentRoute] = useState<string>(() => {
-    return window.location.pathname || '/';
+  const [routeState, setRouteState] = useState<ParsedRouteResult>(() => {
+    const { cleanUrl } = normalizeBrowserLocation(
+      window.location.pathname,
+      window.location.search,
+      window.location.hash
+    );
+    return parseManifoldRoute(cleanUrl);
   });
+  const currentRoute = routeState.normalizedRoute;
 
   const [cars, setCars] = useState<Car[]>(() => carService.getCarsSync());
-  const [selectedCarSlug, setSelectedCarSlug] = useState<string | null>(null);
-  const [editingCarId, setEditingCarId] = useState<string | null>(null);
-  const [dealerEditingCarId, setDealerEditingCarId] = useState<string | null>(null);
+  const [selectedCarSlug, setSelectedCarSlug] = useState<string | null>(() => routeState.slug);
+  const [editingCarId, setEditingCarId] = useState<string | null>(() => routeState.editingCarId);
+  const [dealerEditingCarId, setDealerEditingCarId] = useState<string | null>(
+    () => routeState.dealerEditingCarId
+  );
+  const [aiSearchQuery, setAiSearchQuery] = useState<string>('');
+  const [assistantSignal, setAssistantSignal] = useState<number>(0);
   const [slugCar, setSlugCar] = useState<Car | null>(null);
   const [slugCarLoading, setSlugCarLoading] = useState(false);
 
@@ -111,110 +128,103 @@ export function App() {
   const [advancedSearchModalOpen, setAdvancedSearchModalOpen] = useState(false);
   const [adminLoginModalOpen, setAdminLoginModalOpen] = useState(false);
 
-  // Client-side Navigation routing
+  // Sync URL query parameters and sub-route identifiers cleanly
+  const parseRoute = (rawPathWithQuery: string) => {
+    const parsed = parseManifoldRoute(rawPathWithQuery);
+    setRouteState(parsed);
+    setSelectedCarSlug(parsed.slug);
+    setEditingCarId(parsed.editingCarId);
+    setDealerEditingCarId(parsed.dealerEditingCarId);
+
+    if (parsed.normalizedRoute === '/cars') {
+      const searchParams = new URLSearchParams(parsed.queryString || window.location.search);
+      const makeParam = searchParams.get('make') || '';
+      const typeParam = searchParams.get('type') || '';
+      const qParam = searchParams.get('q') || '';
+      const aiParam = searchParams.get('ai') || '';
+
+      if (makeParam || typeParam || qParam) {
+        setFilters((prev) => ({
+          ...prev,
+          ...(makeParam ? { make: makeParam } : {}),
+          ...(typeParam ? { bodyType: typeParam } : {}),
+          ...(qParam ? { searchQuery: qParam } : {}),
+        }));
+      }
+      setAiSearchQuery(aiParam);
+    } else {
+      setAiSearchQuery('');
+    }
+  };
+
+  // Client-side Navigation routing (strict History API, never writes hash URLs)
   const navigate = (path: string) => {
-    window.history.pushState({}, '', path);
-    parseRoute(path);
+    const trimmed = (path || '/').trim();
+    const withoutHash = trimmed.startsWith('/#/')
+      ? trimmed.slice(2)
+      : trimmed.startsWith('#/')
+      ? trimmed.slice(1)
+      : trimmed;
+    const [rawPathname, rawSearch] = withoutHash.split('?');
+    const { cleanUrl } = normalizeBrowserLocation(
+      rawPathname || '/',
+      rawSearch ? `?${rawSearch}` : '',
+      ''
+    );
+
+    window.history.pushState({}, '', cleanUrl);
+    parseRoute(cleanUrl);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const parseRoute = (path: string) => {
-    // 1. Admin Edit Car Route
-    if (path.startsWith('/admin/cars/') && path.endsWith('/edit')) {
-      const id = path.replace('/admin/cars/', '').replace('/edit', '').split('?')[0];
-      setEditingCarId(id);
-      setSelectedCarSlug(null);
-      setCurrentRoute('/admin/cars/:id/edit');
-      return;
-    }
-
-    // 2. Admin Protected Routes (Section 3: Route Protection)
-    if (path.startsWith('/admin')) {
-      setSelectedCarSlug(null);
-      setCurrentRoute(path.split('?')[0] || '/admin');
-      return;
-    }
-
-    // 3. Dealer Edit Car Route: /dealer/cars/:id/edit
-    if (path.startsWith('/dealer/cars/') && path.endsWith('/edit')) {
-      const id = path.replace('/dealer/cars/', '').replace('/edit', '').split('?')[0];
-      setDealerEditingCarId(id);
-      setSelectedCarSlug(null);
-      setCurrentRoute('/dealer/cars/:id/edit');
-      return;
-    }
-
-    // 4. Dealer Routes (Section 3: Dealer Portal Routes)
-    if (path.startsWith('/dealer')) {
-      setSelectedCarSlug(null);
-      setCurrentRoute(path.split('?')[0] || '/dealer/dashboard');
-      return;
-    }
-
-    // 3. Vehicle Detail Route (Section 13: Live Car Detail)
-    if (path.startsWith('/cars/')) {
-      const slug = path.replace('/cars/', '').split('?')[0];
-      setSelectedCarSlug(slug);
-      setCurrentRoute('/cars/:slug');
-      return;
-    }
-
-    if (path.startsWith('/cars')) {
-      const searchParams = new URLSearchParams(window.location.search);
-      const makeParam = searchParams.get('make');
-      const typeParam = searchParams.get('type');
-      if (makeParam) {
-        setFilters((prev) => ({ ...prev, make: makeParam }));
-      }
-      if (typeParam) {
-        setFilters((prev) => ({ ...prev, bodyType: typeParam }));
-      }
-      setSelectedCarSlug(null);
-      setCurrentRoute('/cars');
-      return;
-    }
-
-    // Real Marketplace Entry Route
-    if (path.startsWith('/car-marketplace') || path.startsWith('/marketplace')) {
-      setSelectedCarSlug(null);
-      setCurrentRoute('/car-marketplace');
-      return;
-    }
-
-    setSelectedCarSlug(null);
-    setCurrentRoute(path.split('?')[0] || '/');
-  };
-
   useEffect(() => {
-    const handlePopState = () => {
-      parseRoute(window.location.pathname);
+    const syncFromWindowLocation = () => {
+      const { cleanUrl, changed } = normalizeBrowserLocation(
+        window.location.pathname,
+        window.location.search,
+        window.location.hash
+      );
+      if (changed) {
+        window.history.replaceState({}, '', cleanUrl);
+      }
+      parseRoute(cleanUrl);
     };
-    window.addEventListener('popstate', handlePopState);
-    parseRoute(window.location.pathname);
-    return () => window.removeEventListener('popstate', handlePopState);
+
+    window.addEventListener('popstate', syncFromWindowLocation);
+    window.addEventListener('hashchange', syncFromWindowLocation);
+    syncFromWindowLocation();
+    return () => {
+      window.removeEventListener('popstate', syncFromWindowLocation);
+      window.removeEventListener('hashchange', syncFromWindowLocation);
+    };
   }, []);
 
-  // Live Vehicle Resolution for /cars/:slug
+  // Live Vehicle Resolution for /cars/:slug (never falls back to unrelated car)
   useEffect(() => {
-    if (selectedCarSlug) {
-      const foundInList = cars.find(
-        (c) => c.slug === selectedCarSlug || c.id === selectedCarSlug
-      );
-      if (foundInList) {
-        setSlugCar(foundInList);
-      } else {
-        setSlugCarLoading(true);
-        carService
-          .getCarBySlug(selectedCarSlug)
-          .then((car) => {
-            setSlugCar(car);
-            setSlugCarLoading(false);
-          })
-          .catch(() => {
-            setSlugCar(null);
-            setSlugCarLoading(false);
-          });
-      }
+    if (!selectedCarSlug) {
+      setSlugCar(null);
+      setSlugCarLoading(false);
+      return;
+    }
+
+    const foundInList = cars.find(
+      (c) => c.slug === selectedCarSlug || c.id === selectedCarSlug
+    );
+    if (foundInList) {
+      setSlugCar(foundInList);
+      setSlugCarLoading(false);
+    } else {
+      setSlugCarLoading(true);
+      carService
+        .getCarBySlug(selectedCarSlug)
+        .then((car) => {
+          setSlugCar(car);
+          setSlugCarLoading(false);
+        })
+        .catch(() => {
+          setSlugCar(null);
+          setSlugCarLoading(false);
+        });
     }
   }, [selectedCarSlug, cars]);
 
@@ -267,8 +277,10 @@ export function App() {
 
   const favoriteCars = cars.filter((c) => favorites.includes(c.id));
 
-  // Determine active car for details page
-  const activeCar = slugCar || cars.find((c) => c.slug === selectedCarSlug) || cars[0];
+  // Strictly resolve requested vehicle; never fall back to cars[0]
+  const activeCar = selectedCarSlug
+    ? slugCar || cars.find((c) => c.slug === selectedCarSlug || c.id === selectedCarSlug) || null
+    : null;
 
   // Section 3: Admin Route Protection
   if (currentRoute === '/admin/login') {
@@ -279,10 +291,14 @@ export function App() {
     );
   }
 
-  if (currentRoute.startsWith('/admin')) {
+  if (routeState.scope === 'admin') {
     return (
       <AdminGuard navigate={navigate}>
-        {currentRoute === '/admin/cars/:id/edit' && editingCarId ? (
+        {!routeState.isKnownRoute ? (
+          <div className="min-h-screen bg-[#F7F8FA]">
+            <NotFoundView path={currentRoute} navigate={navigate} scope="admin" />
+          </div>
+        ) : currentRoute === '/admin/cars/:id/edit' && editingCarId ? (
           <div className="min-h-screen bg-[#F7F8FA]">
             <AdminEditCarPage carId={editingCarId} navigate={navigate} />
           </div>
@@ -296,7 +312,12 @@ export function App() {
   }
 
   // Section 3: Dealer Portal Routes
-  if (currentRoute.startsWith('/dealer')) {
+  if (routeState.scope === 'dealer') {
+    const isAuthDealerSubPage =
+      currentRoute !== '/dealer/sign-in' &&
+      currentRoute !== '/dealer/register' &&
+      currentRoute !== '/dealer/offer';
+
     return (
       <DealerAuthProvider>
         {currentRoute === '/dealer/sign-in' ? (
@@ -307,7 +328,9 @@ export function App() {
           <DealerOfferPage navigate={navigate} />
         ) : (
           <DealerGuard navigate={navigate} currentRoute={currentRoute}>
-            {currentRoute === '/dealer/business-information' ? (
+            {!routeState.isKnownRoute ? (
+              <NotFoundView path={currentRoute} navigate={navigate} scope="dealer" />
+            ) : currentRoute === '/dealer/business-information' ? (
               <DealerBusinessInfoPage navigate={navigate} />
             ) : currentRoute === '/dealer/enquiries' ? (
               <DealerEnquiriesPage navigate={navigate} />
@@ -325,6 +348,15 @@ export function App() {
               <DealerDashboardPage navigate={navigate} />
             )}
           </DealerGuard>
+        )}
+        {isAuthDealerSubPage && routeState.isKnownRoute && (
+          <AiAutomotiveAssistant
+            surface="dealer_portal"
+            allCars={cars}
+            navigate={navigate}
+            onOpenInquiry={handleOpenInquiry}
+            externalOpenSignal={assistantSignal}
+          />
         )}
       </DealerAuthProvider>
     );
@@ -345,7 +377,11 @@ export function App() {
 
       {/* Main View Router */}
       <main className="flex-1">
-        {currentRoute === '/' && (
+        {!routeState.isKnownRoute && (
+          <NotFoundView path={currentRoute} navigate={navigate} scope="public" />
+        )}
+
+        {routeState.isKnownRoute && currentRoute === '/' && (
           <ManifoldWorldPage
             cars={cars}
             navigate={navigate}
@@ -355,22 +391,23 @@ export function App() {
           />
         )}
 
-        {(currentRoute === '/car-marketplace' || currentRoute === '/marketplace') && (
-          <HomePage
-            cars={cars}
-            favorites={favorites}
-            onToggleFavorite={toggleFavorite}
-            onSelectCar={handleSelectCar}
-            onPlayVideo={handlePlayCarVideo}
-            onPlayMedia={handlePlayMediaVideo}
-            onInterested={(car) => handleOpenInquiry(car)}
-            onSearch={handleHeroSearch}
-            onOpenAdvancedSearch={() => setAdvancedSearchModalOpen(true)}
-            navigate={navigate}
-          />
-        )}
+        {routeState.isKnownRoute &&
+          (currentRoute === '/car-marketplace' || currentRoute === '/marketplace') && (
+            <HomePage
+              cars={cars}
+              favorites={favorites}
+              onToggleFavorite={toggleFavorite}
+              onSelectCar={handleSelectCar}
+              onPlayVideo={handlePlayCarVideo}
+              onPlayMedia={handlePlayMediaVideo}
+              onInterested={(car) => handleOpenInquiry(car)}
+              onSearch={handleHeroSearch}
+              onOpenAdvancedSearch={() => setAdvancedSearchModalOpen(true)}
+              navigate={navigate}
+            />
+          )}
 
-        {currentRoute === '/cars' && (
+        {routeState.isKnownRoute && currentRoute === '/cars' && (
           <ListingsPage
             cars={cars}
             favorites={favorites}
@@ -380,10 +417,11 @@ export function App() {
             onInterested={(car) => handleOpenInquiry(car)}
             navigate={navigate}
             initialFilters={filters}
+            initialAiQuery={aiSearchQuery}
           />
         )}
 
-        {currentRoute === '/cars/:slug' && (
+        {routeState.isKnownRoute && currentRoute === '/cars/:slug' && (
           slugCarLoading ? (
             <div className="min-h-screen bg-[#F7F8FA] pt-32 pb-20 flex flex-col items-center justify-center">
               <Loader2 className="w-8 h-8 animate-spin text-[#EF233C] mb-3" />
@@ -400,6 +438,7 @@ export function App() {
               onInterested={(car) => handleOpenInquiry(car)}
               onPlayVideo={handlePlayCarVideo}
               onSelectCar={handleSelectCar}
+              onAskAi={() => setAssistantSignal((s) => s + 1)}
               navigate={navigate}
             />
           ) : (
@@ -418,9 +457,11 @@ export function App() {
           )
         )}
 
-        {currentRoute === '/car-hunt' && <CarHuntPage navigate={navigate} />}
+        {routeState.isKnownRoute && currentRoute === '/car-hunt' && (
+          <CarHuntPage navigate={navigate} />
+        )}
 
-        {currentRoute === '/reviews' && (
+        {routeState.isKnownRoute && currentRoute === '/reviews' && (
           <ReviewsPage
             cars={cars}
             onPlayMedia={handlePlayMediaVideo}
@@ -429,16 +470,30 @@ export function App() {
           />
         )}
 
-        {currentRoute === '/sell-a-car' && <SellCarPage navigate={navigate} />}
+        {routeState.isKnownRoute && currentRoute === '/sell-a-car' && (
+          <SellCarPage navigate={navigate} />
+        )}
 
-        {currentRoute === '/services' && (
+        {routeState.isKnownRoute && currentRoute === '/services' && (
           <ServicesPage navigate={navigate} onOpenInquiry={() => handleOpenInquiry()} />
         )}
 
-        {currentRoute === '/about' && (
+        {routeState.isKnownRoute && currentRoute === '/about' && (
           <AboutPage navigate={navigate} onOpenInquiry={() => handleOpenInquiry()} />
         )}
       </main>
+
+      {/* AI Automotive Concierge Assistant (Non-3D Public Marketplace Surfaces) */}
+      {currentRoute !== '/' && routeState.isKnownRoute && (
+        <AiAutomotiveAssistant
+          surface={currentRoute === '/cars/:slug' ? 'car_detail' : 'marketplace'}
+          focusedCar={currentRoute === '/cars/:slug' ? activeCar : null}
+          allCars={cars}
+          navigate={navigate}
+          onOpenInquiry={handleOpenInquiry}
+          externalOpenSignal={assistantSignal}
+        />
+      )}
 
       {/* Global Footer (Rendered on non-3D world pages for full viewport gaming experience) */}
       {currentRoute !== '/' && (

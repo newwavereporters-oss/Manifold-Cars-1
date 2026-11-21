@@ -1,0 +1,1229 @@
+# MANIFOLD — COMPLETE URL ROUTING FIX, OPENAI INTEGRATION & PLATFORM-WIDE AI IMPLEMENTATION
+
+## PROJECT AUTHORIZATION
+
+You are working on the existing MANIFOLD automotive marketplace codebase.
+
+I am authorizing you to implement the complete URL routing correction, OpenAI integration foundation, security architecture, and all major MANIFOLD AI capabilities described in this specification.
+
+This is an implementation task, not another architecture audit.
+
+Do not respond with recommendations alone. Inspect the actual codebase, make the required changes, run the available tests, fix implementation errors, and provide a complete implementation report.
+
+You must work with the existing application and preserve all working features.
+
+---
+
+# PART A — UNDERSTAND MANIFOLD
+
+MANIFOLD is a Nigerian automotive commerce ecosystem with the following major components:
+
+1. MANIFOLD WORLD — an interactive, game-first automotive environment built around an immersive 3D driving experience.
+2. Vehicle Marketplace — a professional dealer-based vehicle marketplace.
+3. Dealer Portal — vehicle inventory management, listings, dealer operations and enquiries.
+4. Buyer Experience — vehicle discovery, comparisons, enquiries, inspections and concierge services.
+5. Price Intelligence — automotive price analysis and vehicle valuation intelligence.
+6. Market Intelligence — automotive market data ingestion, analysis, knowledge management and reporting.
+7. Administrative Platform — dealer management, marketplace oversight, intelligence monitoring and business operations.
+
+The game is an acquisition and engagement layer, not the entire product.
+
+The larger commercial objective is to build an intelligent automotive commerce ecosystem powered by real inventory, verified data, intelligent search, AI-assisted decisions and operational automation.
+
+## Existing technology
+
+The existing project uses:
+
+- React 19
+- Vite 8
+- TypeScript
+- Tailwind CSS
+- Node.js
+- Express 4
+- Supabase PostgreSQL
+- Supabase Auth
+- Vercel
+- Google Gemini for existing AI functionality
+- Three.js for the interactive world
+
+The existing backend modernization has introduced:
+
+- server/app.ts
+- server/config/env.ts
+- server/lib/supabaseServer.ts
+- server/lib/migrationSql.ts
+- server/middleware/auth.ts
+- server/middleware/rateLimit.ts
+- server/middleware/validate.ts
+- server/services/marketIntelligenceBackend.ts
+- server/routes/marketIntelligence.ts
+- server/routes/world.ts
+- server/routes/dealers.ts
+- api/index.ts
+- vercel.json
+
+Preserve and extend this architecture.
+
+Do not create a parallel backend or duplicate existing services.
+
+---
+
+# PART B — CRITICAL MANIFOLD BUSINESS RULE
+
+## Vehicle Title / Headline = MODEL
+
+This is a non-negotiable business rule.
+
+The Vehicle Headline/Title displayed across MANIFOLD is the actual vehicle Model.
+
+Example:
+
+- Make: Toyota
+- Model: Camry
+- Variant: XSE
+- Year: 2022
+
+The vehicle listing title must be:
+
+**Toyota Camry**
+
+It must NOT become:
+
+- Luxury Redefined
+- The Ultimate Driving Experience
+- A Premium Sedan for Every Journey
+- Discover Unmatched Comfort
+
+These are marketing phrases, not vehicle model names.
+
+AI-generated content must remain separate from the actual vehicle title.
+
+The AI may generate:
+
+- Vehicle description
+- Short description
+- Selling highlights
+- SEO title
+- SEO meta description
+- Buyer-facing explanations
+
+It must never overwrite or replace the actual Model or the listing's Vehicle Title.
+
+Preserve this rule across database operations, dealer forms, vehicle cards, detail pages, search results and AI responses.
+
+---
+
+# PART C — PRIORITY 1: FIX MANIFOLD URL ROUTING
+
+There is a serious navigation problem.
+
+Currently, routes after the domain's root path do not open properly unless a hash is added.
+
+For example:
+
+Current problematic behaviour:
+
+https://example.com/#/cars
+
+Works, but:
+
+https://example.com/cars
+
+Does not work correctly.
+
+We need proper clean URLs.
+
+## Requirements
+
+Inspect:
+
+- src/App.tsx
+- Route parsing and navigation functions.
+- window.history.pushState usage.
+- popstate listeners.
+- All navigation links and route builders.
+- Any use of window.location.hash.
+- vercel.json rewrites.
+- api/index.ts route handling.
+- Existing redirects and fallback mechanisms.
+
+Implement a consistent clean URL routing architecture.
+
+### Required URL behaviour
+
+All the following should work without `#`:
+
+- /
+- /car-marketplace
+- /cars
+- /cars/:slug
+- /car-hunt
+- /reviews
+- /sell-a-car
+- /services
+- /about
+- /dealer
+- /dealer/dashboard
+- /dealer/cars
+- /dealer/cars/new
+- /admin
+- /admin/dashboard
+- /admin/market-intelligence
+
+Use the actual existing route definitions. Do not invent pages that do not exist.
+
+### Technical requirements
+
+1. Use pathname-based routing.
+2. Navigation must update the browser URL correctly.
+3. Browser Back and Forward buttons must work.
+4. Direct navigation to nested routes must work.
+5. Refreshing any valid route must preserve that route.
+6. Vercel must serve the SPA entry point for application routes.
+7. API requests must never fall through to index.html.
+8. Missing application routes should show an appropriate not-found experience.
+9. Existing query parameters must be preserved where required.
+10. Preserve authentication guards on protected routes.
+
+### Legacy compatibility
+
+If the application previously used hash-based routes, provide backward compatibility.
+
+For example:
+
+/#/cars
+
+Should redirect or normalize to:
+
+/cars
+
+Do not force users to continue using hash-based URLs.
+
+### Vercel configuration
+
+Inspect the actual current vercel.json before modifying it.
+
+Ensure:
+
+- /api/* reaches the serverless API handler.
+- Frontend routes reach the React SPA.
+- Static assets remain accessible.
+- API routes are excluded from SPA fallback.
+- No rewrite loop occurs.
+- No existing route is accidentally swallowed by an overly broad rewrite.
+
+### Routing tests
+
+Test:
+
+- Direct opening of /cars.
+- Direct opening of /cars/:slug.
+- Direct opening of /dealer/dashboard.
+- Direct opening of /admin/market-intelligence.
+- Refreshing nested routes.
+- Browser back and forward.
+- Legacy hash URL normalization.
+- Unknown routes.
+- API endpoints.
+
+Do not consider this task complete until clean URLs work.
+
+---
+
+# PART D — PRIORITY 2: OPENAI FOUNDATION
+
+OpenAI API billing is active and an API key has already been created.
+
+The OPENAI_API_KEY environment variable has already been configured in Vercel.
+
+Never ask me to provide the secret.
+
+Never hardcode the key.
+
+Never put it in:
+
+- React components
+- Browser JavaScript
+- VITE_ environment variables
+- Public configuration
+- HTML
+- GitHub source code
+- Frontend build output
+
+## Install and configure the official SDK
+
+Install the official OpenAI Node.js SDK.
+
+Use the existing backend architecture.
+
+Create:
+
+server/lib/openai.ts
+
+Responsibilities:
+
+1. Initialize the official OpenAI client.
+2. Read process.env.OPENAI_API_KEY.
+3. Read process.env.OPENAI_MODEL.
+4. Support configurable transcription and embedding model settings where needed.
+5. Validate environment configuration.
+6. Provide safe error handling.
+7. Apply explicit request timeouts.
+8. Never log secrets.
+9. Never expose API credentials in API responses.
+
+Use the OpenAI Responses API for appropriate text and structured-output tasks.
+
+Use the current supported SDK methods and model capabilities.
+
+Do not blindly assume a model identifier is available. Make model selection configurable and report which model configuration is required.
+
+If OPENAI_MODEL is missing, return a clear server configuration error rather than silently selecting an unknown model.
+
+Document the required environment variables in .env.example.
+
+Required:
+
+OPENAI_API_KEY
+OPENAI_MODEL
+
+Additional model configuration may include:
+
+OPENAI_TRANSCRIPTION_MODEL
+OPENAI_EMBEDDING_MODEL
+
+Do not introduce unnecessary environment variables.
+
+## OpenAI connection test
+
+Create a protected diagnostic endpoint:
+
+GET /api/ai/health
+
+It should report:
+
+- Whether the OpenAI key is configured.
+- Whether the selected model is configured.
+- Whether the OpenAI service can successfully respond to a minimal test request.
+- Response status.
+- Response latency.
+- A safe error message if unsuccessful.
+
+Never return the API key or secret configuration.
+
+Restrict the diagnostic endpoint to authorized administrators.
+
+Also create a minimal authenticated test endpoint that makes a genuine OpenAI request using the server-side SDK.
+
+Do not simulate a successful response.
+
+---
+
+# PART E — PRIORITY 3: SECURITY AND AI GOVERNANCE
+
+Implement production-grade security around all new AI endpoints.
+
+Reuse existing middleware wherever possible.
+
+## Authentication
+
+Use server-verified Supabase JWTs.
+
+Use supabase.auth.getUser(token) or the appropriate existing verified authentication implementation.
+
+Do not trust:
+
+- Client-provided role fields.
+- Client-side admin flags.
+- Hardcoded email addresses.
+- User-supplied dealer IDs without ownership verification.
+
+## Role authorization
+
+Implement the appropriate permissions:
+
+### Public buyers
+Can:
+
+- Search published inventory.
+- Use public vehicle discovery.
+- Ask general automotive questions.
+- Compare publicly available listings.
+- Submit buyer enquiries through existing permitted workflows.
+
+Cannot:
+
+- Access dealer-only information.
+- Access confidential dealer records.
+- Access admin intelligence.
+- Access private pricing or commission records.
+
+### Approved dealers
+
+Can:
+
+- Generate descriptions for their listings.
+- Improve their own vehicle content.
+- Access authorized pricing insights.
+- View their own inventory performance.
+- Access permitted market comparisons.
+
+Cannot:
+
+- Access another dealer's confidential information.
+- Access platform-wide administrative intelligence.
+- Modify protected marketplace data belonging to others.
+
+### Administrators
+
+Can:
+
+- Access platform-wide intelligence.
+- Access approved Market Intelligence functions.
+- Monitor AI usage and costs.
+- Manage AI feature settings.
+- Review aggregated platform analytics.
+
+Use the existing admin_users, dealer_accounts and dealer verification structures.
+
+Inspect the actual schema before implementing role queries.
+
+## Rate limiting and cost control
+
+Implement endpoint-specific limits.
+
+Protect against:
+
+- Excessive requests.
+- Very large prompts.
+- Oversized audio uploads.
+- Repeated expensive generation.
+- Automated abuse.
+- Prompt injection.
+- Unbounded output tokens.
+
+Support configurable per-user and per-IP limits.
+
+The existing in-memory rate limiter may be retained initially, but clearly document its serverless per-instance limitation.
+
+Do not claim it provides global cross-instance enforcement.
+
+## Usage monitoring
+
+Track, where supported:
+
+- User ID.
+- Role.
+- Feature/module.
+- Model.
+- Request timestamp.
+- Input and output token usage.
+- Estimated cost.
+- Response time.
+- Success or failure.
+- Request identifier.
+
+Never store API keys or unnecessary sensitive buyer data.
+
+Inspect existing database tables before creating new ones.
+
+If a new migration is required, create a properly indexed SQL migration with appropriate RLS policies and document the SQL that must be applied.
+
+Do not silently execute destructive migrations.
+
+---
+
+# PART F — PRIORITY 4: DEALER LISTING INTELLIGENCE
+
+This is the first major customer-facing AI feature.
+
+Integrate it directly into the existing Dealer Add Vehicle and Dealer Edit Vehicle workflows.
+
+Do not create a disconnected AI page that dealers must visit separately.
+
+## Automatic vehicle information capture
+
+The AI must use the actual information available in the existing vehicle form.
+
+Inspect the real database schema and form fields.
+
+Potential information includes:
+
+- Make.
+- Model.
+- Variant.
+- Year.
+- Price.
+- Currency.
+- Mileage.
+- Condition.
+- Transmission.
+- Fuel type.
+- Drive type.
+- Engine capacity.
+- Horsepower, where available.
+- Exterior colour.
+- Interior colour.
+- Number of seats.
+- Number of doors.
+- Body type.
+- Location.
+- Vehicle features.
+- Dealer-provided notes.
+
+Only send fields that actually exist and have values.
+
+Do not invent missing specifications.
+
+## Dealer content controls
+
+Provide a compact set of options:
+
+### Writing tone
+- Professional and trustworthy.
+- Persuasive and sales-focused.
+- Premium and sophisticated.
+- Conversational and engaging.
+- Informative and straightforward.
+
+### Target buyer
+- Family buyers.
+- Executives and professionals.
+- First-time buyers.
+- Business owners.
+- General buyers.
+
+### Description length
+- Concise.
+- Standard.
+- Detailed.
+
+### Content approach
+- Features-focused.
+- Benefits-focused.
+- Lifestyle-focused.
+- Balanced.
+
+### Selling angle
+- Comfort.
+- Performance.
+- Fuel economy.
+- Technology.
+- Luxury.
+- Space and practicality.
+- Versatility.
+
+### Call to action
+- Contact dealer.
+- Arrange inspection.
+- Schedule viewing.
+- Request more information.
+
+Include optional additional instructions.
+
+Use sensible defaults so the dealer does not have to complete a long questionnaire.
+
+## Generated output
+
+Return a structured content package:
+
+1. Vehicle description.
+2. Short summary.
+3. Five selling highlights.
+4. SEO title.
+5. SEO meta description.
+
+The actual Vehicle Title must remain the Model.
+
+Do not generate or save a replacement vehicle headline.
+
+## Dealer editing controls
+
+Provide:
+
+- Generate description.
+- Regenerate.
+- Make more persuasive.
+- Make shorter.
+- Make more detailed.
+- Improve grammar.
+- Copy.
+- Accept and insert into description field.
+
+Do not automatically publish generated content.
+
+Do not overwrite dealer-entered content without confirmation.
+
+## Factual integrity
+
+Never fabricate:
+
+- Accident-free status.
+- First-body status.
+- Original paint.
+- Service history.
+- Mechanical condition.
+- Warranty.
+- Ownership history.
+- Importation history.
+- Registration status.
+- Features not supplied.
+
+If information is missing, omit it.
+
+All generated claims must be grounded in supplied vehicle data.
+
+---
+
+# PART G — PRIORITY 5: VEHICLE INTELLIGENCE SEARCH
+
+This is a core MANIFOLD differentiator.
+
+Build an intelligent search system that understands natural language and retrieves actual vehicles from the real MANIFOLD inventory.
+
+Integrate it into the existing marketplace search experience.
+
+## Example buyer queries
+
+- Find me a 2021 Toyota SUV with automatic transmission under ₦30 million.
+- I need a seven-seater for my family under ₦35 million.
+- Show me a fuel-efficient car for daily commuting.
+- Find a black Mercedes-Benz GLE.
+- I need a reliable first car around ₦10 million.
+- Show me automatic SUVs in Lagos.
+- Compare Toyota Camry and Honda Accord.
+- Find a relatively low-mileage executive sedan.
+
+## How it should work
+
+Use OpenAI to interpret the buyer's natural-language query into structured search criteria.
+
+Possible criteria:
+
+- Make.
+- Model.
+- Variant.
+- Minimum and maximum year.
+- Budget.
+- Currency.
+- Body type.
+- Transmission.
+- Fuel type.
+- Mileage.
+- Condition.
+- Exterior colour.
+- Seats.
+- Location.
+- Required features.
+- Mandatory constraints.
+- Preferred attributes.
+
+Use Structured Outputs or an equivalent validated JSON schema.
+
+Do not allow arbitrary generated SQL.
+
+The AI should interpret the request, not execute unrestricted database queries.
+
+## Real inventory retrieval
+
+After parsing the query:
+
+1. Validate the search criteria.
+2. Query the actual published MANIFOLD inventory.
+3. Apply SQL/database filters using safe existing services.
+4. Rank matching vehicles.
+5. Return actual listing IDs, models, prices, images and URLs.
+6. Preserve the existing RLS and publication rules.
+
+Use the real existing inventory tables and services.
+
+Inspect whether published_cars, car records or another existing source is authoritative before implementing.
+
+Never fabricate a vehicle or listing.
+
+Never present an AI-generated vehicle as a real inventory result.
+
+## Search matching behaviour
+
+Distinguish:
+
+- Exact matches.
+- Strong matches.
+- Alternative suggestions.
+
+Do not violate mandatory buyer requirements when suggesting alternatives.
+
+If no exact match exists, say so clearly.
+
+Offer reasonable alternatives only when their differences are disclosed.
+
+## Voice search
+
+Add voice search to the marketplace.
+
+Requirements:
+
+- Microphone permission request.
+- Clear recording indicator.
+- Start and stop controls.
+- Audio upload to the protected backend.
+- OpenAI transcription integration using a supported transcription model.
+- English and common Nigerian English expression handling.
+- Display transcription before submission.
+- Allow users to edit the transcription.
+- Submit edited text to the same Vehicle Intelligence Search engine.
+- Provide text-search fallback if microphone permission is denied.
+- Avoid unnecessary audio retention.
+- Enforce audio size, duration and rate limits.
+
+Do not store raw recordings unless an explicit business requirement exists.
+
+## Search analytics
+
+Track useful aggregated search information:
+
+- Popular queries.
+- Frequently searched makes.
+- Popular models.
+- Budget ranges.
+- Popular categories.
+- Zero-result searches.
+- Search-to-listing clicks.
+- Search-to-enquiry conversions.
+
+Use this information to improve Market Intelligence.
+
+Respect privacy and avoid storing unnecessary personally identifiable search data.
+
+---
+
+# PART H — PRIORITY 6: PRICE INTELLIGENCE
+
+MANIFOLD already has Price Intelligence-related functionality.
+
+Do not discard or rebuild working systems without justification.
+
+Inspect the existing:
+
+- market_price_observations.
+- market_data_submissions.
+- published vehicle inventory.
+- Market Intelligence services.
+- Vehicle comparison and pricing logic.
+- Existing price validation.
+- Existing confidence and review mechanisms.
+
+Reuse and strengthen the current implementation.
+
+## Price Intelligence objectives
+
+Provide:
+
+1. Estimated market price range.
+2. Indicative midpoint.
+3. Comparable vehicle information.
+4. Price positioning.
+5. Confidence level.
+6. Data sufficiency assessment.
+7. Supporting explanation.
+8. Relevant market movement where evidence exists.
+
+## Data sources
+
+Prioritize:
+
+- Actual MANIFOLD published inventory.
+- Approved market_price_observations.
+- Verified historical observations.
+- Relevant comparable vehicles.
+
+External information may be used only when its source and date can be established.
+
+Distinguish asking prices from completed transaction prices.
+
+Never represent advertised prices as confirmed sale prices.
+
+## Pricing methodology
+
+Use deterministic statistical calculations for price ranges and comparisons.
+
+OpenAI should explain the results, not invent or independently manufacture market prices.
+
+Consider:
+
+- Make.
+- Model.
+- Variant.
+- Year.
+- Mileage.
+- Condition.
+- Transmission.
+- Location.
+- Relevant market comparisons.
+
+Use confidence levels based on evidence quality and sample sufficiency.
+
+If there is insufficient data, clearly communicate that limitation.
+
+Do not force an estimate where the evidence is inadequate.
+
+Dealer pricing autonomy must be preserved.
+
+---
+
+# PART I — PRIORITY 7: MARKET INTELLIGENCE
+
+Strengthen the existing Market Intelligence system.
+
+Preserve existing Gemini extraction, validation and observation workflows where they are already effective.
+
+OpenAI may complement these capabilities rather than automatically replace Gemini.
+
+## Intelligence capabilities
+
+Build or extend the ability to analyse:
+
+- Vehicle supply.
+- Buyer demand.
+- Make and model popularity.
+- Price movements.
+- Category performance.
+- Inventory changes.
+- Popular vehicle budgets.
+- Dealer activity.
+- Geographic demand patterns.
+- Search behaviour.
+- Zero-result searches.
+- Enquiry activity.
+- Market opportunities.
+
+## Internal and external intelligence
+
+Clearly distinguish:
+
+1. Internal MANIFOLD marketplace intelligence.
+2. Verified external automotive information.
+3. AI-generated interpretation.
+
+External reports and news must include source information and dates.
+
+Never present an AI-generated assumption as a verified market statistic.
+
+## Role-based intelligence
+
+Administrators:
+
+- Platform-wide aggregated intelligence.
+- Overall supply and demand.
+- Market trends.
+- Dealer performance aggregates.
+- Search trends.
+- Commercial opportunities.
+
+Dealers:
+
+- Their own inventory performance.
+- Permitted market comparisons.
+- Their own pricing insights.
+- Relevant category-level market trends.
+
+Never disclose another dealer's confidential information.
+
+---
+
+# PART J — PRIORITY 8: AI AUTOMOTIVE ASSISTANT
+
+Create a conversational AI Automotive Assistant.
+
+It should be a useful automotive commerce assistant, not merely a generic chatbot.
+
+## Buyer capabilities
+
+It should help buyers:
+
+- Discover suitable vehicles.
+- Explain vehicle specifications.
+- Refine search requirements.
+- Compare actual listings.
+- Understand price differences.
+- Explore vehicle alternatives.
+- Understand Price Intelligence.
+- Navigate MANIFOLD's services.
+- Initiate existing enquiry or inspection workflows.
+
+## Dealer capabilities
+
+Where authenticated and authorized, it may help dealers:
+
+- Understand their listings.
+- Improve descriptions.
+- Interpret their own Price Intelligence.
+- Understand their inventory performance.
+- Improve listing completeness.
+
+## Grounding
+
+The assistant must use actual MANIFOLD data for questions about available inventory.
+
+It must not invent vehicle listings, prices, availability, dealer details or marketplace statistics.
+
+Use the same role-based access rules as the other AI features.
+
+Do not let a buyer access dealer-only intelligence through conversational prompts.
+
+---
+
+# PART K — PRIORITY 9: ADMIN AI CONTROL CENTRE
+
+Create or extend the existing admin dashboard with an AI management section.
+
+It should provide visibility into:
+
+- Total AI requests.
+- Requests by module.
+- Requests by model.
+- Successful requests.
+- Failed requests.
+- Average response time.
+- Token consumption.
+- Estimated API expenditure.
+- Search usage.
+- Voice search usage.
+- Listing generation usage.
+- Rate-limit events.
+- AI feature availability.
+
+Provide administrative controls for:
+
+- Enabling/disabling AI modules.
+- Configuring model selections.
+- Configuring usage limits.
+- Setting sensible request budgets.
+- Reviewing failed requests.
+- Monitoring consumption.
+
+Do not expose API secrets through the dashboard.
+
+Do not allow ordinary dealers to access administrative controls.
+
+---
+
+# PART L — AI SERVICE ARCHITECTURE
+
+Keep the architecture modular.
+
+Suggested server-side layout:
+
+server/
+  app.ts
+  config/
+  lib/
+    openai.ts
+    supabaseServer.ts
+  middleware/
+    auth.ts
+    rateLimit.ts
+    validate.ts
+  routes/
+    ai.ts
+    marketIntelligence.ts
+    world.ts
+    dealers.ts
+  services/
+    ai/
+      listingDescriptionService.ts
+      vehicleSearchService.ts
+      vehiclePricingService.ts
+      marketIntelligenceService.ts
+      automotiveAssistantService.ts
+      transcriptionService.ts
+      aiUsageService.ts
+
+Suggested frontend service:
+
+src/services/aiService.ts
+
+Adapt this layout to the actual project. Do not create redundant modules if suitable existing services already exist.
+
+The frontend must call the backend through protected `/api/ai/*` endpoints.
+
+Never call OpenAI directly from the browser.
+
+Use the existing authenticated Supabase session to provide the correct access token.
+
+Use consistent TypeScript request and response types.
+
+Provide proper loading, error, empty and retry states.
+
+---
+
+# PART M — EMBEDDINGS AND EXISTING GEMINI INTEGRATION
+
+Important existing infrastructure:
+
+The current MANIFOLD knowledge base uses:
+
+vector(768)
+
+Existing Gemini embeddings use 768 dimensions.
+
+Do not mix OpenAI embeddings and Gemini embeddings in the same vector space.
+
+If OpenAI embeddings are introduced:
+
+1. Inspect the current embedding model.
+2. Inspect the knowledge_base schema.
+3. Inspect match_knowledge().
+4. Determine whether separate embedding storage or a deliberate migration is needed.
+5. Preserve existing Gemini retrieval.
+6. Do not silently change vector dimensions.
+7. Do not re-index existing records without an approved migration and backfill strategy.
+
+For the first implementation, it is acceptable to retain Gemini embeddings and use OpenAI for text intelligence and reasoning.
+
+---
+
+# PART N — ERROR HANDLING AND RELIABILITY
+
+Every AI endpoint must:
+
+- Validate incoming data.
+- Verify permissions.
+- Apply rate limits.
+- Apply request timeouts.
+- Bound input and output sizes.
+- Handle OpenAI API errors.
+- Handle Supabase errors.
+- Handle malformed structured output.
+- Return appropriate HTTP status codes.
+- Avoid leaking internal secrets or stack traces.
+
+Handle:
+
+- 400 invalid input.
+- 401 unauthenticated.
+- 403 unauthorized.
+- 404 missing resource.
+- 413 payload too large.
+- 429 rate limit exceeded.
+- 500 internal error.
+- 503 AI service unavailable.
+
+Do not return fake successful AI responses when the API is unavailable.
+
+---
+
+# PART O — TESTING AND ACCEPTANCE CRITERIA
+
+Testing must cover the actual application.
+
+Do not report a test as passed merely because a function was created.
+
+## 1. Build and architecture
+
+- TypeScript checks pass.
+- Vite production build passes.
+- Vercel function compiles.
+- No server-only secrets appear in dist/.
+- Existing API routes remain functional.
+- Local server starts successfully.
+
+## 2. URL routing
+
+- Clean URLs work without hash fragments.
+- Direct nested route navigation works.
+- Page refresh works.
+- Back and Forward work.
+- API routes do not return index.html.
+- Legacy hash URLs are handled.
+
+## 3. OpenAI connection
+
+Make a genuine server-side OpenAI request.
+
+Verify:
+- Key configuration.
+- Model configuration.
+- Successful response.
+- Response time.
+- Error handling.
+
+Do not use mocked responses as proof of a real API connection.
+
+## 4. Dealer Listing Intelligence
+
+Test with a real vehicle form payload.
+
+Verify:
+- Correct vehicle specifications are captured.
+- The model remains the Vehicle Title.
+- AI description is generated.
+- SEO fields are separate.
+- Missing facts are not invented.
+- Dealer can edit and approve output.
+- Another dealer cannot access the request.
+
+## 5. Vehicle Intelligence Search
+
+Test actual inventory queries such as:
+
+- 2021 Toyota SUV under ₦30 million.
+- Automatic seven-seater.
+- Black Mercedes-Benz SUV.
+- Fuel-efficient daily commuting vehicle.
+
+Verify that every returned vehicle exists in published inventory.
+
+Test zero-result behaviour.
+
+## 6. Voice search
+
+Test:
+- Permission handling.
+- Recording.
+- Transcription.
+- Editable transcript.
+- Search submission.
+- Failure fallback.
+
+## 7. Price Intelligence
+
+Test:
+- Actual comparable data.
+- Price range calculations.
+- Confidence assessment.
+- Insufficient evidence.
+- Asking-price versus transaction-price distinction.
+
+## 8. Market Intelligence
+
+Test:
+- Existing Gemini extraction still works.
+- Approved observations remain accessible.
+- Internal and external data are distinguished.
+- Admin and dealer permissions are enforced.
+
+## 9. AI Assistant
+
+Test:
+- Buyer inventory questions.
+- Real listing comparisons.
+- Dealer-scoped questions.
+- Unauthorized requests.
+- Hallucination prevention.
+
+## 10. Administration
+
+Test:
+- Usage recording.
+- Token reporting.
+- Error reporting.
+- Role restrictions.
+- Feature controls.
+
+## 11. Vercel production
+
+Verify actual deployment.
+
+Do not claim production success from local tests.
+
+Test the deployed endpoints and clean application URLs.
+
+If a Vercel deployment is required, clearly identify the commit and deployment status.
+
+---
+
+# PART P — IMPLEMENTATION EXECUTION RULES
+
+You are authorized to make the necessary code changes for this project.
+
+Do not stop after another audit.
+
+Do not merely create empty placeholder services or interfaces.
+
+Implement functional end-to-end capabilities.
+
+Work in this order:
+
+1. Correct clean URL routing.
+2. Verify and preserve Phase 1 backend deployment architecture.
+3. Implement OpenAI SDK and configuration.
+4. Implement server-side authentication, authorization and rate limiting.
+5. Implement genuine OpenAI connection test.
+6. Implement Dealer Listing Intelligence.
+7. Implement Vehicle Intelligence Search.
+8. Implement voice search.
+9. Strengthen Price Intelligence.
+10. Strengthen Market Intelligence.
+11. Implement AI Automotive Assistant.
+12. Implement Admin AI Control Centre.
+13. Complete testing and production deployment preparation.
+
+You may work through these stages sequentially within this authorization. Do not ask for separate approval between each stage.
+
+However, do not conceal incomplete work or fabricate test results.
+
+If a task is blocked by missing credentials, missing database permissions, unsupported runtime behaviour, insufficient model access or unavailable external services:
+
+- Complete all independent work that can safely proceed.
+- Document the exact blocker.
+- Provide the specific action needed to resolve it.
+- Continue with other unblocked work.
+
+## Database safety
+
+Inspect actual Supabase schemas before writing queries.
+
+Reuse existing tables wherever possible.
+
+If new tables or migrations are genuinely necessary:
+
+- Create complete SQL migration files.
+- Include appropriate indexes.
+- Include RLS policies.
+- Include rollback considerations.
+- Clearly identify any SQL that must be run manually in Supabase.
+
+Do not destructively modify existing production data.
+
+## Existing functionality preservation
+
+Do not break:
+
+- MANIFOLD WORLD.
+- Three.js environment.
+- Multiplayer functionality.
+- Dealer onboarding.
+- Dealer authentication.
+- Dealer vehicle management.
+- Admin authentication.
+- Published vehicle listings.
+- Buyer enquiries.
+- Inspection workflows.
+- Existing Market Intelligence.
+- Existing Gemini extraction and validation.
+- Existing commissions and sales services.
+
+## Final delivery report
+
+At the end, provide:
+
+1. Summary of all completed work.
+2. Files created.
+3. Files modified.
+4. Packages installed.
+5. Environment variables required.
+6. Database migrations created.
+7. SQL actions required from me.
+8. New API endpoints.
+9. Existing API endpoints preserved.
+10. Security implementation.
+11. Results of all tests.
+12. Actual OpenAI API connection result.
+13. Vercel deployment status.
+14. Known limitations.
+15. Exact manual actions I must complete before live testing.
+
+Do not claim that any feature is production-ready unless its backend, frontend, data access, permissions and tests are actually working.
+
+**FINAL OBJECTIVE: Deliver a functional, secure, OpenAI-powered MANIFOLD automotive commerce ecosystem while preserving the existing marketplace, game environment, dealer operations and intelligence infrastructure.**

@@ -18,6 +18,7 @@ import {
 import { Car } from '../types';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../data/mockCars';
 import { VideoCarCard } from '../components/VideoCarCard';
+import { PriceIntelligenceCard } from '../components/ai/PriceIntelligenceCard';
 
 interface CarDetailPageProps {
   car: Car;
@@ -27,6 +28,7 @@ interface CarDetailPageProps {
   onInterested: (car: Car) => void;
   onPlayVideo: (car: Car) => void;
   onSelectCar: (car: Car) => void;
+  onAskAi?: () => void;
   navigate: (route: string) => void;
 }
 
@@ -38,6 +40,7 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
   onInterested,
   onPlayVideo,
   onSelectCar,
+  onAskAi,
   navigate,
 }) => {
   const [activeMediaTab, setActiveMediaTab] = useState<'video' | 'gallery1' | 'gallery2'>('video');
@@ -375,10 +378,10 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onInterested(car)}
-                  className="w-full h-11 bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase tracking-wider rounded border border-white/20 transition flex items-center justify-center gap-2"
+                  onClick={() => (onAskAi ? onAskAi() : onInterested(car))}
+                  className="w-full h-11 bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase tracking-wider rounded border border-white/20 transition flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <span>Talk to MANIFOLD Advisor</span>
+                  <span>Ask MANIFOLD AI About This Car</span>
                 </button>
               </div>
 
@@ -445,6 +448,22 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
               ))}
             </ul>
           </div>
+        </div>
+
+        {/* Fair Market Price Intelligence Benchmark */}
+        <div className="mb-12">
+          <PriceIntelligenceCard
+            mode="buyer"
+            carId={car.id}
+            make={car.make}
+            model={car.model}
+            year={car.year}
+            trim={car.trim}
+            condition={car.condition}
+            mileage={car.mileage}
+            location={car.location}
+            askingPrice={car.price}
+          />
         </div>
 
         {/* Similar Vehicles */}
