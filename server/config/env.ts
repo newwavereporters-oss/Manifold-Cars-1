@@ -5,6 +5,7 @@ dotenv.config({ quiet: true });
 export interface ServerEnvConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
+  supabaseServiceRoleKey: string;
   geminiApiKey: string;
   openAiApiKey: string;
   openAiModel: string;
@@ -26,6 +27,11 @@ export function getServerEnv(): ServerEnvConfig {
     ''
   ).trim();
 
+  const supabaseServiceRoleKey = (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    ''
+  ).trim();
+
   const geminiApiKey = (process.env.GEMINI_API_KEY || '').trim();
   const openAiApiKey = (process.env.OPENAI_API_KEY || '').trim();
   const openAiModel = (process.env.OPENAI_MODEL || '').trim();
@@ -39,6 +45,7 @@ export function getServerEnv(): ServerEnvConfig {
   return {
     supabaseUrl,
     supabaseAnonKey,
+    supabaseServiceRoleKey,
     geminiApiKey,
     openAiApiKey,
     openAiModel,

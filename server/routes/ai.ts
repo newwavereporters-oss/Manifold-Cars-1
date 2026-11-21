@@ -25,7 +25,7 @@ import {
   sanitizeOpenAiError,
 } from '../lib/openai.js';
 import { sendMigrationSqlFile } from '../lib/migrationSql.js';
-import { getSupabaseClient } from '../lib/supabaseServer.js';
+import { getSupabaseAdminClient, getSupabaseClient } from '../lib/supabaseServer.js';
 import {
   checkAiDatabaseStatus,
   getAdminAiOverview,
@@ -97,7 +97,8 @@ aiRouter.post(
   async (req: AuthenticatedRequest, res: Response) => {
     const requestId = makeRequestId();
     const started = Date.now();
-    const setting = await getModuleSetting('health_test', req.auth?.supabase);
+    const dbClient = getSupabaseAdminClient() ?? req.auth?.supabase;
+    const setting = await getModuleSetting('health_test', dbClient);
     const bodyModel =
       typeof req.body?.modelOverride === 'string' && req.body.modelOverride.trim()
         ? req.body.modelOverride.trim()
@@ -126,7 +127,7 @@ aiRouter.post(
           latency_ms: result.latencyMs,
           success: true,
         },
-        req.auth?.supabase
+        dbClient
       );
 
       res.json({
@@ -161,7 +162,7 @@ aiRouter.post(
           error_code: safe.code,
           error_message: safe.message,
         },
-        req.auth?.supabase
+        dbClient
       );
 
       res.status(safe.status).json({
@@ -188,11 +189,12 @@ aiRouter.get(
   requireAdmin,
   standardApiLimiter,
   async (req: AuthenticatedRequest, res: Response) => {
-    if (!req.auth?.supabase) {
+    const dbClient = getSupabaseAdminClient() ?? req.auth?.supabase;
+    if (!dbClient) {
       res.status(503).json({ error: 'Supabase not configured.' });
       return;
     }
-    const status = await checkAiDatabaseStatus(req.auth.supabase);
+    const status = await checkAiDatabaseStatus(dbClient);
     res.json(status);
   }
 );
@@ -206,13 +208,14 @@ aiRouter.get(
   requireAdmin,
   standardApiLimiter,
   async (req: AuthenticatedRequest, res: Response) => {
-    if (!req.auth?.supabase) {
+    const dbClient = getSupabaseAdminClient() ?? req.auth?.supabase;
+    if (!dbClient) {
       res.status(503).json({ error: 'Supabase client unavailable.' });
       return;
     }
     try {
       const [overview, configStatus] = await Promise.all([
-        getAdminAiOverview(req.auth.supabase),
+        getAdminAiOverview(dbClient),
         Promise.resolve(getOpenAiConfigStatus()),
       ]);
       res.json({
@@ -252,13 +255,14 @@ aiRouter.patch(
       return;
     }
 
-    if (!req.auth?.supabase || !req.auth.user) {
+    const dbClient = getSupabaseAdminClient() ?? req.auth?.supabase;
+    if (!dbClient || !req.auth?.user) {
       res.status(503).json({ error: 'Authentication context missing.' });
       return;
     }
 
     const result = await updateModuleSetting({
-      supabase: req.auth.supabase,
+      supabase: dbClient,
       adminUserId: req.auth.user.id,
       moduleKey: parsed.data.moduleKey as AiFeatureModuleKey,
       enabled: parsed.data.enabled,
@@ -744,9 +748,14 @@ aiRouter.post(
       return;
     }
 
+    const insightsDb =
+      authorizedRole === 'admin'
+        ? (getSupabaseAdminClient() ?? req.auth.supabase)
+        : req.auth.supabase;
+
     const requestId = makeRequestId();
     const started = Date.now();
-    const setting = await getModuleSetting('market_insights', req.auth.supabase);
+    const setting = await getModuleSetting('market_insights', insightsDb);
 
     if (parsed.data.includeAiSummary && !setting.enabled) {
       res.status(503).json({
@@ -763,7 +772,7 @@ aiRouter.post(
         dealerBusinessName,
         includeAiSummary: parsed.data.includeAiSummary,
         focusTopic: parsed.data.focusTopic,
-        supabase: req.auth.supabase,
+        supabase: insightsDb,
         modelOverride: setting.model_override,
         maxOutputTokens: setting.max_output_tokens,
       });
@@ -783,7 +792,7 @@ aiRouter.post(
             latency_ms: result.usage.latencyMs,
             success: true,
           },
-          req.auth.supabase
+          insightsDb
         );
       }
 
@@ -810,7 +819,7 @@ aiRouter.post(
           error_code: safe.code,
           error_message: safe.message,
         },
-        req.auth.supabase
+        insightsDb
       );
       res.status(safe.status).json({ error: safe.message, code: safe.code, requestId });
     }

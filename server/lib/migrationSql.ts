@@ -9,6 +9,7 @@ const ALLOWED_MIGRATION_FILES = new Set([
   'game-world-social-migration.sql',
   'dealer-approval-migration.sql',
   'ai-platform-migration.sql',
+  'admin-auth-fix.sql',
 ]);
 
 export function sendMigrationSqlFile(filename: string, notFoundComment: string, res: Response): void {

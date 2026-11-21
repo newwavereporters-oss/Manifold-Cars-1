@@ -16,6 +16,18 @@ export function getSupabaseClient(authHeader?: string): SupabaseClient | null {
   });
 }
 
+export function getSupabaseAdminClient(): SupabaseClient | null {
+  const { supabaseUrl, supabaseServiceRoleKey } = getServerEnv();
+  if (!supabaseUrl || !supabaseServiceRoleKey) return null;
+
+  return createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
 export function extractBearerToken(authHeader?: string): string | null {
   if (!authHeader || typeof authHeader !== 'string') return null;
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
@@ -61,46 +73,175 @@ export async function verifySupabaseUser(authHeader?: string): Promise<
   }
 }
 
+const ALLOWED_ADMIN_ROLES = new Set([
+  'admin',
+  'super_admin',
+  'superadmin',
+  'administrator',
+]);
+
+function evaluateAdminRow(row: Record<string, any> | null | undefined): {
+  isAuthorized: boolean;
+  role?: string;
+  rejectReason?: string;
+} {
+  if (!row || typeof row !== 'object') {
+    return { isAuthorized: false, rejectReason: 'empty_row' };
+  }
+
+  const hasStatus = row.status !== undefined && row.status !== null;
+  const normalizedStatus = hasStatus ? String(row.status).trim().toLowerCase() : '';
+  const isStatusActive = hasStatus
+    ? normalizedStatus === 'active'
+    : typeof row.is_active === 'boolean'
+    ? row.is_active === true
+    : false;
+
+  if (!isStatusActive) {
+    return {
+      isAuthorized: false,
+      rejectReason: `inactive_status:${normalizedStatus || String(row.is_active)}`,
+    };
+  }
+
+  const rawRole = String(row.role || '').trim().toLowerCase();
+  if (!ALLOWED_ADMIN_ROLES.has(rawRole)) {
+    return {
+      isAuthorized: false,
+      rejectReason: `unauthorized_role:${rawRole || 'none'}`,
+    };
+  }
+
+  return { isAuthorized: true, role: rawRole };
+}
+
 export async function verifyActiveAdmin(
   supabase: SupabaseClient,
   user: User
 ): Promise<{ isAdmin: boolean; role?: string }> {
+  const adminClient = getSupabaseAdminClient();
+  const lookupClient = adminClient ?? supabase;
+  const verifiedEmail =
+    typeof user.email === 'string' && user.email.trim().length > 0
+      ? user.email.trim().toLowerCase()
+      : null;
+
+  const diagnosticReasons: string[] = [];
+
   try {
-    let { data, error } = await supabase
+    // 1. Primary authoritative lookup by verified Supabase Auth user.id
+    const uidLookup = await lookupClient
       .from('admin_users')
-      .select('id, role, status, user_id, email')
+      .select('*')
       .eq('user_id', user.id)
-      .eq('status', 'active')
-      .maybeSingle();
+      .limit(10);
 
-    if (!data && user.email) {
-      const cleanEmail = user.email.trim().toLowerCase();
-      const emailLookup = await supabase
-        .from('admin_users')
-        .select('id, role, status, user_id, email')
-        .ilike('email', cleanEmail)
-        .eq('status', 'active')
-        .maybeSingle();
-      if (emailLookup.data) {
-        data = emailLookup.data;
-        error = emailLookup.error;
+    if (uidLookup.error) {
+      diagnosticReasons.push(`uid_query_err:${uidLookup.error.code || uidLookup.error.message}`);
+    } else if (Array.isArray(uidLookup.data) && uidLookup.data.length > 0) {
+      for (const row of uidLookup.data as Record<string, any>[]) {
+        if (String(row.user_id || '') !== user.id) continue;
+        const evalRes = evaluateAdminRow(row);
+        if (evalRes.isAuthorized) {
+          return { isAdmin: true, role: evalRes.role };
+        }
+        if (evalRes.rejectReason) {
+          diagnosticReasons.push(`uid_row_${evalRes.rejectReason}`);
+        }
       }
+    } else {
+      diagnosticReasons.push('uid_not_found');
     }
 
-    if (error || !data || data.status !== 'active') {
-      return { isAdmin: false };
+    // 2. Secondary lookup by server-verified Auth user.email (only for unlinked or matching user_id rows)
+    if (verifiedEmail) {
+      const emailLookup = await lookupClient
+        .from('admin_users')
+        .select('*')
+        .ilike('email', verifiedEmail)
+        .limit(10);
+
+      if (emailLookup.error) {
+        diagnosticReasons.push(`email_query_err:${emailLookup.error.code || emailLookup.error.message}`);
+      } else if (Array.isArray(emailLookup.data) && emailLookup.data.length > 0) {
+        for (const row of emailLookup.data as Record<string, any>[]) {
+          // Never allow an account with a different bound user_id to claim another admin row
+          if (row.user_id && String(row.user_id) !== user.id) {
+            diagnosticReasons.push('email_row_user_id_mismatch');
+            continue;
+          }
+
+          const evalRes = evaluateAdminRow(row);
+          if (!evalRes.isAuthorized) {
+            if (evalRes.rejectReason) {
+              diagnosticReasons.push(`email_row_${evalRes.rejectReason}`);
+            }
+            continue;
+          }
+
+          // Best-effort auto-link if user_id was NULL in admin_users
+          if (!row.user_id && row.id) {
+            try {
+              await lookupClient
+                .from('admin_users')
+                .update({ user_id: user.id })
+                .eq('id', row.id)
+                .is('user_id', null);
+            } catch {
+              // Non-fatal: authorization already succeeded on verified row
+            }
+          }
+
+          return { isAdmin: true, role: evalRes.role };
+        }
+      } else {
+        diagnosticReasons.push('email_not_found');
+      }
+    } else {
+      diagnosticReasons.push('no_verified_email');
     }
 
-    const rawRole = String(data.role || '').trim().toLowerCase();
-    const isAuthorizedRole =
-      rawRole === 'admin' || rawRole === 'super_admin' || rawRole === 'administrator';
-
-    if (!isAuthorizedRole) {
-      return { isAdmin: false };
+    // 3. Authoritative PostgreSQL SECURITY DEFINER RPC fallback (bypasses direct table RLS safely using auth.uid())
+    try {
+      const activeRpc = await supabase.rpc('is_active_admin');
+      if (!activeRpc.error && activeRpc.data === true) {
+        return { isAdmin: true, role: 'admin' };
+      }
+      if (activeRpc.error) {
+        diagnosticReasons.push(`rpc_is_active_admin_err:${activeRpc.error.code || activeRpc.error.message}`);
+      } else {
+        diagnosticReasons.push(`rpc_is_active_admin:${String(activeRpc.data)}`);
+      }
+    } catch {
+      diagnosticReasons.push('rpc_is_active_admin_exception');
     }
 
-    return { isAdmin: true, role: rawRole };
-  } catch {
+    try {
+      const adminRpc = await supabase.rpc('is_admin');
+      if (!adminRpc.error && adminRpc.data === true) {
+        return { isAdmin: true, role: 'admin' };
+      }
+      if (adminRpc.error) {
+        diagnosticReasons.push(`rpc_is_admin_err:${adminRpc.error.code || adminRpc.error.message}`);
+      } else {
+        diagnosticReasons.push(`rpc_is_admin:${String(adminRpc.data)}`);
+      }
+    } catch {
+      diagnosticReasons.push('rpc_is_admin_exception');
+    }
+
+    console.warn(
+      `[MANIFOLD Auth] verifyActiveAdmin denied for user ${user.id} (serviceRole=${Boolean(
+        adminClient
+      )}): ${diagnosticReasons.join(', ')}`
+    );
+    return { isAdmin: false };
+  } catch (err: any) {
+    console.warn(
+      `[MANIFOLD Auth] verifyActiveAdmin exception for user ${user.id}: ${
+        err?.message || 'unknown_error'
+      }`
+    );
     return { isAdmin: false };
   }
 }
