@@ -109,7 +109,7 @@ aiRouter.post(
         instructions: 'Reply with exactly: MANIFOLD_OPENAI_OK',
         input: 'Confirm live API connectivity.',
         modelOverride: bodyModel,
-        maxOutputTokens: 32,
+        maxOutputTokens: 256,
         temperature: 0,
         timeoutMs: 15_000,
       });

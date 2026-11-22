@@ -136,6 +136,57 @@ export function sanitizeOpenAiError(err: unknown): {
   };
 }
 
+const temperatureUnsupportedModels = new Set<string>();
+
+export function isTemperatureUnsupportedModel(model: string): boolean {
+  const normalized = (model || '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (temperatureUnsupportedModels.has(normalized)) return true;
+
+  // OpenAI reasoning & GPT-5 family models reject `temperature` on Responses API
+  return /^(?:o[1-9]\d*|gpt-5(?:\.\d+)?)(?:[-._:]|$)/i.test(normalized);
+}
+
+export function isUnsupportedTemperatureError(err: unknown): boolean {
+  const anyErr = err as any;
+  const status = typeof anyErr?.status === 'number' ? anyErr.status : undefined;
+  const param = anyErr?.param ?? anyErr?.error?.param;
+  const message = String(anyErr?.message ?? anyErr?.error?.message ?? '');
+
+  if (status !== undefined && status !== 400) return false;
+  if (param === 'temperature' && /unsupported|not supported/i.test(message)) {
+    return true;
+  }
+  return /unsupported parameter:\s*'temperature'|'temperature' is not supported|does not support.*temperature/i.test(
+    message
+  );
+}
+
+export async function createResponseWithCompatibleParams(
+  client: OpenAI,
+  payload: Record<string, any> & { model: string },
+  temperature?: number
+) {
+  const requestPayload: Record<string, any> = { ...payload };
+  if (typeof temperature === 'number' && !isTemperatureUnsupportedModel(payload.model)) {
+    requestPayload.temperature = temperature;
+  } else {
+    delete requestPayload.temperature;
+  }
+
+  try {
+    return await client.responses.create(requestPayload as any);
+  } catch (err) {
+    if ('temperature' in requestPayload && isUnsupportedTemperatureError(err)) {
+      temperatureUnsupportedModels.add(payload.model.trim().toLowerCase());
+      const retryPayload = { ...requestPayload };
+      delete retryPayload.temperature;
+      return await client.responses.create(retryPayload as any);
+    }
+    throw err;
+  }
+}
+
 export interface StructuredResponseResult<T> {
   data: T;
   rawText: string;
@@ -160,23 +211,30 @@ export async function runStructuredJsonResponse<T>(params: {
   const model = resolveTextModel(params.modelOverride);
   const client = getOpenAiClient(params.timeoutMs ?? 25_000);
   const startedAt = Date.now();
+  const baseMaxTokens = Math.min(Math.max(params.maxOutputTokens ?? 900, 128), 4000);
+  const effectiveMaxTokens = isTemperatureUnsupportedModel(model)
+    ? Math.max(baseMaxTokens, 1600)
+    : baseMaxTokens;
 
   try {
-    const response = await client.responses.create({
-      model,
-      instructions: params.instructions,
-      input: params.input,
-      max_output_tokens: Math.min(Math.max(params.maxOutputTokens ?? 900, 128), 2000),
-      temperature: params.temperature ?? 0.35,
-      text: {
-        format: {
-          type: 'json_schema',
-          name: params.schemaName,
-          strict: true,
-          schema: params.schema,
+    const response = await createResponseWithCompatibleParams(
+      client,
+      {
+        model,
+        instructions: params.instructions,
+        input: params.input,
+        max_output_tokens: effectiveMaxTokens,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: params.schemaName,
+            strict: true,
+            schema: params.schema,
+          },
         },
       },
-    });
+      params.temperature ?? 0.35
+    );
 
     const latencyMs = Date.now() - startedAt;
     const rawText = (response.output_text || '').trim();
@@ -230,15 +288,22 @@ export async function runTextResponse(params: {
   const model = resolveTextModel(params.modelOverride);
   const client = getOpenAiClient(params.timeoutMs ?? 25_000);
   const startedAt = Date.now();
+  const baseMaxTokens = Math.min(Math.max(params.maxOutputTokens ?? 700, 32), 4000);
+  const effectiveMaxTokens = isTemperatureUnsupportedModel(model)
+    ? Math.max(baseMaxTokens, 300)
+    : baseMaxTokens;
 
   try {
-    const response = await client.responses.create({
-      model,
-      instructions: params.instructions,
-      input: params.input,
-      max_output_tokens: Math.min(Math.max(params.maxOutputTokens ?? 700, 32), 2000),
-      temperature: params.temperature ?? 0.4,
-    });
+    const response = await createResponseWithCompatibleParams(
+      client,
+      {
+        model,
+        instructions: params.instructions,
+        input: params.input,
+        max_output_tokens: effectiveMaxTokens,
+      },
+      params.temperature ?? 0.4
+    );
 
     const latencyMs = Date.now() - startedAt;
     const text = (response.output_text || '').trim();
