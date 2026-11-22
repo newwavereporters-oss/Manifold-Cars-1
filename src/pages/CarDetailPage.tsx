@@ -11,12 +11,15 @@ import {
   Video,
   Image as ImageIcon,
   CarFront,
+  ExternalLink,
 } from 'lucide-react';
 import { Car } from '../types';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../data/mockCars';
 import { VideoCarCard } from '../components/VideoCarCard';
 import { PriceIntelligenceCard } from '../components/ai/PriceIntelligenceCard';
 import { resolveCarYouTubeVideoId } from '../utils/carMedia';
+import { dealerService } from '../services/dealerService';
+import { getDealerPermalinkSlug } from '../utils/dealerSlug';
 
 interface CarDetailPageProps {
   car: Car;
@@ -69,6 +72,37 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
     setPhoto2Error(false);
   }, [car.id]);
 
+  const [dealerPermalinkSlug, setDealerPermalinkSlug] = useState<string>(() =>
+    getDealerPermalinkSlug(
+      { id: car.dealer.id, name: car.dealer.name },
+      dealerService.getPublicDealersSync()
+    )
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    const syncList = dealerService.getPublicDealersSync();
+    if (syncList.length > 0) {
+      setDealerPermalinkSlug(
+        getDealerPermalinkSlug({ id: car.dealer.id, name: car.dealer.name }, syncList)
+      );
+    } else {
+      dealerService
+        .getPublicDealers()
+        .then((list) => {
+          if (mounted) {
+            setDealerPermalinkSlug(
+              getDealerPermalinkSlug({ id: car.dealer.id, name: car.dealer.name }, list)
+            );
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [car.dealer.id, car.dealer.name]);
+
   const handleShare = () => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(window.location.href);
@@ -86,6 +120,7 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
     { label: 'Make', value: car.make },
     { label: 'Model', value: car.model },
     { label: 'Trim', value: car.trim },
+    { label: 'Body Type', value: car.body_type },
     { label: 'Condition', value: car.condition },
     { label: 'Mileage', value: `${FORMAT_NUMBER(car.mileage)} km` },
     { label: 'Transmission', value: car.transmission },
@@ -97,43 +132,46 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
     { label: 'Seats', value: `${car.seats} Seats` },
     { label: 'Doors', value: `${car.doors} Doors` },
     { label: 'Location', value: car.location },
-  ];
+  ].filter((item) => Boolean(item.value && String(item.value).trim()));
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] pt-24 pb-20">
+    <div className="min-h-screen bg-[#F7F8FA] pt-24 pb-24 md:pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Breadcrumb Navigation */}
-        <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
-          <button onClick={() => navigate('/')} className="hover:text-gray-900">
+        <div className="flex items-center gap-2 text-xs text-gray-500 mb-3 overflow-x-auto whitespace-nowrap pb-1">
+          <button onClick={() => navigate('/')} className="hover:text-gray-900 shrink-0 cursor-pointer">
             Home
           </button>
-          <span>/</span>
-          <button onClick={() => navigate('/cars')} className="hover:text-gray-900">
+          <span className="shrink-0">/</span>
+          <button onClick={() => navigate('/cars')} className="hover:text-gray-900 shrink-0 cursor-pointer">
             Cars
           </button>
-          <span>/</span>
+          <span className="shrink-0">/</span>
           <button
             onClick={() => navigate(`/cars?make=${encodeURIComponent(car.make)}`)}
-            className="hover:text-gray-900"
+            className="hover:text-gray-900 shrink-0 cursor-pointer"
           >
             {car.make}
           </button>
-          <span>/</span>
-          <span className="text-gray-900 font-medium truncate max-w-xs">{car.title}</span>
+          <span className="shrink-0">/</span>
+          <span className="text-gray-900 font-medium truncate max-w-[200px] sm:max-w-xs">
+            {car.title}
+          </span>
         </div>
 
         {/* Back Link */}
         <button
+          type="button"
           onClick={() => navigate('/cars')}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-[#EF233C] mb-6 transition"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-[#EF233C] mb-5 transition cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to All Vehicles</span>
         </button>
 
         {/* Top Title & Price Block */}
-        <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
+        <div className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1.5 flex-wrap">
               <span className="text-xs font-bold uppercase tracking-wider text-[#EF233C]">
                 {car.condition}
@@ -150,7 +188,7 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
               <span className="text-xs font-medium text-gray-500">{car.location}</span>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-[#071A2B] tracking-tight font-display">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-[#071A2B] tracking-tight font-display break-words">
               {car.title}
             </h1>
 
@@ -159,25 +197,26 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
               <span className="text-gray-300">·</span>
               <span>{car.fuel_type}</span>
               <span className="text-gray-300">·</span>
-              <span>{FORMAT_NUMBER(car.mileage)} km</span>
+              <span className="tabular-nums">{FORMAT_NUMBER(car.mileage)} km</span>
               <span className="text-gray-300">·</span>
               <span>{car.drive_type}</span>
             </div>
           </div>
 
-          <div className="flex flex-col md:items-end">
-            <span className="text-2xl sm:text-3xl lg:text-4xl font-black text-[#071A2B] tabular-nums font-display">
+          <div className="flex flex-col md:items-end pt-3 md:pt-0 border-t md:border-t-0 border-gray-100">
+            <span className="text-2xl sm:text-3xl lg:text-4xl font-black text-[#071A2B] tabular-nums font-display whitespace-nowrap">
               {FORMAT_CURRENCY(car.price)}
             </span>
             {car.original_price && (
-              <span className="text-xs text-gray-400 line-through tabular-nums mt-0.5">
+              <span className="text-xs text-gray-400 line-through tabular-nums mt-0.5 whitespace-nowrap">
                 Was {FORMAT_CURRENCY(car.original_price)}
               </span>
             )}
             <div className="flex items-center gap-2 mt-3">
               <button
+                type="button"
                 onClick={() => onToggleFavorite(car.id)}
-                className={`px-3 py-1.5 rounded border text-xs font-bold flex items-center gap-1.5 transition ${
+                className={`h-10 sm:h-9 px-3.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
                   isFavorite
                     ? 'bg-red-50 text-[#EF233C] border-red-200'
                     : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
@@ -188,8 +227,9 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
               </button>
 
               <button
+                type="button"
                 onClick={handleShare}
-                className="px-3 py-1.5 rounded border bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-200 text-xs font-bold flex items-center gap-1.5 transition"
+                className="h-10 sm:h-9 px-3.5 rounded-lg border bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-200 text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer"
               >
                 <Share2 className="w-3.5 h-3.5" />
                 <span>{copiedShare ? 'Link Copied!' : 'Share'}</span>
@@ -274,12 +314,12 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
             </div>
 
             {/* Media Selector Strip (Photos & Video) */}
-            <div className="p-3 bg-gray-50 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="p-3 bg-gray-50 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 overflow-x-auto max-w-full pb-0.5">
                 <button
                   type="button"
                   onClick={() => setActiveMediaTab('video')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+                  className={`h-10 flex items-center gap-2 px-3.5 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer whitespace-nowrap shrink-0 ${
                     activeMediaTab === 'video'
                       ? 'bg-[#EF233C] text-white shadow'
                       : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
@@ -288,7 +328,7 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                   {hasVideo ? (
                     <>
                       <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Primary Video Review ({car.video.video_duration || '12:00'})</span>
+                      <span>Video Review ({car.video.video_duration || '12:00'})</span>
                     </>
                   ) : (
                     <>
@@ -302,7 +342,7 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveMediaTab('gallery1')}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+                    className={`h-10 flex items-center gap-2 px-3.5 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer whitespace-nowrap shrink-0 ${
                       activeMediaTab === 'gallery1'
                         ? 'bg-[#071A2B] text-white shadow'
                         : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
@@ -316,7 +356,7 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveMediaTab('gallery2')}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+                    className={`h-10 flex items-center gap-2 px-3.5 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer whitespace-nowrap shrink-0 ${
                       activeMediaTab === 'gallery2'
                         ? 'bg-[#071A2B] text-white shadow'
                         : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
@@ -410,10 +450,10 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
             )}
           </div>
 
-          {/* Concierge Action Box & Verification (Col 4) */}
-          <div className="lg:col-span-4 space-y-5">
+          {/* Concierge Action Box & Verification (Col 4 — 2-col side-by-side on tablet md) */}
+          <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-5 items-start">
             {/* MANIFOLD Verification Badge Card */}
-            <div className="bg-white rounded-xl p-5 border border-emerald-200 shadow-sm space-y-3">
+            <div className="bg-white rounded-xl p-5 border border-emerald-200 shadow-sm space-y-3 h-full">
               <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
                 <ShieldCheck className="w-5 h-5 text-emerald-600" />
                 <span className="font-extrabold text-xs uppercase tracking-wider text-[#071A2B]">
@@ -451,13 +491,15 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
 
               <div className="pt-2 text-[11px] text-gray-400 border-t border-gray-100 flex items-center justify-between">
                 <span>Verified: {car.verification.verified_date}</span>
-                <span className="font-semibold text-emerald-700">Audit Score: {car.verification.inspection_score}/100</span>
+                <span className="font-semibold text-emerald-700 tabular-nums">
+                  Audit Score: {car.verification.inspection_score}/100
+                </span>
               </div>
             </div>
 
             {/* Concierge Engagement Card (No Direct Dealer Phone Numbers!) */}
-            <div className="bg-[#071A2B] text-white rounded-xl p-6 shadow-xl space-y-4">
-              <div className="space-y-1">
+            <div className="bg-[#071A2B] text-white rounded-xl p-5 sm:p-6 shadow-xl space-y-4 h-full">
+              <div className="space-y-1.5">
                 <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#EF233C]">
                   PURCHASE CONCIERGE
                 </span>
@@ -465,24 +507,34 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                   MANIFOLD Manages Your Enquiry
                 </h3>
                 <p className="text-xs text-gray-300 leading-relaxed">
-                  Listed by partner dealer <strong className="text-white">{car.dealer.name}</strong>.
-                  We supervise physical viewings, coordinate technical diagnostics, and negotiate
+                  Listed by partner dealer{' '}
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/${dealerPermalinkSlug}`)}
+                    className="inline-flex items-center gap-1 font-bold text-white underline decoration-[#EF233C]/70 hover:text-[#EF233C] transition cursor-pointer"
+                  >
+                    <span>{car.dealer.name}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0" />
+                  </button>
+                  . We supervise physical viewings, coordinate technical diagnostics, and negotiate
                   directly on your behalf.
                 </p>
               </div>
 
-              <div className="pt-2 space-y-2.5">
+              <div className="pt-1 space-y-2.5">
                 <button
+                  type="button"
                   onClick={() => onInterested(car)}
-                  className="w-full h-12 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded shadow transition flex items-center justify-center gap-2"
+                  className="w-full h-12 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <PhoneCall className="w-4 h-4" />
                   <span>I'm Interested in This Car</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => (onAskAi ? onAskAi() : onInterested(car))}
-                  className="w-full h-11 bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase tracking-wider rounded border border-white/20 transition flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full h-11 bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase tracking-wider rounded-lg border border-white/20 transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <span>Ask MANIFOLD AI About This Car</span>
                 </button>
@@ -503,21 +555,21 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
         </div>
 
         {/* Vehicle Specifications Grid */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm mb-10">
-          <div className="flex items-center gap-2 pb-4 mb-6 border-b border-gray-200">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 shadow-sm mb-8 sm:mb-10">
+          <div className="flex items-center gap-2 pb-4 mb-5 border-b border-gray-200">
             <FileCheck className="w-5 h-5 text-[#EF233C]" />
             <h2 className="text-base font-extrabold uppercase tracking-wider text-[#071A2B]">
               Vehicle Specifications
             </h2>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
             {specsList.map((item, idx) => (
-              <div key={idx} className="p-3 bg-gray-50 rounded border border-gray-100">
+              <div key={idx} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
                 <span className="text-[10px] font-bold uppercase text-gray-500 block">
                   {item.label}
                 </span>
-                <span className="text-xs sm:text-sm font-semibold text-[#071A2B] mt-0.5 block truncate">
+                <span className="text-xs sm:text-sm font-semibold text-[#071A2B] mt-0.5 block break-words">
                   {item.value}
                 </span>
               </div>
@@ -606,6 +658,26 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
         )}
       </div>
 
+      {/* Sticky Mobile Bottom CTA Bar (compact <= 64px) */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-gray-200 px-4 py-2.5 flex items-center justify-between gap-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+        <div className="min-w-0">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">
+            {car.condition}
+          </span>
+          <span className="text-base font-black text-[#071A2B] tabular-nums font-display truncate block">
+            {FORMAT_CURRENCY(car.price)}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onInterested(car)}
+          className="h-10 px-4 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+        >
+          <PhoneCall className="w-3.5 h-3.5" />
+          <span>I'm Interested</span>
+        </button>
+      </div>
+
       {/* Lightbox Modal for Gallery Images */}
       {enlargedImage && (
         <div
@@ -613,23 +685,24 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
           onClick={() => setEnlargedImage(null)}
         >
           <div
-            className="relative max-w-5xl max-h-[90vh] flex flex-col items-center"
+            className="relative max-w-5xl max-h-[90vh] flex flex-col items-center gap-3"
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              onClick={() => setEnlargedImage(null)}
-              className="absolute -top-10 right-0 text-white hover:text-gray-300 text-xs font-bold uppercase tracking-wider py-1 px-3 bg-white/10 rounded cursor-pointer"
-            >
-              ✕ Close
-            </button>
+            <div className="w-full flex items-center justify-between gap-3">
+              <p className="text-white text-xs font-semibold truncate">{enlargedImage.title}</p>
+              <button
+                type="button"
+                onClick={() => setEnlargedImage(null)}
+                className="text-white hover:text-gray-200 text-xs font-bold uppercase tracking-wider py-2 px-3.5 bg-white/15 hover:bg-white/25 rounded-lg cursor-pointer shrink-0"
+              >
+                ✕ Close
+              </button>
+            </div>
             <img
               src={enlargedImage.url}
               alt={enlargedImage.title}
-              className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl border border-white/15"
+              className="max-w-full max-h-[78vh] object-contain rounded-lg shadow-2xl border border-white/15"
             />
-            <p className="text-white text-xs font-semibold mt-3 text-center">
-              {enlargedImage.title}
-            </p>
           </div>
         </div>
       )}

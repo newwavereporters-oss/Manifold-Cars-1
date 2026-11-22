@@ -39,8 +39,13 @@ import {
   Megaphone,
   Lock,
   XCircle,
+  Link2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
+import { dealerService } from '../../services/dealerService';
+import { slugifyBusinessName } from '../../utils/dealerSlug';
 
 interface DealerDashboardPageProps {
   navigate: (route: string) => void;
@@ -65,12 +70,53 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
   const [intelPrice, setIntelPrice] = useState<string>('25,000,000');
   const [intelCalc, setIntelCalc] = useState<CommissionCalculationResult | null>(null);
   const [activeCommissionRules, setActiveCommissionRules] = useState<CommissionRule[]>([]);
+  const [showroomSlug, setShowroomSlug] = useState<string>(() =>
+    slugifyBusinessName(dealerAccount?.businessName || 'your-dealership')
+  );
+  const [copiedShowroomLink, setCopiedShowroomLink] = useState(false);
 
   useEffect(() => {
     commissionService.getActiveRules('NGN').then((rules) => {
       setActiveCommissionRules(rules);
     });
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const fallbackSlug = slugifyBusinessName(businessName);
+    setShowroomSlug(fallbackSlug);
+
+    if (dealerAccount?.dealerId) {
+      dealerService
+        .getPublicDealers()
+        .then((list) => {
+          if (!mounted) return;
+          const match = list.find((d) => d.id === dealerAccount.dealerId);
+          if (match?.permalinkSlug) {
+            setShowroomSlug(match.permalinkSlug);
+          }
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      mounted = false;
+    };
+  }, [dealerAccount?.dealerId, businessName]);
+
+  const showroomPath = `/${showroomSlug}`;
+  const showroomFullUrl =
+    typeof window !== 'undefined' ? `${window.location.origin}${showroomPath}` : showroomPath;
+
+  const handleCopyShowroomLink = async () => {
+    try {
+      await navigator.clipboard.writeText(showroomFullUrl);
+      setCopiedShowroomLink(true);
+      setTimeout(() => setCopiedShowroomLink(false), 2400);
+    } catch {
+      setCopiedShowroomLink(false);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -216,6 +262,61 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                     <span>Game Billboard Ad</span>
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* SHARABLE UNIQUE DEALER SHOWROOM LINK CARD */}
+            <div className="bg-white rounded-3xl p-5 sm:p-6 border border-gray-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-[#071A2B] text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <Link2 className="w-5 h-5 text-[#EF233C]" />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-sm sm:text-base font-extrabold text-[#071A2B]">
+                      Your Public Showroom Link
+                    </h2>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                      Direct Link
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Share this clean link on WhatsApp, Instagram, or with buyers to showcase all vehicles from {businessName} under your dealership name.
+                  </p>
+                  <div className="pt-1 flex items-center gap-2 min-w-0">
+                    <code className="block max-w-full truncate text-xs sm:text-sm font-bold text-[#071A2B] bg-[#F7F8FA] border border-gray-200 rounded-xl px-3 py-1.5 select-all">
+                      {showroomFullUrl}
+                    </code>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleCopyShowroomLink}
+                  className="h-11 px-4 rounded-xl border border-gray-200 bg-[#F7F8FA] hover:bg-gray-100 text-[#071A2B] text-xs font-bold uppercase tracking-wider transition inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0"
+                >
+                  {copiedShowroomLink ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-600" />
+                      <span className="text-emerald-700">Link Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copy Link</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(showroomPath)}
+                  className="h-11 px-4 rounded-xl bg-[#071A2B] hover:bg-[#0c263e] text-white text-xs font-bold uppercase tracking-wider transition inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 shadow-sm"
+                >
+                  <ExternalLink className="w-4 h-4 text-[#EF233C]" />
+                  <span>Open Showroom</span>
+                </button>
               </div>
             </div>
 
@@ -604,7 +705,7 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                   </span>
                   <span className="text-xs text-gray-400">·</span>
                   <span className="text-xs font-semibold text-emerald-400">
-                    Live Active Rules (public.commission_rules)
+                    Live Active Platform Rules
                   </span>
                 </div>
                 <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white font-display">

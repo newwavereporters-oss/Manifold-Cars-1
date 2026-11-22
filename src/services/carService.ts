@@ -9,6 +9,25 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 type CarChangeListener = (cars: Car[]) => void;
 
+export interface CarServiceLoadState {
+  hasLoaded: boolean;
+  loading: boolean;
+  error: string | null;
+}
+
+type LoadStateListener = (state: CarServiceLoadState) => void;
+
+export function isPublicMarketplaceCar(car: Pick<Car, 'status'>): boolean {
+  const statusUpper = String(car.status || '').trim().toUpperCase();
+  return statusUpper !== 'DRAFT' && statusUpper !== 'ARCHIVED';
+}
+
+function sanitizePublicDealerRow(raw: any): any | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { phone: _p, email: _e, address: _a, ...safeRest } = raw;
+  return safeRest;
+}
+
 function mapSupabaseToCar(row: any): Car {
   // 1. Resolve Primary Video from joined car_media or fallback columns
   let videoObj = {
@@ -49,18 +68,28 @@ function mapSupabaseToCar(row: any): Car {
     if (img2 && img2.image_url) gallery2 = img2.image_url;
   }
 
-  // 3. Resolve Dealer info
-  const dealerObj = row.dealers
+  // 3. Resolve Dealer info (strictly public fields only — never expose phone/email/address)
+  const safeJoinedDealer = sanitizePublicDealerRow(row.dealers);
+  const dealerObj = safeJoinedDealer
     ? {
-        id: row.dealers.id || row.dealer_id || 'dlr-partner-01',
-        name: row.dealers.business_name || row.dealers.name || row.dealer_name || 'MANIFOLD Verified Partner',
-        city: row.dealers.city || row.dealer_city || 'Lekki',
-        state: row.dealers.state || row.dealer_state || 'Lagos',
-        verified_partner: row.dealers.is_verified ?? true,
-        joined_year: row.dealers.joined_year || 2024,
+        id: String(safeJoinedDealer.id || row.dealer_id || 'dlr-partner-01'),
+        name:
+          safeJoinedDealer.business_name ||
+          safeJoinedDealer.name ||
+          row.dealer_name ||
+          'MANIFOLD Verified Partner',
+        city: safeJoinedDealer.city || row.dealer_city || 'Lekki',
+        state: safeJoinedDealer.state || row.dealer_state || 'Lagos',
+        verified_partner:
+          safeJoinedDealer.dealer_status === 'approved'
+            ? true
+            : safeJoinedDealer.dealer_status === 'disapproved'
+            ? false
+            : safeJoinedDealer.is_verified ?? safeJoinedDealer.verified_partner ?? true,
+        joined_year: safeJoinedDealer.joined_year || 2024,
       }
     : {
-        id: row.dealer_id || 'dlr-partner-01',
+        id: String(row.dealer_id || 'dlr-partner-01'),
         name: row.dealer_name || 'MANIFOLD Verified Partner',
         city: row.dealer_city || 'Lekki',
         state: row.dealer_state || 'Lagos',
@@ -122,33 +151,212 @@ function mapSupabaseToCar(row: any): Car {
 class CarService {
   private cache: Car[] = [];
   private listeners: Set<CarChangeListener> = new Set();
+  private loadStateListeners: Set<LoadStateListener> = new Set();
   private hasLoaded = false;
+  private loading = false;
+  private lastError: string | null = null;
+  private authWatcherBound = false;
+  private inflightFetch: Promise<Car[]> | null = null;
+
+  constructor() {
+    this.ensureAuthWatcher();
+  }
+
+  private ensureAuthWatcher() {
+    if (this.authWatcherBound || !isSupabaseConfigured || typeof window === 'undefined') return;
+    this.authWatcherBound = true;
+    try {
+      supabase.auth.onAuthStateChange((event) => {
+        if (
+          event === 'SIGNED_IN' ||
+          event === 'SIGNED_OUT' ||
+          event === 'TOKEN_REFRESHED'
+        ) {
+          this.getCars().catch(() => {});
+        }
+      });
+    } catch {
+      // ignore in non-browser/test environments
+    }
+  }
+
+  private async enrichCarsFromSeparateTables(rawCarRows: any[]): Promise<any[]> {
+    if (!Array.isArray(rawCarRows) || rawCarRows.length === 0) return [];
+
+    const carIds = Array.from(
+      new Set(rawCarRows.map((r) => String(r.id || '')).filter(Boolean))
+    );
+    const dealerIds = Array.from(
+      new Set(rawCarRows.map((r) => String(r.dealer_id || '')).filter(Boolean))
+    );
+
+    const [mediaSettled, imagesSettled, dealersSettled] = await Promise.allSettled([
+      carIds.length > 0
+        ? supabase.from('car_media').select('*').in('car_id', carIds)
+        : Promise.resolve({ data: [], error: null }),
+      carIds.length > 0
+        ? supabase.from('car_images').select('*').in('car_id', carIds)
+        : Promise.resolve({ data: [], error: null }),
+      dealerIds.length > 0
+        ? supabase.from('dealers').select('*').in('id', dealerIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    const mediaRows =
+      mediaSettled.status === 'fulfilled' && Array.isArray(mediaSettled.value?.data)
+        ? mediaSettled.value.data
+        : [];
+    const imageRows =
+      imagesSettled.status === 'fulfilled' && Array.isArray(imagesSettled.value?.data)
+        ? imagesSettled.value.data
+        : [];
+    const dealerRows =
+      dealersSettled.status === 'fulfilled' && Array.isArray(dealersSettled.value?.data)
+        ? dealersSettled.value.data
+        : [];
+
+    const mediaByCar = new Map<string, any[]>();
+    mediaRows.forEach((m: any) => {
+      const key = String(m.car_id || '');
+      if (!key) return;
+      const list = mediaByCar.get(key) || [];
+      list.push(m);
+      mediaByCar.set(key, list);
+    });
+
+    const imagesByCar = new Map<string, any[]>();
+    imageRows.forEach((img: any) => {
+      const key = String(img.car_id || '');
+      if (!key) return;
+      const list = imagesByCar.get(key) || [];
+      list.push(img);
+      imagesByCar.set(key, list);
+    });
+
+    const dealerById = new Map<string, any>();
+    dealerRows.forEach((d: any) => {
+      if (d?.id) {
+        dealerById.set(String(d.id), sanitizePublicDealerRow(d));
+      }
+    });
+
+    return rawCarRows.map((row) => ({
+      ...row,
+      car_media: Array.isArray(row.car_media)
+        ? row.car_media
+        : mediaByCar.get(String(row.id)) || [],
+      car_images: Array.isArray(row.car_images)
+        ? row.car_images
+        : imagesByCar.get(String(row.id)) || [],
+      dealers: row.dealers
+        ? sanitizePublicDealerRow(row.dealers)
+        : row.dealer_id
+        ? dealerById.get(String(row.dealer_id)) || null
+        : null,
+    }));
+  }
+
+  public getLoadState(): CarServiceLoadState {
+    return {
+      hasLoaded: this.hasLoaded,
+      loading: this.loading,
+      error: this.lastError,
+    };
+  }
+
+  public subscribeLoadState(listener: LoadStateListener): () => void {
+    this.loadStateListeners.add(listener);
+    listener(this.getLoadState());
+    return () => this.loadStateListeners.delete(listener);
+  }
+
+  private notifyLoadState(): void {
+    const state = this.getLoadState();
+    this.loadStateListeners.forEach((listener) => {
+      try {
+        listener(state);
+      } catch (e) {
+        console.error('CarService load-state listener error:', e);
+      }
+    });
+  }
 
   public async getCars(): Promise<Car[]> {
     if (!isSupabaseConfigured) {
-      throw new Error(
-        'Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.'
-      );
+      this.hasLoaded = true;
+      this.loading = false;
+      this.lastError =
+        'Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.';
+      this.notifyLoadState();
+      throw new Error(this.lastError);
     }
 
-    const { data, error } = await supabase
-      .from('cars')
-      .select(`
-        *,
-        car_media (*),
-        car_images (*),
-        dealers (*)
-      `)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw new Error(`Unable to load MANIFOLD data: ${error.message}`);
+    if (this.inflightFetch) {
+      return this.inflightFetch;
     }
 
-    this.cache = (data || []).map(mapSupabaseToCar);
-    this.hasLoaded = true;
-    this.notify();
-    return [...this.cache];
+    this.loading = true;
+    this.lastError = null;
+    this.notifyLoadState();
+
+    this.inflightFetch = (async () => {
+      try {
+        // 1. Primary relational query
+        const { data, error } = await supabase
+          .from('cars')
+          .select(`
+            *,
+            car_media (*),
+            car_images (*),
+            dealers (*)
+          `)
+          .order('created_at', { ascending: false });
+
+        let resolvedRows: any[] | null = null;
+
+        if (!error && Array.isArray(data)) {
+          resolvedRows = data;
+        } else {
+          // 2. Fallback when relational FKs or join permissions fail (e.g. PGRST200)
+          console.warn(
+            '[carService] Relational cars query failed; falling back to decoupled table fetch:',
+            error?.message
+          );
+          let fallbackQuery = await supabase
+            .from('cars')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (fallbackQuery.error) {
+            fallbackQuery = await supabase.from('cars').select('*');
+          }
+
+          if (fallbackQuery.error) {
+            throw new Error(`Unable to load vehicle inventory: ${fallbackQuery.error.message}`);
+          }
+
+          resolvedRows = await this.enrichCarsFromSeparateTables(fallbackQuery.data || []);
+        }
+
+        this.cache = (resolvedRows || []).map(mapSupabaseToCar);
+        this.hasLoaded = true;
+        this.loading = false;
+        this.lastError = null;
+        this.notify();
+        this.notifyLoadState();
+        return [...this.cache];
+      } catch (err: any) {
+        this.hasLoaded = true;
+        this.loading = false;
+        this.lastError = err?.message || 'Unable to load vehicle inventory.';
+        this.notifyLoadState();
+        throw err;
+      } finally {
+        this.inflightFetch = null;
+      }
+    })();
+
+    return this.inflightFetch;
   }
 
   public getCarsSync(): Car[] {
@@ -171,11 +379,17 @@ class CarService {
       .eq('id', id)
       .maybeSingle();
 
-    if (error) {
-      throw new Error(`Failed to load vehicle from Supabase: ${error.message}`);
+    if (!error) {
+      return data ? mapSupabaseToCar(data) : null;
     }
 
-    return data ? mapSupabaseToCar(data) : null;
+    const fallback = await supabase.from('cars').select('*').eq('id', id).maybeSingle();
+    if (fallback.error) {
+      throw new Error(`Failed to load vehicle: ${fallback.error.message}`);
+    }
+    if (!fallback.data) return null;
+    const [enriched] = await this.enrichCarsFromSeparateTables([fallback.data]);
+    return enriched ? mapSupabaseToCar(enriched) : null;
   }
 
   public async getCarBySlug(slug: string): Promise<Car | null> {
@@ -194,11 +408,17 @@ class CarService {
       .eq('slug', slug)
       .maybeSingle();
 
-    if (error) {
-      throw new Error(`Failed to load vehicle from Supabase: ${error.message}`);
+    if (!error) {
+      return data ? mapSupabaseToCar(data) : null;
     }
 
-    return data ? mapSupabaseToCar(data) : null;
+    const fallback = await supabase.from('cars').select('*').eq('slug', slug).maybeSingle();
+    if (fallback.error) {
+      throw new Error(`Failed to load vehicle: ${fallback.error.message}`);
+    }
+    if (!fallback.data) return null;
+    const [enriched] = await this.enrichCarsFromSeparateTables([fallback.data]);
+    return enriched ? mapSupabaseToCar(enriched) : null;
   }
 
   /**

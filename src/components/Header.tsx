@@ -51,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
     { label: '3D World', route: '/' },
     { label: 'Marketplace', route: '/car-marketplace' },
     { label: 'Cars', route: '/cars' },
+    { label: 'Dealers', route: '/dealers' },
     { label: 'Car Hunt', route: '/car-hunt' },
     { label: 'Reviews', route: '/reviews' },
     { label: 'Sell a Car', route: '/sell-a-car' },
@@ -100,14 +101,17 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Desktop Navigation (Visible on lg: 1024px+) */}
-            <nav className="hidden lg:flex items-center gap-5 xl:gap-7">
+            <nav className="hidden lg:flex items-center gap-4 xl:gap-6">
               {navItems.map((item) => {
-                const isActive = currentRoute === item.route;
+                const isActive =
+                  currentRoute === item.route ||
+                  (item.route === '/dealers' && currentRoute === '/:dealerSlug') ||
+                  (item.route === '/cars' && currentRoute === '/cars/:slug');
                 return (
                   <button
                     key={item.label}
                     onClick={() => handleNavClick(item.route)}
-                    className={`text-xs xl:text-sm font-medium tracking-wide transition-colors relative py-1 whitespace-nowrap ${
+                    className={`text-xs xl:text-sm font-medium tracking-wide transition-colors relative py-1 whitespace-nowrap shrink-0 ${
                       isActive
                         ? 'text-white font-semibold'
                         : 'text-gray-300 hover:text-white'
@@ -224,7 +228,10 @@ export const Header: React.FC<HeaderProps> = ({
                 </p>
 
                 {navItems.map((item) => {
-                  const isActive = currentRoute === item.route;
+                  const isActive =
+                    currentRoute === item.route ||
+                    (item.route === '/dealers' && currentRoute === '/:dealerSlug') ||
+                    (item.route === '/cars' && currentRoute === '/cars/:slug');
                   return (
                     <button
                       key={item.label}

@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, SlidersHorizontal, X, RotateCcw, ChevronDown, Compass, Filter } from 'lucide-react';
+import { Search, X, RotateCcw, Compass, Filter, RefreshCw, AlertCircle } from 'lucide-react';
 import { VideoCarCard } from '../components/VideoCarCard';
 import { BodyTypeCategory, Car, CarBrand, FilterState } from '../types';
-import { BODY_TYPES, NIGERIAN_LOCATIONS, PRICE_OPTIONS } from '../data/brandsAndTypes';
+import { BODY_TYPES, NIGERIAN_LOCATIONS } from '../data/brandsAndTypes';
 import { brandService } from '../services/brandService';
 import { categoryService } from '../services/categoryService';
 import { modelService } from '../services/modelService';
-import { FORMAT_NUMBER } from '../data/mockCars';
+import { carService, CarServiceLoadState } from '../services/carService';
 import { VehicleIntelligenceSearchBar } from '../components/ai/VehicleIntelligenceSearchBar';
 
 interface ListingsPageProps {
@@ -60,6 +60,17 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
     return syncTypes.length > 0 ? syncTypes : (BODY_TYPES as unknown as BodyTypeCategory[]);
   });
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [loadState, setLoadState] = useState<CarServiceLoadState>(() => carService.getLoadState());
+
+  useEffect(() => {
+    const unsubLoad = carService.subscribeLoadState((state) => {
+      setLoadState(state);
+    });
+    if (!carService.getLoadState().hasLoaded || cars.length === 0) {
+      carService.getCars().catch(() => {});
+    }
+    return () => unsubLoad();
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -222,40 +233,43 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
         />
 
         {/* Top Search & Filter Bar */}
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Keyword Search */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3.5" />
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={filters.searchQuery}
               onChange={(e) => updateFilter('searchQuery', e.target.value)}
               placeholder="Search make, model, trim or location (e.g. Prado, Lekki, AMG)..."
-              className="w-full h-10 pl-9 pr-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-900 focus:bg-white focus:border-[#071A2B] outline-none"
+              className="w-full h-11 pl-9 pr-9 bg-gray-50 border border-gray-200 rounded-lg text-xs sm:text-sm text-gray-900 focus:bg-white focus:border-[#071A2B] outline-none"
             />
             {filters.searchQuery && (
               <button
+                type="button"
                 onClick={() => updateFilter('searchQuery', '')}
-                className="absolute right-3 top-3 text-gray-400 hover:text-gray-700"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                aria-label="Clear search"
               >
                 <X className="w-4 h-4" />
               </button>
             )}
           </div>
 
-          <div className="flex items-center justify-between md:justify-end gap-3">
+          <div className="flex flex-wrap sm:flex-nowrap items-center justify-between md:justify-end gap-2.5 sm:gap-3">
             {/* Mobile Filter Toggle Button */}
             <button
+              type="button"
               onClick={() => setMobileFilterOpen(true)}
-              className="lg:hidden inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-xs font-bold text-gray-800"
+              className="lg:hidden h-11 inline-flex items-center gap-1.5 px-3.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold text-gray-800 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Filter className="w-4 h-4" />
-              <span>Filters ({activeChips.length})</span>
+              <span>Filters{activeChips.length > 0 ? ` (${activeChips.length})` : ''}</span>
             </button>
 
             {/* Results Counter */}
-            <span className="text-xs font-semibold text-gray-600 tabular-nums">
-              {filteredCars.length} cars found
+            <span className="text-xs font-semibold text-gray-600 tabular-nums whitespace-nowrap">
+              {filteredCars.length} {filteredCars.length === 1 ? 'car' : 'cars'} found
             </span>
 
             {/* Sort Dropdown */}
@@ -264,7 +278,8 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
-                className="h-10 px-3 bg-gray-50 border border-gray-200 rounded text-xs font-semibold text-gray-800 focus:bg-white focus:border-[#071A2B] outline-none cursor-pointer"
+                aria-label="Sort vehicles"
+                className="h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:bg-white focus:border-[#071A2B] outline-none cursor-pointer"
               >
                 <option value="newest">Newest First</option>
                 <option value="price_asc">Price: Low to High</option>
@@ -474,10 +489,49 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
             </div>
           </aside>
 
-          {/* Right: Video-First Vehicle Grid (3 cols on desktop) */}
+          {/* Right: Video-First Vehicle Grid */}
           <div className="lg:col-span-3 space-y-8">
-            {filteredCars.length === 0 ? (
-              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center space-y-4 shadow-sm">
+            {loadState.loading && cars.length === 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
+                {[0, 1, 2, 3, 4, 5].map((idx) => (
+                  <div
+                    key={idx}
+                    className="bg-white rounded-xl border border-gray-200 overflow-hidden animate-pulse"
+                  >
+                    <div className="aspect-[16/9] bg-gray-200" />
+                    <div className="p-4 space-y-3">
+                      <div className="h-4 bg-gray-200 rounded w-3/4" />
+                      <div className="h-3 bg-gray-100 rounded w-1/2" />
+                      <div className="pt-2 border-t border-gray-100 flex justify-between items-center">
+                        <div className="h-5 bg-gray-200 rounded w-1/3" />
+                        <div className="h-9 bg-gray-200 rounded w-1/3" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : loadState.error && cars.length === 0 ? (
+              <div className="bg-white rounded-xl border border-red-200 p-8 sm:p-10 text-center space-y-4 shadow-sm">
+                <div className="w-14 h-14 rounded-full bg-red-50 text-[#EF233C] mx-auto flex items-center justify-center">
+                  <AlertCircle className="w-7 h-7" />
+                </div>
+                <h3 className="text-lg font-bold text-[#071A2B] font-display">
+                  Unable to Load Live Inventory
+                </h3>
+                <p className="text-xs sm:text-sm text-gray-500 max-w-md mx-auto">
+                  {loadState.error}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void carService.getCars()}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#071A2B] hover:bg-[#0B2239] text-white text-xs font-bold uppercase tracking-wider rounded-lg transition cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Loading Cars</span>
+                </button>
+              </div>
+            ) : filteredCars.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-8 sm:p-12 text-center space-y-4 shadow-sm">
                 <div className="w-16 h-16 rounded-full bg-red-50 text-[#EF233C] mx-auto flex items-center justify-center">
                   <Compass className="w-8 h-8" />
                 </div>
@@ -488,16 +542,18 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
                   Try changing your filters or let MANIFOLD source and physically inspect one for you
                   from our verified dealer network.
                 </p>
-                <div className="pt-2 flex items-center justify-center gap-3">
+                <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
                   <button
+                    type="button"
                     onClick={clearAllFilters}
-                    className="px-4 py-2 border border-gray-300 rounded text-xs font-bold text-gray-700 hover:bg-gray-50"
+                    className="h-10 px-4 border border-gray-300 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 whitespace-nowrap cursor-pointer"
                   >
                     Reset Filters
                   </button>
                   <button
+                    type="button"
                     onClick={() => navigate('/car-hunt')}
-                    className="px-5 py-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded shadow"
+                    className="h-10 px-5 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow whitespace-nowrap cursor-pointer"
                   >
                     Start a Car Hunt
                   </button>
@@ -505,7 +561,7 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
                   {filteredCars.slice(0, visibleCount).map((car) => (
                     <VideoCarCard
                       key={car.id}
@@ -523,8 +579,9 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
                 {visibleCount < filteredCars.length && (
                   <div className="text-center pt-4">
                     <button
+                      type="button"
                       onClick={() => setVisibleCount((prev) => prev + 6)}
-                      className="px-8 py-3 bg-white hover:bg-gray-50 text-[#071A2B] text-xs font-bold uppercase tracking-wider rounded border border-gray-300 shadow-sm transition"
+                      className="px-8 py-3 bg-white hover:bg-gray-50 text-[#071A2B] text-xs font-bold uppercase tracking-wider rounded-lg border border-gray-300 shadow-sm transition cursor-pointer"
                     >
                       Load More Vehicles ({filteredCars.length - visibleCount} remaining)
                     </button>
@@ -536,26 +593,39 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
         </div>
       </div>
 
-      {/* Mobile Filter Slide-Over Drawer */}
+      {/* Mobile Filter Slide-Over Drawer (Full parity with Desktop filters) */}
       {mobileFilterOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm lg:hidden flex justify-end">
-          <div className="w-full max-w-xs bg-white h-full overflow-y-auto p-5 space-y-5 shadow-2xl flex flex-col justify-between">
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm lg:hidden flex justify-end"
+          onClick={() => setMobileFilterOpen(false)}
+        >
+          <div
+            className="w-full max-w-xs sm:max-w-sm bg-white h-full overflow-y-auto p-5 space-y-5 shadow-2xl flex flex-col justify-between"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-gray-200">
                 <span className="font-bold text-sm text-[#071A2B] uppercase">Filter Cars</span>
-                <button onClick={() => setMobileFilterOpen(false)}>
-                  <X className="w-5 h-5 text-gray-500" />
+                <button
+                  type="button"
+                  onClick={() => setMobileFilterOpen(false)}
+                  className="p-2 text-gray-500 hover:text-gray-800 rounded-lg hover:bg-gray-100"
+                  aria-label="Close filters"
+                >
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Filters in mobile view */}
-              <div className="space-y-3 text-xs">
+              <div className="space-y-3.5 text-xs">
                 <div>
                   <label className="font-bold text-gray-600 block mb-1">Make</label>
                   <select
                     value={filters.make}
-                    onChange={(e) => updateFilter('make', e.target.value)}
-                    className="w-full h-9 px-2 bg-gray-50 border border-gray-200 rounded text-xs"
+                    onChange={(e) => {
+                      updateFilter('make', e.target.value);
+                      updateFilter('model', '');
+                    }}
+                    className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-xs"
                   >
                     <option value="">All Makes</option>
                     {brands.map((b) => (
@@ -567,11 +637,28 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
                 </div>
 
                 <div>
+                  <label className="font-bold text-gray-600 block mb-1">Model</label>
+                  <select
+                    value={filters.model}
+                    onChange={(e) => updateFilter('model', e.target.value)}
+                    disabled={!filters.make}
+                    className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-xs disabled:opacity-50"
+                  >
+                    <option value="">{filters.make ? 'All Models' : 'Select Make First'}</option>
+                    {availableModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
                   <label className="font-bold text-gray-600 block mb-1">Body Type</label>
                   <select
                     value={filters.bodyType}
                     onChange={(e) => updateFilter('bodyType', e.target.value)}
-                    className="w-full h-9 px-2 bg-gray-50 border border-gray-200 rounded text-xs"
+                    className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-xs"
                   >
                     <option value="">All Types</option>
                     {bodyTypes.map((bt) => (
@@ -587,10 +674,10 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
                   <select
                     value={filters.condition}
                     onChange={(e) => updateFilter('condition', e.target.value)}
-                    className="w-full h-9 px-2 bg-gray-50 border border-gray-200 rounded text-xs"
+                    className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-xs"
                   >
                     <option value="">Any Condition</option>
-                    <option value="Foreign Used">Foreign Used</option>
+                    <option value="Foreign Used">Foreign Used (Tokunbo)</option>
                     <option value="Brand New">Brand New</option>
                     <option value="Nigerian Used">Nigerian Used</option>
                   </select>
@@ -603,29 +690,79 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
                     onChange={(e) =>
                       updateFilter('maxPrice', e.target.value === '' ? '' : Number(e.target.value))
                     }
-                    className="w-full h-9 px-2 bg-gray-50 border border-gray-200 rounded text-xs"
+                    className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-xs"
                   >
-                    <option value="">Any</option>
-                    <option value="30000000">Up to ₦30M</option>
-                    <option value="50000000">Up to ₦50M</option>
-                    <option value="100000000">Up to ₦100M</option>
+                    <option value="">Any Price</option>
+                    <option value="20000000">Up to ₦20,000,000</option>
+                    <option value="30000000">Up to ₦30,000,000</option>
+                    <option value="40000000">Up to ₦40,000,000</option>
+                    <option value="60000000">Up to ₦60,000,000</option>
+                    <option value="80000000">Up to ₦80,000,000</option>
+                    <option value="150000000">Up to ₦150,000,000</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-gray-600 block mb-1">Location</label>
+                  <select
+                    value={filters.location}
+                    onChange={(e) => updateFilter('location', e.target.value)}
+                    className="w-full h-11 px-3 bg-gray-50 border border-gray-200 rounded-lg text-xs"
+                  >
+                    <option value="">All Locations</option>
+                    {NIGERIAN_LOCATIONS.filter((l) => l !== 'All Locations').map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <div>
+                    <label className="font-bold text-gray-600 block mb-1">Gearbox</label>
+                    <select
+                      value={filters.transmission}
+                      onChange={(e) => updateFilter('transmission', e.target.value)}
+                      className="w-full h-11 px-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs"
+                    >
+                      <option value="">Any</option>
+                      <option value="Automatic">Automatic</option>
+                      <option value="Manual">Manual</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-gray-600 block mb-1">Fuel</label>
+                    <select
+                      value={filters.fuelType}
+                      onChange={(e) => updateFilter('fuelType', e.target.value)}
+                      className="w-full h-11 px-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs"
+                    >
+                      <option value="">Any</option>
+                      <option value="Petrol">Petrol</option>
+                      <option value="Diesel">Diesel</option>
+                      <option value="Hybrid">Hybrid</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="pt-4 border-t border-gray-200 flex gap-2">
+            <div className="pt-4 border-t border-gray-200 flex gap-2.5 sticky bottom-0 bg-white">
               <button
+                type="button"
                 onClick={clearAllFilters}
-                className="flex-1 py-2.5 border border-gray-300 rounded text-xs font-bold text-gray-700"
+                className="flex-1 h-11 border border-gray-300 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
               >
                 Reset
               </button>
               <button
+                type="button"
                 onClick={() => setMobileFilterOpen(false)}
-                className="flex-1 py-2.5 bg-[#EF233C] text-white rounded text-xs font-bold uppercase"
+                className="flex-1 h-11 bg-[#EF233C] text-white rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer"
               >
-                Apply
+                Apply ({filteredCars.length})
               </button>
             </div>
           </div>

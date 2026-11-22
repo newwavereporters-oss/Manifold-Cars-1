@@ -5,6 +5,8 @@ import { HomePage } from './pages/HomePage';
 import { ManifoldWorldPage } from './pages/ManifoldWorldPage';
 import { ListingsPage } from './pages/ListingsPage';
 import { CarDetailPage } from './pages/CarDetailPage';
+import { DealersDirectoryPage } from './pages/DealersDirectoryPage';
+import { DealerStorefrontPage } from './pages/DealerStorefrontPage';
 import { CarHuntPage } from './pages/CarHuntPage';
 import { ReviewsPage } from './pages/ReviewsPage';
 import { SellCarPage } from './pages/SellCarPage';
@@ -28,7 +30,7 @@ import { DealerEditCarPage } from './pages/dealer/DealerEditCarPage';
 import { DealerOfferPage } from './pages/dealer/DealerOfferPage';
 import { DealerEnquiriesPage } from './pages/dealer/DealerEnquiriesPage';
 import { DealerBusinessProfilePage } from './pages/dealer/DealerBusinessProfilePage';
-import { carService } from './services/carService';
+import { carService, isPublicMarketplaceCar } from './services/carService';
 import { InquiryModal } from './components/InquiryModal';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
 import { FavoritesDrawer } from './components/FavoritesDrawer';
@@ -40,6 +42,8 @@ import {
   parseManifoldRoute,
   ParsedRouteResult,
 } from './utils/routing';
+import { engineAudio } from './utils/engineAudio';
+import { musicLibrary } from './utils/musicLibraryService';
 import { Car, FilterState } from './types';
 import { YouTubeMediaItem } from './data/brandsAndTypes';
 import { Loader2 } from 'lucide-react';
@@ -72,6 +76,16 @@ export function App() {
     });
     return () => unsub();
   }, []);
+
+  // Ensure all 3D game engine and music audio stop immediately when leaving `/`
+  useEffect(() => {
+    if (currentRoute !== '/') {
+      engineAudio.stop();
+      musicLibrary.pause();
+    }
+  }, [currentRoute]);
+
+  const publicCars = React.useMemo(() => cars.filter(isPublicMarketplaceCar), [cars]);
 
   // Favorites state with localStorage persistence (harmless UI preference)
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -275,7 +289,7 @@ export function App() {
     navigate('/cars');
   };
 
-  const favoriteCars = cars.filter((c) => favorites.includes(c.id));
+  const favoriteCars = publicCars.filter((c) => favorites.includes(c.id));
 
   // Strictly resolve requested vehicle; never fall back to cars[0]
   const activeCar = selectedCarSlug
@@ -394,7 +408,7 @@ export function App() {
         {routeState.isKnownRoute &&
           (currentRoute === '/car-marketplace' || currentRoute === '/marketplace') && (
             <HomePage
-              cars={cars}
+              cars={publicCars}
               favorites={favorites}
               onToggleFavorite={toggleFavorite}
               onSelectCar={handleSelectCar}
@@ -409,7 +423,8 @@ export function App() {
 
         {routeState.isKnownRoute && currentRoute === '/cars' && (
           <ListingsPage
-            cars={cars}
+            key={`cars-${routeState.queryString}-${filters.make}-${filters.bodyType}-${filters.searchQuery}`}
+            cars={publicCars}
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
             onSelectCar={handleSelectCar}
@@ -426,13 +441,13 @@ export function App() {
             <div className="min-h-screen bg-[#F7F8FA] pt-32 pb-20 flex flex-col items-center justify-center">
               <Loader2 className="w-8 h-8 animate-spin text-[#EF233C] mb-3" />
               <p className="text-xs uppercase tracking-widest font-bold text-gray-500">
-                Retrieving Verified Vehicle from Supabase...
+                Loading Verified Vehicle...
               </p>
             </div>
           ) : activeCar ? (
             <CarDetailPage
               car={activeCar}
-              allCars={cars}
+              allCars={publicCars}
               isFavorite={favorites.includes(activeCar.id)}
               onToggleFavorite={toggleFavorite}
               onInterested={(car) => handleOpenInquiry(car)}
@@ -457,13 +472,30 @@ export function App() {
           )
         )}
 
+        {routeState.isKnownRoute && currentRoute === '/dealers' && (
+          <DealersDirectoryPage cars={publicCars} navigate={navigate} />
+        )}
+
+        {routeState.isKnownRoute && currentRoute === '/:dealerSlug' && routeState.dealerSlug && (
+          <DealerStorefrontPage
+            dealerSlug={routeState.dealerSlug}
+            cars={publicCars}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
+            onSelectCar={handleSelectCar}
+            onPlayVideo={handlePlayCarVideo}
+            onInterested={(car) => handleOpenInquiry(car)}
+            navigate={navigate}
+          />
+        )}
+
         {routeState.isKnownRoute && currentRoute === '/car-hunt' && (
           <CarHuntPage navigate={navigate} />
         )}
 
         {routeState.isKnownRoute && currentRoute === '/reviews' && (
           <ReviewsPage
-            cars={cars}
+            cars={publicCars}
             onPlayMedia={handlePlayMediaVideo}
             onSelectCar={handleSelectCar}
             navigate={navigate}
@@ -488,7 +520,7 @@ export function App() {
         <AiAutomotiveAssistant
           surface={currentRoute === '/cars/:slug' ? 'car_detail' : 'marketplace'}
           focusedCar={currentRoute === '/cars/:slug' ? activeCar : null}
-          allCars={cars}
+          allCars={publicCars}
           navigate={navigate}
           onOpenInquiry={handleOpenInquiry}
           externalOpenSignal={assistantSignal}
@@ -566,7 +598,7 @@ export function App() {
             searchQuery: '',
           })
         }
-        totalMatchingCars={cars.length}
+        totalMatchingCars={publicCars.length}
         onApply={() => navigate('/cars')}
       />
     </div>

@@ -6,11 +6,24 @@ import {
   DealerTableStatus,
   resolveDealerApprovalState,
 } from './dealerOnboardingService';
+import { assignDealerPermalinkSlugs, slugifyBusinessName } from '../utils/dealerSlug';
 
 export interface DealerFullRecord extends DealerInfo {
   address?: string;
   phone?: string;
   email?: string;
+}
+
+export interface PublicDealerRecord {
+  id: string;
+  name: string;
+  slug?: string | null;
+  permalinkSlug: string;
+  city: string;
+  state: string;
+  verified_partner: boolean;
+  dealer_status?: string;
+  joined_year: number;
 }
 
 export interface AdminDealerAccountRecord {
@@ -222,6 +235,48 @@ export function buildDealerDirectoryFromTables(params: {
 
 class DealerService {
   private cache: DealerFullRecord[] = [];
+  private publicCache: PublicDealerRecord[] = [];
+
+  public async getPublicDealers(): Promise<PublicDealerRecord[]> {
+    if (!checkIsSupabaseConfigured()) {
+      return [];
+    }
+
+    const { data, error } = await supabase.from('dealers').select('*');
+    if (error) {
+      throw new Error(`Unable to load dealers directory: ${error.message}`);
+    }
+
+    const baseRows = (data || [])
+      .filter((d: any) => {
+        const st = String(d?.dealer_status || '').trim().toLowerCase();
+        return st !== 'disapproved' && st !== 'suspended';
+      })
+      .map((d: any) => ({
+        id: String(d.id),
+        name: (d.business_name || d.name || 'MANIFOLD Partner Dealership').trim(),
+        slug: d.slug || null,
+        city: d.city || 'Lagos',
+        state: d.state || 'Lagos',
+        verified_partner:
+          d.dealer_status === 'approved'
+            ? true
+            : Boolean(d.is_verified ?? d.verified_partner ?? false),
+        dealer_status: d.dealer_status || undefined,
+        joined_year: Number(d.joined_year) || 2024,
+      }));
+
+    const withPermalinks = assignDealerPermalinkSlugs(baseRows).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+
+    this.publicCache = withPermalinks;
+    return [...this.publicCache];
+  }
+
+  public getPublicDealersSync(): PublicDealerRecord[] {
+    return [...this.publicCache];
+  }
 
   public async getDealers(allowSeed = true): Promise<DealerFullRecord[]> {
     if (!checkIsSupabaseConfigured()) {
@@ -552,7 +607,13 @@ class DealerService {
       (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `00000000-0000-4000-8000-${Date.now().toString().padStart(12, '0').slice(-12)}`);
-    const slug = `${cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString(36)}`;
+    const baseSlug = slugifyBusinessName(cleanName);
+    const { data: existingSlugRow } = await supabase
+      .from('dealers')
+      .select('id')
+      .eq('slug', baseSlug)
+      .maybeSingle();
+    const slug = existingSlugRow ? `${baseSlug}-${id.slice(0, 4).toLowerCase()}` : baseSlug;
 
     // Try business_name schema first, then fallback to name schema
     let { error } = await supabase.from('dealers').insert({

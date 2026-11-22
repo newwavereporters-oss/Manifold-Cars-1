@@ -25,8 +25,13 @@ import {
   Loader2,
   Lock,
   XCircle,
+  Link2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
+import { dealerService } from '../../services/dealerService';
+import { slugifyBusinessName } from '../../utils/dealerSlug';
 
 interface DealerCarsPageProps {
   navigate: (route: string) => void;
@@ -51,6 +56,10 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
   const [assigningCarId, setAssigningCarId] = useState<string | null>(null);
   const [replacePromptCar, setReplacePromptCar] = useState<DealerCarRecord | null>(null);
   const [billboardToast, setBillboardToast] = useState<string | null>(null);
+  const [showroomSlug, setShowroomSlug] = useState<string>(() =>
+    slugifyBusinessName(dealerAccount?.businessName || 'your-dealership')
+  );
+  const [copiedShowroomLink, setCopiedShowroomLink] = useState(false);
   const [persistenceNotice, setPersistenceNotice] = useState<{
     action: 'created' | 'updated';
     id: string;
@@ -106,6 +115,43 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
       mounted = false;
     };
   }, [dealerAccount?.dealerId]);
+
+  useEffect(() => {
+    let mounted = true;
+    const fallbackSlug = slugifyBusinessName(dealerAccount?.businessName || 'your-dealership');
+    setShowroomSlug(fallbackSlug);
+
+    if (dealerAccount?.dealerId) {
+      dealerService
+        .getPublicDealers()
+        .then((list) => {
+          if (!mounted) return;
+          const match = list.find((d) => d.id === dealerAccount.dealerId);
+          if (match?.permalinkSlug) {
+            setShowroomSlug(match.permalinkSlug);
+          }
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      mounted = false;
+    };
+  }, [dealerAccount?.dealerId, dealerAccount?.businessName]);
+
+  const showroomPath = `/${showroomSlug}`;
+  const showroomFullUrl =
+    typeof window !== 'undefined' ? `${window.location.origin}${showroomPath}` : showroomPath;
+
+  const handleCopyShowroomLink = async () => {
+    try {
+      await navigator.clipboard.writeText(showroomFullUrl);
+      setCopiedShowroomLink(true);
+      setTimeout(() => setCopiedShowroomLink(false), 2400);
+    } catch {
+      setCopiedShowroomLink(false);
+    }
+  };
 
   const activeBillboardVehicleIds = new Set(
     (billboardState?.assignments || []).filter((a) => a.status === 'active').map((a) => a.vehicle_id)
@@ -166,17 +212,47 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
             </p>
           </div>
 
-          <button
-            onClick={() => navigate('/dealer/cars/new')}
-            className={`px-5 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shrink-0 ${
-              isApproved
-                ? 'bg-[#EF233C] hover:bg-[#D90429] text-white shadow-lg shadow-red-900/30'
-                : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
-            }`}
-          >
-            {isApproved ? <PlusCircle className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-            <span>{isApproved ? 'List a Vehicle' : 'Listing Locked (Approval Required)'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleCopyShowroomLink}
+              className="h-11 px-3.5 bg-[#F7F8FA] hover:bg-gray-100 text-[#071A2B] border border-gray-200 text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 whitespace-nowrap shrink-0"
+              title={showroomFullUrl}
+            >
+              {copiedShowroomLink ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span className="text-emerald-700">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 text-[#EF233C]" />
+                  <span>Copy Showroom Link</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate(showroomPath)}
+              className="h-11 px-3.5 bg-[#071A2B] hover:bg-[#0c263e] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 whitespace-nowrap shrink-0"
+            >
+              <Link2 className="w-4 h-4 text-[#EF233C]" />
+              <span>{showroomPath}</span>
+            </button>
+
+            <button
+              onClick={() => navigate('/dealer/cars/new')}
+              className={`h-11 px-5 text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 whitespace-nowrap shrink-0 ${
+                isApproved
+                  ? 'bg-[#EF233C] hover:bg-[#D90429] text-white shadow-lg shadow-red-900/30'
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
+              }`}
+            >
+              {isApproved ? <PlusCircle className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+              <span>{isApproved ? 'List a Vehicle' : 'Listing Locked (Approval Required)'}</span>
+            </button>
+          </div>
         </div>
 
         {/* NON-BLOCKING APPROVAL NOTICE */}

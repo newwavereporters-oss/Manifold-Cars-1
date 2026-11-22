@@ -508,6 +508,15 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     }
   }, [worldStage]);
 
+  // Guarantee all game sound (engine, horn, radio, and music tracks) stops immediately on leaving the 3D world
+  useEffect(() => {
+    return () => {
+      hasAutoStartedMusicRef.current = false;
+      engineAudio.stop();
+      musicLibrary.pause();
+    };
+  }, []);
+
   // Multiplayer Session Lifecycle (runs strictly when player is active inside GAME)
   useEffect(() => {
     if (worldStage !== 'GAME' || !playerProfile) {

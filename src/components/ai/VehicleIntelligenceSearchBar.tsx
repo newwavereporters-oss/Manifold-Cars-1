@@ -211,9 +211,9 @@ export const VehicleIntelligenceSearchBar: React.FC<VehicleIntelligenceSearchBar
   return (
     <div className="mb-6 space-y-4">
       <div className="bg-gradient-to-r from-[#071A2B] via-[#0B2239] to-[#071A2B] rounded-2xl p-4 sm:p-5 text-white border border-white/10 shadow-lg space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-[#EF233C]" />
+            <Sparkles className="w-4 h-4 text-[#EF233C] shrink-0" />
             <span className="text-xs font-extrabold uppercase tracking-wider">
               MANIFOLD Vehicle Intelligence Search
             </span>
@@ -236,7 +236,7 @@ export const VehicleIntelligenceSearchBar: React.FC<VehicleIntelligenceSearchBar
               type="text"
               value={queryText}
               onChange={(e) => setQueryText(e.target.value)}
-              placeholder='Try: "Tokunbo Lexus RX350 under 45M in Lekki" or tap the mic...'
+              placeholder='Try: "Tokunbo Lexus RX350 under 45M in Lekki" or tap Voice...'
               className="w-full h-11 pl-10 pr-9 bg-white text-gray-900 rounded-xl text-xs sm:text-sm font-medium outline-none focus:ring-2 focus:ring-[#EF233C]"
             />
             {queryText && (
@@ -251,12 +251,12 @@ export const VehicleIntelligenceSearchBar: React.FC<VehicleIntelligenceSearchBar
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {recording ? (
               <button
                 type="button"
                 onClick={stopVoiceCapture}
-                className="h-11 px-4 bg-[#EF233C] hover:bg-[#d91b32] ring-2 ring-red-400/60 text-white rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center gap-2 cursor-pointer shrink-0"
+                className="h-11 px-4 bg-[#EF233C] hover:bg-[#d91b32] ring-2 ring-red-400/60 text-white rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap shrink-0"
               >
                 <Square className="w-3.5 h-3.5 fill-current" />
                 <span>Stop ({recordSeconds}s)</span>
@@ -267,7 +267,7 @@ export const VehicleIntelligenceSearchBar: React.FC<VehicleIntelligenceSearchBar
                 onClick={startVoiceCapture}
                 disabled={transcribing || searching}
                 title="Search by voice"
-                className="h-11 px-3.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer shrink-0 disabled:opacity-50"
+                className="h-11 px-3.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
               >
                 {transcribing ? (
                   <>
@@ -277,7 +277,7 @@ export const VehicleIntelligenceSearchBar: React.FC<VehicleIntelligenceSearchBar
                 ) : (
                   <>
                     <Mic className="w-4 h-4 text-[#EF233C]" />
-                    <span className="hidden sm:inline">Voice</span>
+                    <span>Voice</span>
                   </>
                 )}
               </button>
@@ -286,7 +286,7 @@ export const VehicleIntelligenceSearchBar: React.FC<VehicleIntelligenceSearchBar
             <button
               type="submit"
               disabled={searching || transcribing}
-              className="h-11 px-5 bg-[#EF233C] hover:bg-[#d91b32] disabled:opacity-50 text-white rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center gap-2 transition cursor-pointer shrink-0"
+              className="flex-1 sm:flex-initial h-11 px-5 bg-[#EF233C] hover:bg-[#d91b32] disabled:opacity-50 text-white rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center justify-center gap-2 transition cursor-pointer whitespace-nowrap shrink-0"
             >
               {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               <span>AI Search</span>
@@ -300,7 +300,7 @@ export const VehicleIntelligenceSearchBar: React.FC<VehicleIntelligenceSearchBar
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11px]">
           <span className="text-gray-400">Try:</span>
           {EXAMPLE_QUERIES.map((example) => (
             <button
@@ -310,7 +310,7 @@ export const VehicleIntelligenceSearchBar: React.FC<VehicleIntelligenceSearchBar
                 setQueryText(example);
                 void executeAiSearch(example, 'text');
               }}
-              className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-gray-200 transition cursor-pointer"
+              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 transition cursor-pointer text-left"
             >
               {example}
             </button>

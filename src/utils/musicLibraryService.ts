@@ -294,6 +294,7 @@ class ManifoldMusicLibraryService {
   private htmlAudio: HTMLAudioElement | null = null;
   private currentAudioSrc: string | null = null;
   private unlockListenersBound = false;
+  private unlockHandler: (() => void) | null = null;
 
   // Dedicated Web Audio API synthesizer nodes for built-in grooves
   private ctx: AudioContext | null = null;
@@ -355,18 +356,25 @@ class ManifoldMusicLibraryService {
     }
   }
 
+  private clearAutoplayUnlock() {
+    if (typeof window === 'undefined' || !this.unlockListenersBound || !this.unlockHandler) return;
+    this.unlockListenersBound = false;
+    window.removeEventListener('pointerdown', this.unlockHandler);
+    window.removeEventListener('touchstart', this.unlockHandler);
+    window.removeEventListener('keydown', this.unlockHandler);
+    this.unlockHandler = null;
+  }
+
   private bindAutoplayUnlock() {
     if (typeof window === 'undefined' || this.unlockListenersBound) return;
     this.unlockListenersBound = true;
     const retryOnGesture = () => {
-      this.unlockListenersBound = false;
-      window.removeEventListener('pointerdown', retryOnGesture);
-      window.removeEventListener('touchstart', retryOnGesture);
-      window.removeEventListener('keydown', retryOnGesture);
+      this.clearAutoplayUnlock();
       if (this.isPlaying && this.htmlAudio && this.getActiveTrack().audioUrl) {
         this.htmlAudio.play().catch(() => {});
       }
     };
+    this.unlockHandler = retryOnGesture;
     window.addEventListener('pointerdown', retryOnGesture, { passive: true });
     window.addEventListener('touchstart', retryOnGesture, { passive: true });
     window.addEventListener('keydown', retryOnGesture, { passive: true });
@@ -406,6 +414,7 @@ class ManifoldMusicLibraryService {
   }
 
   private stopTransportOnly() {
+    this.clearAutoplayUnlock();
     if (this.stepTimer !== null) {
       window.clearInterval(this.stepTimer);
       this.stepTimer = null;
@@ -616,6 +625,11 @@ class ManifoldMusicLibraryService {
   public pause() {
     this.isPlaying = false;
     this.stopTransportOnly();
+    if (this.ctx && this.ctx.state !== 'closed') {
+      try {
+        void this.ctx.suspend();
+      } catch {}
+    }
     this.emit();
   }
 

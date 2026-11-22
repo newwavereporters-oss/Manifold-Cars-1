@@ -7,6 +7,7 @@ export interface ParsedRouteResult {
   scope: RouteScope;
   isKnownRoute: boolean;
   slug: string | null;
+  dealerSlug: string | null;
   editingCarId: string | null;
   dealerEditingCarId: string | null;
 }
@@ -16,11 +17,31 @@ const KNOWN_PUBLIC_EXACT = new Set([
   '/car-marketplace',
   '/marketplace',
   '/cars',
+  '/dealers',
   '/car-hunt',
   '/reviews',
   '/sell-a-car',
   '/services',
   '/about',
+]);
+
+const RESERVED_ROOT_SEGMENTS = new Set([
+  'api',
+  'assets',
+  'admin',
+  'dealer',
+  'dealers',
+  'cars',
+  'car-marketplace',
+  'marketplace',
+  'car-hunt',
+  'reviews',
+  'sell-a-car',
+  'services',
+  'about',
+  'favicon.ico',
+  'robots.txt',
+  'sitemap.xml',
 ]);
 
 const KNOWN_ADMIN_PREFIXES = [
@@ -133,6 +154,7 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
       scope: 'admin',
       isKnownRoute: true,
       slug: null,
+      dealerSlug: null,
       editingCarId: null,
       dealerEditingCarId: null,
     };
@@ -149,6 +171,7 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
           scope: 'admin',
           isKnownRoute: true,
           slug: null,
+          dealerSlug: null,
           editingCarId: id,
           dealerEditingCarId: null,
         };
@@ -166,6 +189,7 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
       scope: 'admin',
       isKnownRoute: matchesKnownAdmin,
       slug: null,
+      dealerSlug: null,
       editingCarId: null,
       dealerEditingCarId: null,
     };
@@ -183,6 +207,7 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
           scope: 'dealer',
           isKnownRoute: true,
           slug: null,
+          dealerSlug: null,
           editingCarId: null,
           dealerEditingCarId: id,
         };
@@ -199,6 +224,7 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
       scope: 'dealer',
       isKnownRoute: isKnownDealer,
       slug: null,
+      dealerSlug: null,
       editingCarId: null,
       dealerEditingCarId: null,
     };
@@ -215,6 +241,7 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
         scope: 'public',
         isKnownRoute: true,
         slug: decodeURIComponent(slug),
+        dealerSlug: null,
         editingCarId: null,
         dealerEditingCarId: null,
       };
@@ -226,6 +253,7 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
       scope: 'public',
       isKnownRoute: false,
       slug: null,
+      dealerSlug: null,
       editingCarId: null,
       dealerEditingCarId: null,
     };
@@ -241,12 +269,34 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
       scope: 'public',
       isKnownRoute: true,
       slug: null,
+      dealerSlug: null,
       editingCarId: null,
       dealerEditingCarId: null,
     };
   }
 
-  // 5. Unmatched 404 route
+  // 5. Public Dealer Showroom Permalink Route (/:dealerSlug)
+  const singleSegment = pathname.startsWith('/') ? pathname.slice(1) : pathname;
+  if (
+    singleSegment &&
+    !singleSegment.includes('/') &&
+    !singleSegment.includes('.') &&
+    !RESERVED_ROOT_SEGMENTS.has(singleSegment.toLowerCase())
+  ) {
+    return {
+      normalizedRoute: '/:dealerSlug',
+      pathname,
+      queryString,
+      scope: 'public',
+      isKnownRoute: true,
+      slug: null,
+      dealerSlug: decodeURIComponent(singleSegment),
+      editingCarId: null,
+      dealerEditingCarId: null,
+    };
+  }
+
+  // 6. Unmatched 404 route
   return {
     normalizedRoute: pathname,
     pathname,
@@ -254,6 +304,7 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
     scope: 'public',
     isKnownRoute: false,
     slug: null,
+    dealerSlug: null,
     editingCarId: null,
     dealerEditingCarId: null,
   };

@@ -148,6 +148,14 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
               </li>
               <li>
                 <button
+                  onClick={() => handleNav('/dealers')}
+                  className="hover:text-white transition-colors"
+                >
+                  Dealers Directory
+                </button>
+              </li>
+              <li>
+                <button
                   onClick={() => handleNav('/reviews')}
                   className="hover:text-white transition-colors"
                 >
