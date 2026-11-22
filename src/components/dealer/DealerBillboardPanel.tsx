@@ -164,10 +164,9 @@ export const DealerBillboardPanel: React.FC<DealerBillboardPanelProps> = ({
         <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-3 text-xs text-amber-900">
           <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
           <div>
-            <p className="font-bold">Game Billboard Database Migration Required</p>
+            <p className="font-bold">Game Billboard Placement Temporarily Unavailable</p>
             <p className="mt-0.5 text-amber-800">
-              Apply <code className="font-mono font-bold">src/db/manifold-game-expansion-migration.sql</code> in
-              your Supabase SQL Editor to enable live dealership billboard assignments.
+              Billboard slot management is currently being prepared for your dealership. Please check back shortly or contact MANIFOLD support.
             </p>
           </div>
         </div>

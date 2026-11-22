@@ -177,7 +177,7 @@ export const DealerGuard: React.FC<DealerGuardProps> = ({ children, navigate, cu
               <p className="text-sm text-gray-300 leading-relaxed">
                 {isDisapproved
                   ? `${businessName} is currently disapproved for posting new car listings. You can continue using your Dealer Dashboard and update your Business Profile until an administrator approves your account.`
-                  : `${businessName} has active Dealer Dashboard access, but posting new vehicle listings is enabled only after an administrator sets dealer_status to approved.`}
+                  : `${businessName} has active Dealer Dashboard access, but posting new vehicle listings is enabled only after an administrator approves your dealership account.`}
               </p>
             </div>
 

@@ -121,9 +121,6 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
   const publishedVehicles = overview
     ? overview.publishedVehicles
     : cars.filter((c) => c.status === 'PUBLISHED').length;
-  const inReviewVehicles = overview
-    ? overview.inReviewVehicles
-    : cars.filter((c) => c.status === 'PENDING_REVIEW').length;
   const draftVehicles = overview
     ? overview.draftVehicles
     : cars.filter((c) => c.status === 'DRAFT').length;
@@ -264,7 +261,7 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                     </div>
                     <p className="text-xs leading-relaxed opacity-90">
                       {approvalStatus === 'disapproved'
-                        ? 'You can continue using your dealer dashboard, updating your business profile, and reviewing enquiries. New car listing and review submissions are paused until an administrator re-approves your dealership.'
+                        ? 'You can continue using your dealer dashboard, updating your business profile, and reviewing enquiries. Adding and publishing new vehicles is paused until an administrator re-approves your dealership.'
                         : 'You have full access to your dealer dashboard and business profile. As soon as the MANIFOLD Admin approves your dealership account, car listing will unlock automatically.'}
                     </p>
                     {dealerAccount?.approvalNotes && (
@@ -358,7 +355,7 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
             )}
 
             {/* REAL STATS COUNTERS (NO FAKE DATA) */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
                 <div className="flex items-center justify-between text-gray-400 mb-2">
                   <span className="text-xs font-bold uppercase tracking-wider">Total Listed</span>
@@ -375,15 +372,6 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                 </div>
                 <div className="text-2xl font-extrabold text-[#071A2B]">{publishedVehicles}</div>
                 <p className="text-[11px] text-gray-500 mt-1">Live on MANIFOLD</p>
-              </div>
-
-              <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
-                <div className="flex items-center justify-between text-amber-600 mb-2">
-                  <span className="text-xs font-bold uppercase tracking-wider">In Review</span>
-                  <Clock className="w-4 h-4" />
-                </div>
-                <div className="text-2xl font-extrabold text-[#071A2B]">{inReviewVehicles}</div>
-                <p className="text-[11px] text-gray-500 mt-1">Awaiting inspection check</p>
               </div>
 
               <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">

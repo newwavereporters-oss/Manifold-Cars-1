@@ -348,7 +348,7 @@ export const DealerBusinessInfoPage: React.FC<DealerBusinessInfoPageProps> = ({ 
         {/* Security / Verification Assurance */}
         <div className="mt-4 text-center text-[11px] text-gray-500 flex items-center justify-center gap-1.5">
           <ShieldCheck className="w-4 h-4 text-emerald-500" />
-          <span>Application processed via PostgreSQL Security Definer RPC</span>
+          <span>Dealership application submitted securely</span>
         </div>
       </div>
     </div>

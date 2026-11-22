@@ -211,27 +211,24 @@ export function formatDealerSupabaseWriteError(
   let userMessage: string;
   if (code === '42501') {
     userMessage =
-      `Permission denied by database row-level security (${code}). Verify your dealership account is approved (account_status = active, dealer_status = approved) and your dealer RLS policies are applied. Detail: ${rawMessage}`;
-  } else if (code === '22P02') {
+      'You do not currently have permission to save this vehicle. Please verify your dealership account is active and approved.';
+  } else if (code === '22P02' || code === '23502' || code === '23514') {
     userMessage =
-      `Database rejected an identifier or field format (${code}): ${rawMessage}${details ? ` (${details})` : ''}.`;
-  } else if (code === '23502') {
-    userMessage =
-      `A required database column is missing or null (${code}): ${rawMessage}${details ? ` (${details})` : ''}.`;
+      'One or more vehicle details are invalid or incomplete. Please check your entries and try again.';
   } else if (code === '23503') {
     userMessage =
-      `Foreign-key reference validation failed (${code}): ${rawMessage}${details ? ` (${details})` : ''}.`;
+      'One of the selected vehicle options is no longer available. Please refresh the page and try again.';
   } else if (code === '23505') {
     userMessage =
-      `A duplicate vehicle identifier or slug conflicted (${code}): ${rawMessage}. Please retry.`;
-  } else if (code === '23514') {
-    userMessage =
-      `A vehicle field failed a database check constraint (${code}): ${rawMessage}${details ? ` (${details})` : ''}.`;
+      'This vehicle listing already exists. Please refresh your vehicle list before trying again.';
   } else if (code === 'PGRST204' || code === '42703') {
     userMessage =
-      `Database schema column mismatch (${code}): ${rawMessage}. Run src/db/cars-body-type-column-fix.sql and src/db/dealer-vehicle-persistence-fix.sql in Supabase SQL Editor to align columns.`;
+      'Unable to save vehicle right now. Please try again or contact MANIFOLD support.';
   } else {
-    userMessage = `Vehicle ${context.operation} failed${code ? ` (${code})` : ''}: ${rawMessage}${details ? ` — ${details}` : ''}`;
+    userMessage =
+      context.operation === 'update'
+        ? 'Unable to update vehicle right now. Please try again.'
+        : 'Unable to save vehicle right now. Please try again.';
   }
 
   return { userMessage, errorDetails };
@@ -333,8 +330,8 @@ class DealerVehicleService {
 
   /**
    * Creates a new vehicle record owned by the authenticated dealer
-   * Status is strictly controlled: 'DRAFT' or 'PENDING_REVIEW'
-   * The client CANNOT make a vehicle 'PUBLISHED', 'is_verified=true', or 'is_featured=true'
+   * Status is set directly: 'DRAFT' or 'PUBLISHED' (auto-approved)
+   * The client CANNOT self-set 'is_verified=true' or 'is_featured=true'
    */
   public async createDealerCar(
     input: DealerCarFormInput,
@@ -344,7 +341,7 @@ class DealerVehicleService {
     if (!isSupabaseConfigured) {
       return {
         car: null,
-        error: 'Supabase is not configured. Unable to persist vehicle record.',
+        error: 'Vehicle listing service is currently unavailable. Please try again later.',
       };
     }
 
@@ -393,8 +390,8 @@ class DealerVehicleService {
         });
         return {
           car: null,
-          error: dealerAccErr?.message
-            ? `Unable to verify dealership account (${dealerAccErr.code || 'lookup error'}): ${dealerAccErr.message}`
+          error: dealerAccErr
+            ? 'Unable to verify your dealership account right now. Please try again.'
             : 'A registered dealership account is required to list vehicles.',
         };
       }
@@ -475,8 +472,8 @@ class DealerVehicleService {
       }
       const thumb = vidId ? getYouTubeThumbnailUrl(vidId) : '';
 
-      // Security boundary: Enforcement of dealer ownership and status machine
-      const status: DealerCarRecord['status'] = isDraft ? 'DRAFT' : 'PENDING_REVIEW';
+      // Auto-approved listing: publishing sets status directly to 'PUBLISHED'
+      const status: DealerCarRecord['status'] = isDraft ? 'DRAFT' : 'PUBLISHED';
 
       const [resolvedBrandId, resolvedTypeId] = await Promise.all([
         this.resolveBrandUuid(input.brand_id, makeClean),
@@ -518,7 +515,7 @@ class DealerVehicleService {
         state: input.state?.trim() || 'Lagos',
         description: input.description?.trim() || '',
 
-        // PROTECTED FIELDS: Dealer cannot self-publish or self-verify
+        // Auto-approved live status; verification & featured flags remain admin-controlled
         status,
         is_verified: false,
         is_featured: false,
@@ -617,7 +614,7 @@ class DealerVehicleService {
             message: mediaErr.message,
             details: mediaErr.details,
           });
-          mediaWarnings.push(`Video metadata (${mediaErr.code || 'error'}): ${mediaErr.message}`);
+          mediaWarnings.push('Video details could not be attached');
         }
       }
 
@@ -636,7 +633,7 @@ class DealerVehicleService {
             message: img1Err.message,
             details: img1Err.details,
           });
-          mediaWarnings.push(`Photo 1 association (${img1Err.code || 'error'}): ${img1Err.message}`);
+          mediaWarnings.push('Primary photo could not be attached');
         }
       }
 
@@ -655,7 +652,7 @@ class DealerVehicleService {
             message: img2Err.message,
             details: img2Err.details,
           });
-          mediaWarnings.push(`Photo 2 association (${img2Err.code || 'error'}): ${img2Err.message}`);
+          mediaWarnings.push('Secondary photo could not be attached');
         }
       }
 
@@ -674,7 +671,7 @@ class DealerVehicleService {
         return {
           car: null,
           error:
-            'Vehicle submission could not be confirmed in the database (SELECT RLS check returned no row). Please check your vehicle list before retrying.',
+            'Unable to confirm your vehicle submission. Please check your vehicle list before retrying.',
           errorDetails: verifyDetails,
         };
       }
@@ -686,11 +683,10 @@ class DealerVehicleService {
         partialMediaError: mediaWarnings.length > 0 ? mediaWarnings.join(' | ') : null,
       };
     } catch (err: any) {
-      const msg = err instanceof Error ? err.message : 'Unexpected runtime error';
       console.error('[dealerVehicleService.createDealerCar] Unexpected exception:', err);
       return {
         car: null,
-        error: `Unexpected error while saving the vehicle: ${msg}`,
+        error: 'Unexpected error while saving the vehicle. Please try again.',
       };
     }
   }
@@ -708,7 +704,7 @@ class DealerVehicleService {
     if (!isSupabaseConfigured) {
       return {
         car: null,
-        error: 'Supabase is not configured. Unable to update vehicle record.',
+        error: 'Vehicle listing service is currently unavailable. Please try again later.',
       };
     }
 
@@ -793,8 +789,8 @@ class DealerVehicleService {
       }
       const thumb = vidId ? getYouTubeThumbnailUrl(vidId) : '';
 
-      // If existing vehicle is already published, a resubmission sets it to PENDING_REVIEW; drafts stay DRAFT
-      let nextStatus: DealerCarRecord['status'] = isDraft ? 'DRAFT' : 'PENDING_REVIEW';
+      // Publishing sets status directly to 'PUBLISHED'; already-published cars remain 'PUBLISHED' when saving edits
+      let nextStatus: DealerCarRecord['status'] = isDraft ? 'DRAFT' : 'PUBLISHED';
       if (existing.status === 'PUBLISHED' && isDraft) {
         nextStatus = 'PUBLISHED';
       }
@@ -924,7 +920,7 @@ class DealerVehicleService {
         });
         if (insMediaErr) {
           console.error('[dealerVehicleService.updateDealerCar] car_media insert failed:', insMediaErr);
-          mediaWarnings.push(`Video metadata (${insMediaErr.code || 'error'}): ${insMediaErr.message}`);
+          mediaWarnings.push('Video details could not be attached');
         }
       }
 
@@ -941,7 +937,7 @@ class DealerVehicleService {
           });
           if (img1Err) {
             console.error('[dealerVehicleService.updateDealerCar] car_images #1 insert failed:', img1Err);
-            mediaWarnings.push(`Photo 1 association (${img1Err.code || 'error'}): ${img1Err.message}`);
+            mediaWarnings.push('Primary photo could not be attached');
           }
         }
       }
@@ -958,7 +954,7 @@ class DealerVehicleService {
           });
           if (img2Err) {
             console.error('[dealerVehicleService.updateDealerCar] car_images #2 insert failed:', img2Err);
-            mediaWarnings.push(`Photo 2 association (${img2Err.code || 'error'}): ${img2Err.message}`);
+            mediaWarnings.push('Secondary photo could not be attached');
           }
         }
       }
@@ -969,7 +965,7 @@ class DealerVehicleService {
       if (!confirmedCar?.id) {
         return {
           car: null,
-          error: 'Vehicle update could not be verified on readback.',
+          error: 'Unable to confirm your vehicle update. Please refresh your vehicle list and check.',
         };
       }
 
@@ -980,11 +976,10 @@ class DealerVehicleService {
         partialMediaError: mediaWarnings.length > 0 ? mediaWarnings.join(' | ') : null,
       };
     } catch (err: any) {
-      const msg = err instanceof Error ? err.message : 'Unexpected runtime error';
       console.error('[dealerVehicleService.updateDealerCar] Unexpected exception:', err);
       return {
         car: null,
-        error: `Unexpected error while updating the vehicle: ${msg}`,
+        error: 'Unexpected error while updating the vehicle. Please try again.',
       };
     }
   }

@@ -263,7 +263,8 @@ class DealerOperationsService {
         .eq('id', enquiryId);
 
       if (updErr) {
-        return { success: false, error: updErr.message };
+        console.error('Error updating enquiry status:', updErr);
+        return { success: false, error: 'Unable to update enquiry status right now. Please try again.' };
       }
 
       return { success: true, error: null };

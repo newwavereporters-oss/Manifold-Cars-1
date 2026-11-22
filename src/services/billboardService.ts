@@ -212,18 +212,19 @@ export const billboardService = {
     replaceExisting = false
   ): Promise<{ success: boolean; alreadyActive?: boolean; errorCode?: string; message?: string }> {
     if (!isSupabaseConfigured) {
-      return { success: false, message: 'Supabase is not configured in this environment.' };
+      return { success: false, message: 'Billboard service is currently unavailable. Please try again later.' };
     }
     const { data, error } = await supabase.rpc('assign_vehicle_to_game_billboard', {
       p_vehicle_id: vehicleId,
       p_replace_existing: replaceExisting,
     });
     if (error) {
+      console.warn('[billboardService.assignVehicleToBillboard] Failed:', error);
       if (isMissingBillboardSchemaError(error)) {
         return {
           success: false,
           errorCode: 'SCHEMA_NOT_APPLIED',
-          message: 'Run src/db/manifold-game-expansion-migration.sql in your Supabase SQL Editor first.',
+          message: 'Billboard placement is currently unavailable for your dealership. Please try again later.',
         };
       }
       if (error.message.includes('BILLBOARD_SLOT_LIMIT_REACHED')) {
@@ -234,7 +235,7 @@ export const billboardService = {
             'Your dealership is currently using its 1 active Game Billboard slot. Replace your existing billboard vehicle or chat with Admin on WhatsApp (08169664607) to advertise more vehicles.',
         };
       }
-      return { success: false, message: error.message };
+      return { success: false, message: 'Unable to assign vehicle to billboard right now. Please try again.' };
     }
     const payload = (data || {}) as { success?: boolean; assignmentId?: string; alreadyActive?: boolean };
     return {
@@ -244,11 +245,16 @@ export const billboardService = {
   },
 
   async removeMyBillboardSlot(assignmentId: string): Promise<{ success: boolean; message?: string }> {
-    if (!isSupabaseConfigured) return { success: false, message: 'Supabase is not configured.' };
+    if (!isSupabaseConfigured) {
+      return { success: false, message: 'Billboard service is currently unavailable. Please try again later.' };
+    }
     const { error } = await supabase.rpc('remove_my_game_billboard_slot', {
       p_assignment_id: assignmentId,
     });
-    if (error) return { success: false, message: error.message };
+    if (error) {
+      console.warn('[billboardService.removeMyBillboardSlot] Failed:', error);
+      return { success: false, message: 'Unable to remove billboard slot right now. Please try again.' };
+    }
     return { success: true };
   },
 

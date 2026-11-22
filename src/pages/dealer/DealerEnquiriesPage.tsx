@@ -224,7 +224,7 @@ export const DealerEnquiriesPage: React.FC<DealerEnquiriesPageProps> = ({ naviga
           {loading ? (
             <div className="py-16 text-center text-xs text-gray-400 flex flex-col items-center justify-center gap-2">
               <Loader2 className="w-6 h-6 animate-spin text-[#EF233C]" />
-              <span>Loading buyer enquiries from database...</span>
+              <span>Loading buyer enquiries...</span>
             </div>
           ) : filteredEnquiries.length === 0 ? (
             <div className="py-16 text-center space-y-3 px-4">

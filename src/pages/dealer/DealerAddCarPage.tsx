@@ -4,11 +4,11 @@ import { useDealerAuth } from '../../context/DealerAuthContext';
 import {
   dealerVehicleService,
   DealerCarFormInput,
-  DealerVehicleWriteErrorDetails,
 } from '../../services/dealerVehicleService';
 import { brandService } from '../../services/brandService';
 import { modelService } from '../../services/modelService';
 import { categoryService } from '../../services/categoryService';
+import { carService } from '../../services/carService';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../../utils/youtube';
 import {
   buildVehicleModelTitle,
@@ -116,7 +116,6 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   // UI States
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitDiagnostic, setSubmitDiagnostic] = useState<DealerVehicleWriteErrorDetails | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [priceCalc, setPriceCalc] = useState<CommissionCalculationResult | null>(null);
   const submitLockRef = useRef(false);
@@ -159,13 +158,9 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
         console.warn('[DealerAddCarPage] public.car_brand_inventory returned 0 active brands.');
       }
     } else {
-      const errMsg =
-        brandsResult.reason instanceof Error
-          ? brandsResult.reason.message
-          : 'Unable to load brands from database.';
       console.error('[DealerAddCarPage] Brand / Make load failed:', brandsResult.reason);
       setBrands([]);
-      setBrandsError(errMsg);
+      setBrandsError('Unable to load vehicle brands. Please retry.');
     }
     setLoadingBrands(false);
 
@@ -176,13 +171,9 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
         console.warn('[DealerAddCarPage] public.car_types returned 0 active vehicle types.');
       }
     } else {
-      const errMsg =
-        typesResult.reason instanceof Error
-          ? typesResult.reason.message
-          : 'Unable to load vehicle types from database.';
       console.error('[DealerAddCarPage] Vehicle Type load failed:', typesResult.reason);
       setBodyTypes([]);
-      setTypesError(errMsg);
+      setTypesError('Unable to load vehicle types. Please retry.');
     }
     setLoadingTypes(false);
   }, []);
@@ -311,11 +302,11 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   const handleSaveDraft = async () => {
     if (submitLockRef.current) return;
     if (!isApproved) {
-      setSubmitError('Dealership approval (dealer_status = approved) is required before posting listings.');
+      setSubmitError('Dealership approval is required before posting listings.');
       return;
     }
     if (!dealerAccount?.dealerId) {
-      setSubmitError('Dealer identity not found. Please complete dealership onboarding.');
+      setSubmitError('Dealer profile not found. Please complete dealership onboarding.');
       return;
     }
     if (youtubeUrl.trim() && !derivedVideoId) {
@@ -326,15 +317,13 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
     submitLockRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
-    setSubmitDiagnostic(null);
 
     try {
       const payload = preparePayload();
       const res = await dealerVehicleService.createDealerCar(payload, dealerAccount.dealerId, true);
 
       if (res.error || !res.car?.id) {
-        setSubmitError(res.error || 'Vehicle draft could not be confirmed in the database. Please try again.');
-        setSubmitDiagnostic(res.errorDetails || null);
+        setSubmitError(res.error || 'Unable to save vehicle draft. Please try again.');
       } else {
         submissionAttemptIdRef.current = generateUuid();
         const params = new URLSearchParams({
@@ -348,8 +337,8 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
         navigate(`/dealer/cars?${params.toString()}`);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Network or unexpected error';
-      setSubmitError(`Failed to save vehicle draft: ${msg}`);
+      console.error('[DealerAddCarPage] Save draft exception:', err);
+      setSubmitError('Failed to save vehicle draft. Please try again.');
     } finally {
       submitLockRef.current = false;
       setSubmitting(false);
@@ -360,9 +349,8 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   const handleInitiateReview = () => {
     if (submitLockRef.current) return;
     setSubmitError(null);
-    setSubmitDiagnostic(null);
     if (!isApproved) {
-      setSubmitError('Dealership approval (dealer_status = approved) is required before submitting vehicles.');
+      setSubmitError('Dealership approval is required before submitting vehicles.');
       return;
     }
 
@@ -402,7 +390,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   const handleConfirmSubmitForReview = async () => {
     if (submitLockRef.current) return;
     if (!isApproved) {
-      setSubmitError('Dealership approval (dealer_status = approved) is required before submitting vehicles.');
+      setSubmitError('Dealership approval is required before submitting vehicles.');
       return;
     }
     if (!dealerAccount?.dealerId) {
@@ -413,19 +401,18 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
     submitLockRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
-    setSubmitDiagnostic(null);
 
     try {
       const payload = preparePayload();
       const res = await dealerVehicleService.createDealerCar(payload, dealerAccount.dealerId, false);
 
       if (res.error || !res.car?.id) {
-        setSubmitError(res.error || 'Vehicle submission could not be confirmed in the database. Please try again.');
-        setSubmitDiagnostic(res.errorDetails || null);
+        setSubmitError(res.error || 'Unable to publish vehicle. Please try again.');
         setShowReviewModal(false);
       } else {
         submissionAttemptIdRef.current = generateUuid();
         setShowReviewModal(false);
+        void carService.getCars().catch(() => {});
         const params = new URLSearchParams({
           created: res.car.id,
           status: res.car.status,
@@ -437,8 +424,8 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
         navigate(`/dealer/cars?${params.toString()}`);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Network or unexpected error';
-      setSubmitError(`Failed to submit vehicle for review: ${msg}`);
+      console.error('[DealerAddCarPage] Publish vehicle exception:', err);
+      setSubmitError('Failed to publish vehicle. Please try again.');
       setShowReviewModal(false);
     } finally {
       submitLockRef.current = false;
@@ -572,16 +559,8 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
         {submitError && (
           <div className="p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3 animate-in fade-in">
             <AlertCircle className="w-5 h-5 text-[#EF233C] shrink-0 mt-0.5" />
-            <div className="space-y-1 flex-1 min-w-0">
+            <div className="flex-1 min-w-0">
               <p className="text-xs text-red-800 font-semibold leading-relaxed">{submitError}</p>
-              {submitDiagnostic && (
-                <p className="text-[11px] text-red-700/80 font-mono break-words">
-                  Diagnostic: table={submitDiagnostic.table}
-                  {submitDiagnostic.code ? ` · code=${submitDiagnostic.code}` : ''}
-                  {submitDiagnostic.status ? ` · status=${submitDiagnostic.status}` : ''}
-                  {submitDiagnostic.hint ? ` · hint=${submitDiagnostic.hint}` : ''}
-                </p>
-              )}
             </div>
           </div>
         )}
@@ -1288,14 +1267,14 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
             </div>
           </div>
 
-          {/* ACTIONS: SAVE DRAFT vs SUBMIT FOR REVIEW (Sections 22 & 23) */}
+          {/* ACTIONS: SAVE DRAFT vs PUBLISH VEHICLE */}
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
               <h4 className="text-xs font-bold uppercase text-gray-900 tracking-wider">
-                Submission Options
+                Publishing Options
               </h4>
               <p className="text-xs text-gray-500 mt-0.5">
-                Drafts remain private to your dealership. Submitting sends the vehicle into the MANIFOLD inspection queue.
+                Drafts remain private to your dealership. Publishing makes your vehicle live on MANIFOLD immediately.
               </p>
             </div>
 
@@ -1317,7 +1296,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                 className="flex-1 sm:flex-initial px-6 py-3 bg-[#EF233C] hover:bg-[#D90429] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-red-900/30 disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
-                <span>Submit Vehicle for Review</span>
+                <span>Publish Vehicle</span>
               </button>
             </div>
           </div>
@@ -1325,7 +1304,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
       </div>
 
       {/* ============================================================ */}
-      {/* SECTION 23: REVIEW SUMMARY MODAL */}
+      {/* PUBLISH CONFIRMATION MODAL */}
       {/* ============================================================ */}
       {showReviewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
@@ -1339,15 +1318,15 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
 
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-[#EF233C] bg-red-100 px-2.5 py-0.5 rounded-full">
-                Review Summary
+                Listing Summary
               </span>
             </div>
 
             <h3 className="text-xl font-bold text-gray-900 mb-1">
-              Ready to submit vehicle?
+              Ready to publish vehicle?
             </h3>
             <p className="text-xs text-gray-500 mb-5 leading-relaxed">
-              Please verify your listing details before submitting to the MANIFOLD dealer desk.
+              Please verify your listing details before publishing directly to the MANIFOLD marketplace.
             </p>
 
             <div className="space-y-3 p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs mb-6">
@@ -1402,12 +1381,12 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                 {submitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Submitting...</span>
+                    <span>Publishing...</span>
                   </>
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    <span>Confirm & Submit</span>
+                    <span>Confirm & Publish</span>
                   </>
                 )}
               </button>

@@ -162,7 +162,7 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
               My Vehicles
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
-              Manage your active showroom inventory, drafts, and vehicles in review.
+              Manage your active showroom inventory and saved drafts.
             </p>
           </div>
 
@@ -202,8 +202,8 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
                 </p>
                 <p className="mt-0.5 opacity-90">
                   {approvalStatus === 'disapproved'
-                    ? 'You still have full access to view and manage your account and existing inventory, but adding new cars or submitting vehicles for review is disabled until re-approved.'
-                    : 'You can browse your dealership dashboard and review existing records now. Adding new cars will unlock as soon as Admin approves your dealership account.'}
+                    ? 'You still have full access to view and manage your account and existing inventory, but adding or publishing new cars is disabled until re-approved.'
+                    : 'You can browse your dealership dashboard and view existing listings now. Adding new cars will unlock as soon as Admin approves your dealership account.'}
                 </p>
                 {dealerAccount?.approvalNotes && (
                   <p className="mt-1 font-semibold">
@@ -261,15 +261,17 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <p className="font-bold">
-                  Vehicle {persistenceNotice.action === 'created' ? 'saved to database' : 'updated in database'}:{' '}
-                  {persistenceNotice.title} ({persistenceNotice.status === 'PENDING_REVIEW' ? 'In Review' : persistenceNotice.status})
-                </p>
-                <p className="text-[11px] text-emerald-800/80 font-mono">
-                  Confirmed Record ID: {persistenceNotice.id}
+                  Vehicle saved: {persistenceNotice.title} (
+                  {persistenceNotice.status === 'PUBLISHED'
+                    ? 'Live'
+                    : persistenceNotice.status === 'DRAFT'
+                    ? 'Draft'
+                    : persistenceNotice.status}
+                  )
                 </p>
                 {persistenceNotice.mediaWarning && (
                   <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-1">
-                    Note: Core vehicle record is saved, but secondary media table sync reported: {persistenceNotice.mediaWarning}. Use Edit Listing if needed.
+                    Note: Your vehicle is saved, though one or more media items could not be attached. Use Edit Listing to update your photos or video if needed.
                   </p>
                 )}
               </div>
@@ -321,7 +323,6 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
             {[
               { id: 'ALL', label: 'All' },
               { id: 'PUBLISHED', label: 'Published' },
-              { id: 'PENDING_REVIEW', label: 'In Review' },
               { id: 'DRAFT', label: 'Drafts' },
               { id: 'SOLD', label: 'Sold' },
               { id: 'ARCHIVED', label: 'Archived' },
