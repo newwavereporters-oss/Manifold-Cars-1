@@ -210,14 +210,6 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
           </p>
         </div>
 
-        {/* Migration Notice if DB schema hasn't been applied */}
-        {dbStatus && dbStatus.configured && dbStatus.migrationRequired && (
-          <div className="mx-4 sm:mx-6 mt-4 p-3 rounded-2xl bg-amber-500/15 border border-amber-400/40 text-amber-200 text-[11px] leading-relaxed">
-            <strong className="font-bold block text-amber-300 mb-0.5">Supabase World Migration Pending</strong>
-            Run <code className="font-mono bg-black/30 px-1 rounded">src/db/game-world-social-migration.sql</code> in your Supabase SQL Editor to activate player profiles and live multiplayer.
-          </div>
-        )}
-
         {/* Mode Switcher Tabs */}
         {mode !== 'FORGOT' && (
           <div className="grid grid-cols-2 gap-1.5 mx-4 sm:mx-6 mt-4 p-1 rounded-2xl bg-black/30 border border-white/10">

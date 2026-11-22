@@ -10,6 +10,7 @@ import { HowItWorks } from '../components/HowItWorks';
 import { CarHuntBanner } from '../components/CarHuntBanner';
 import { Car } from '../types';
 import { YouTubeMediaItem } from '../data/brandsAndTypes';
+import { getCarVideoAvailability } from '../utils/carMedia';
 
 interface HomePageProps {
   cars: Car[];
@@ -53,7 +54,14 @@ export const HomePage: React.FC<HomePageProps> = ({
         onOpenAdvancedSearch={onOpenAdvancedSearch}
         navigate={navigate}
         onPlayHeroVideo={() => {
-          if (featuredCars[0]) onPlayVideo(featuredCars[0]);
+          const heroVideoCar =
+            featuredCars.find((c) => getCarVideoAvailability(c) === 'available') ||
+            cars.find((c) => getCarVideoAvailability(c) === 'available');
+          if (heroVideoCar) {
+            onPlayVideo(heroVideoCar);
+          } else if (featuredCars[0] || cars[0]) {
+            onSelectCar(featuredCars[0] || cars[0]);
+          }
         }}
       />
 

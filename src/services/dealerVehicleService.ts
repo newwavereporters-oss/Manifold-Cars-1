@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../utils/youtube';
+import { buildVehicleModelTitle } from '../utils/carMedia';
 import { resolveDealerApprovalState } from './dealerOnboardingService';
 import { categoryService } from './categoryService';
 import { brandService } from './brandService';
@@ -251,8 +252,11 @@ class DealerVehicleService {
       }
 
       const id = `car-dlr-${Date.now()}`;
-      const title = `${input.year} ${input.make} ${input.model}${input.trim ? ` ${input.trim}` : ''}`;
-      const slugBase = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const title = buildVehicleModelTitle(input.make, input.model);
+      const slugBase = `${input.year || ''}-${title}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
       const slug = `${slugBase}-${Date.now().toString(36).substring(0, 4)}`;
 
       const vidId = input.youtube_url ? extractYouTubeVideoId(input.youtube_url) || '' : '';
@@ -434,7 +438,7 @@ class DealerVehicleService {
         }
       }
 
-      const title = `${input.year} ${input.make} ${input.model}${input.trim ? ` ${input.trim}` : ''}`;
+      const title = buildVehicleModelTitle(input.make, input.model);
       const vidId = input.youtube_url ? extractYouTubeVideoId(input.youtube_url) || '' : '';
       const thumb = vidId ? getYouTubeThumbnailUrl(vidId) : '';
 
@@ -505,9 +509,9 @@ class DealerVehicleService {
         return { car: null, error: 'Failed to update vehicle record.' };
       }
 
-      // Update car_media
+      // Update car_media cleanly (replace when provided, or remove stale youtube_video if cleared)
+      await supabase.from('car_media').delete().eq('car_id', carId).eq('media_type', 'youtube_video');
       if (input.youtube_url && vidId) {
-        await supabase.from('car_media').delete().eq('car_id', carId).eq('media_type', 'youtube_video');
         await supabase.from('car_media').insert({
           id: `media-${carId}-${Date.now()}`,
           car_id: carId,

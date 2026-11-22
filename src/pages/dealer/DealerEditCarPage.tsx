@@ -6,6 +6,8 @@ import { brandService } from '../../services/brandService';
 import { modelService } from '../../services/modelService';
 import { categoryService } from '../../services/categoryService';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../../utils/youtube';
+import { buildVehicleModelTitle } from '../../utils/carMedia';
+import { DealerVideoMarketingNotice } from '../../components/dealer/DealerVideoMarketingNotice';
 import {
   CarFront,
   Video,
@@ -461,12 +463,12 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
         setSubmitError('Please specify a valid vehicle price.');
         return;
       }
-      if (!youtubeUrl.trim() || !derivedVideoId) {
-        setSubmitError('A valid YouTube video walkaround is required for review submission.');
+      if (youtubeUrl.trim() && !derivedVideoId) {
+        setSubmitError('The YouTube URL entered is invalid. Clear the field or provide a valid YouTube link.');
         return;
       }
-      if (!image1Url.trim() || !image2Url.trim()) {
-        setSubmitError('Both gallery images (Exterior & Interior) are required for review submission.');
+      if (!image1Url.trim() && !image2Url.trim()) {
+        setSubmitError('Please provide at least one vehicle photo before submitting for review.');
         return;
       }
     }
@@ -545,7 +547,7 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
               </span>
             </div>
             <h1 className="text-2xl font-extrabold text-[#071A2B] tracking-tight">
-              Edit: {originalCar?.title}
+              Edit: {buildVehicleModelTitle(originalCar?.make, originalCar?.model) || originalCar?.title}
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
               Modify permitted vehicle specifications, update pricing, or refresh video walkarounds.
@@ -1043,29 +1045,36 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
             />
           </div>
 
-          {/* SECTION 5: VIDEO-FIRST */}
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
-              <Video className="w-5 h-5 text-[#EF233C]" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900">
-                5. Video Review
-              </h2>
+          {/* SECTION 5: VIDEO-FIRST (OPTIONAL) */}
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Video className="w-5 h-5 text-[#EF233C]" />
+                <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900">
+                  5. Video Review <span className="text-gray-400 font-normal normal-case">(Optional — attach or update anytime)</span>
+                </h2>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded">
+                Optional
+              </span>
             </div>
+
+            <DealerVideoMarketingNotice compact />
 
             <div>
               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                YouTube Video URL
+                YouTube Video URL <span className="text-gray-400 font-normal lowercase">(optional)</span>
               </label>
               <input
                 type="url"
                 value={youtubeUrl}
                 onChange={(e) => setYoutubeUrl(e.target.value)}
-                placeholder="https://www.youtube.com/watch?v=..."
+                placeholder="https://www.youtube.com/watch?v=... (optional)"
                 className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
               />
             </div>
 
-            {derivedVideoId && (
+            {derivedVideoId ? (
               <div className="relative aspect-video rounded-xl overflow-hidden bg-black max-w-md mx-auto">
                 <iframe
                   src={`https://www.youtube-nocookie.com/embed/${derivedVideoId}`}
@@ -1073,6 +1082,10 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
                   className="w-full h-full border-0"
                   allowFullScreen
                 />
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-gray-50 border border-dashed border-gray-200 text-center text-xs text-gray-500">
+                No YouTube video linked yet. Buyers see a clean <strong>&ldquo;Video loading...&rdquo;</strong> status until you paste a video link here.
               </div>
             )}
           </div>

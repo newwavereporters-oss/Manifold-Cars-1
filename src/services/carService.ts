@@ -1,6 +1,7 @@
 import { Car } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl, formatStandardYouTubeUrl } from '../utils/youtube';
+import { buildVehicleModelTitle } from '../utils/carMedia';
 import { brandService } from './brandService';
 import { categoryService } from './categoryService';
 
@@ -210,8 +211,12 @@ class CarService {
     }
 
     const id = carData.id || `car-${Date.now()}`;
-    const title = carData.title || `${carData.year || 2024} ${carData.make || 'Toyota'} ${carData.model || 'Model'}`;
-    const slugBase = (carData.slug || title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const canonicalTitle = buildVehicleModelTitle(carData.make || 'Toyota', carData.model || 'Model');
+    const title = carData.title?.trim() || canonicalTitle;
+    const slugBase = (carData.slug || `${carData.year || ''}-${canonicalTitle}`)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
     const slug = `${slugBase}-${Date.now().toString(36).substring(0, 4)}`;
 
     const resolveBrandUuid = async (): Promise<string | null> => {
@@ -411,7 +416,10 @@ class CarService {
       throw new Error(`Failed to update car in Supabase: ${carErr.message}`);
     }
 
-    // 2. Section 11: Update or Insert into public.car_media
+    // 2. Section 11: Update or Insert into public.car_media (or remove if cleared)
+    if (updates.video !== undefined) {
+      await supabase.from('car_media').delete().eq('car_id', id).eq('media_type', 'youtube_video');
+    }
     if (updates.video?.youtube_url) {
       const vidId = updates.video.youtube_video_id || extractYouTubeVideoId(updates.video.youtube_url) || '';
       const thumb = updates.video.youtube_thumbnail_url || (vidId ? getYouTubeThumbnailUrl(vidId) : '');

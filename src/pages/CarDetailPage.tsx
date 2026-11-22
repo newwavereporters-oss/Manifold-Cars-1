@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   CheckCircle,
@@ -6,19 +6,17 @@ import {
   Heart,
   Share2,
   PhoneCall,
-  Calendar,
-  Gauge,
-  Fuel,
-  Compass,
   FileCheck,
   ArrowLeft,
-  ChevronRight,
-  Info,
+  Video,
+  Image as ImageIcon,
+  CarFront,
 } from 'lucide-react';
 import { Car } from '../types';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../data/mockCars';
 import { VideoCarCard } from '../components/VideoCarCard';
 import { PriceIntelligenceCard } from '../components/ai/PriceIntelligenceCard';
+import { resolveCarYouTubeVideoId } from '../utils/carMedia';
 
 interface CarDetailPageProps {
   car: Car;
@@ -43,9 +41,33 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
   onAskAi,
   navigate,
 }) => {
-  const [activeMediaTab, setActiveMediaTab] = useState<'video' | 'gallery1' | 'gallery2'>('video');
+  const videoId = resolveCarYouTubeVideoId(car);
+  const hasVideo = Boolean(videoId);
+  const hasPhoto1 = Boolean((car.gallery_image_1_url || '').trim());
+  const hasPhoto2 = Boolean((car.gallery_image_2_url || '').trim());
+
+  const getDefaultTab = (): 'video' | 'gallery1' | 'gallery2' => {
+    if (hasVideo) return 'video';
+    if (hasPhoto1) return 'gallery1';
+    if (hasPhoto2) return 'gallery2';
+    return 'video';
+  };
+
+  const [activeMediaTab, setActiveMediaTab] = useState<'video' | 'gallery1' | 'gallery2'>(
+    getDefaultTab
+  );
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; title: string } | null>(null);
   const [copiedShare, setCopiedShare] = useState(false);
+  const [videoPlaybackFailed, setVideoPlaybackFailed] = useState(false);
+  const [photo1Error, setPhoto1Error] = useState(false);
+  const [photo2Error, setPhoto2Error] = useState(false);
+
+  useEffect(() => {
+    setActiveMediaTab(getDefaultTab());
+    setVideoPlaybackFailed(false);
+    setPhoto1Error(false);
+    setPhoto2Error(false);
+  }, [car.id]);
 
   const handleShare = () => {
     if (navigator.clipboard) {
@@ -112,10 +134,18 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
         {/* Top Title & Price Block */}
         <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
               <span className="text-xs font-bold uppercase tracking-wider text-[#EF233C]">
                 {car.condition}
               </span>
+              <span className="text-gray-300">·</span>
+              <span className="text-xs font-bold text-[#071A2B] tabular-nums">{car.year}</span>
+              {car.trim && (
+                <>
+                  <span className="text-gray-300">·</span>
+                  <span className="text-xs font-semibold text-gray-600">{car.trim}</span>
+                </>
+              )}
               <span className="text-gray-300">·</span>
               <span className="text-xs font-medium text-gray-500">{car.location}</span>
             </div>
@@ -124,7 +154,7 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
               {car.title}
             </h1>
 
-            <div className="flex items-center gap-2 text-xs text-gray-500 mt-2 font-medium">
+            <div className="flex items-center gap-2 text-xs text-gray-500 mt-2 font-medium flex-wrap">
               <span>{car.transmission}</span>
               <span className="text-gray-300">·</span>
               <span>{car.fuel_type}</span>
@@ -175,140 +205,209 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
           {/* Main Media Viewer (Col 8) */}
           <div className="lg:col-span-8 bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm flex flex-col">
-            <div className="relative aspect-video w-full bg-black">
+            <div className="relative aspect-video w-full bg-[#071A2B]">
               {activeMediaTab === 'video' ? (
-                <iframe
-                  src={`https://www.youtube-nocookie.com/embed/${car.video.youtube_video_id}?autoplay=0&rel=0`}
-                  title={car.video.video_title}
-                  className="w-full h-full border-0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              ) : activeMediaTab === 'gallery1' ? (
+                hasVideo && !videoPlaybackFailed ? (
+                  <iframe
+                    src={`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=0&rel=0`}
+                    title={car.video.video_title || car.title}
+                    className="w-full h-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    onError={() => setVideoPlaybackFailed(true)}
+                  />
+                ) : (
+                  <div className="w-full h-full relative flex flex-col items-center justify-center text-white p-6 text-center">
+                    {(hasPhoto1 || hasPhoto2) && (
+                      <img
+                        src={car.gallery_image_1_url || car.gallery_image_2_url}
+                        alt={car.title}
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 w-full h-full object-cover opacity-25"
+                      />
+                    )}
+                    <div className="relative z-10 max-w-md space-y-2.5 bg-[#071A2B]/85 backdrop-blur-sm p-5 rounded-2xl border border-white/15">
+                      <Video className="w-7 h-7 text-[#EF233C] mx-auto" />
+                      <p className="text-sm font-bold text-white">
+                        {videoPlaybackFailed ? 'Video playback unavailable' : 'Video loading...'}
+                      </p>
+                      <p className="text-xs text-gray-300 leading-relaxed">
+                        {videoPlaybackFailed
+                          ? 'The embedded video could not load in this view. You can inspect vehicle photos or request a fresh walkaround via Concierge.'
+                          : 'A walkaround video has not been attached to this listing yet. Browse all available photos and full specifications below.'}
+                      </p>
+                      {(hasPhoto1 || hasPhoto2) && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveMediaTab(hasPhoto1 ? 'gallery1' : 'gallery2')}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded-lg transition cursor-pointer"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          <span>View Vehicle Photos</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              ) : activeMediaTab === 'gallery1' && hasPhoto1 && !photo1Error ? (
                 <img
                   src={car.gallery_image_1_url}
                   alt={`${car.title} gallery exterior`}
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
+                  onError={() => setPhoto1Error(true)}
                 />
-              ) : (
+              ) : activeMediaTab === 'gallery2' && hasPhoto2 && !photo2Error ? (
                 <img
                   src={car.gallery_image_2_url}
                   alt={`${car.title} gallery interior showroom`}
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
+                  onError={() => setPhoto2Error(true)}
                 />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-gray-300 p-6 text-center">
+                  <CarFront className="w-10 h-10 text-gray-400 mb-2" />
+                  <span className="text-xs font-semibold">Vehicle preview photo unavailable</span>
+                </div>
               )}
             </div>
 
-            {/* Media Selector Strip (Video First, Two Gallery Images Second) */}
+            {/* Media Selector Strip (Photos & Video) */}
             <div className="p-3 bg-gray-50 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setActiveMediaTab('video')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
                     activeMediaTab === 'video'
                       ? 'bg-[#EF233C] text-white shadow'
                       : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
                   }`}
                 >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Primary Video Review ({car.video.video_duration})</span>
+                  {hasVideo ? (
+                    <>
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Primary Video Review ({car.video.video_duration || '12:00'})</span>
+                    </>
+                  ) : (
+                    <>
+                      <Video className="w-3.5 h-3.5" />
+                      <span>Video loading...</span>
+                    </>
+                  )}
                 </button>
 
-                <button
-                  onClick={() => setActiveMediaTab('gallery1')}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold uppercase tracking-wider transition ${
-                    activeMediaTab === 'gallery1'
-                      ? 'bg-[#071A2B] text-white shadow'
-                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  <span>Photo 1</span>
-                </button>
+                {hasPhoto1 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveMediaTab('gallery1')}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+                      activeMediaTab === 'gallery1'
+                        ? 'bg-[#071A2B] text-white shadow'
+                        : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <span>Photo 1</span>
+                  </button>
+                )}
 
-                <button
-                  onClick={() => setActiveMediaTab('gallery2')}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold uppercase tracking-wider transition ${
-                    activeMediaTab === 'gallery2'
-                      ? 'bg-[#071A2B] text-white shadow'
-                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  <span>Photo 2</span>
-                </button>
+                {hasPhoto2 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveMediaTab('gallery2')}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+                      activeMediaTab === 'gallery2'
+                        ? 'bg-[#071A2B] text-white shadow'
+                        : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <span>Photo 2</span>
+                  </button>
+                )}
               </div>
 
-              {activeMediaTab !== 'video' && (
-                <button
-                  onClick={() =>
-                    setEnlargedImage({
-                      url:
-                        activeMediaTab === 'gallery1'
-                          ? car.gallery_image_1_url
-                          : car.gallery_image_2_url,
-                      title: `${car.title} - ${
-                        activeMediaTab === 'gallery1' ? 'Gallery Photo 1' : 'Gallery Photo 2'
-                      }`,
-                    })
-                  }
-                  className="text-xs font-bold text-[#071A2B] hover:text-[#EF233C] flex items-center gap-1 cursor-pointer"
-                >
-                  <span>Enlarge Full Resolution</span>
-                </button>
-              )}
+              {activeMediaTab !== 'video' &&
+                ((activeMediaTab === 'gallery1' && hasPhoto1 && !photo1Error) ||
+                  (activeMediaTab === 'gallery2' && hasPhoto2 && !photo2Error)) && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEnlargedImage({
+                        url:
+                          activeMediaTab === 'gallery1'
+                            ? car.gallery_image_1_url
+                            : car.gallery_image_2_url,
+                        title: `${car.title} - ${
+                          activeMediaTab === 'gallery1' ? 'Gallery Photo 1' : 'Gallery Photo 2'
+                        }`,
+                      })
+                    }
+                    className="text-xs font-bold text-[#071A2B] hover:text-[#EF233C] flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Enlarge Full Resolution</span>
+                  </button>
+                )}
             </div>
 
-            {/* PART 19: Gallery Two Images Preview Tiles (Click to enlarge) */}
-            <div className="p-3 bg-white border-t border-gray-100 grid grid-cols-2 gap-3">
-              <div
-                onClick={() =>
-                  setEnlargedImage({
-                    url: car.gallery_image_1_url,
-                    title: `${car.title} - Gallery Image 1`,
-                  })
-                }
-                className="relative aspect-video rounded-lg overflow-hidden border border-gray-200 cursor-pointer group bg-gray-100"
-              >
-                <img
-                  src={car.gallery_image_1_url}
-                  alt={`${car.title} gallery 1`}
-                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                />
-                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center">
-                  <span className="opacity-0 group-hover:opacity-100 transition bg-black/75 text-white text-[10px] font-bold px-2 py-1 rounded">
-                    Click to Enlarge Photo 1
-                  </span>
-                </div>
-                <span className="absolute bottom-1.5 left-1.5 bg-[#071A2B]/85 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
-                  Gallery Photo 1
-                </span>
-              </div>
+            {/* Gallery Preview Tiles */}
+            {(hasPhoto1 || hasPhoto2) && (
+              <div className={`p-3 bg-white border-t border-gray-100 grid gap-3 ${hasPhoto1 && hasPhoto2 ? 'grid-cols-2' : 'grid-cols-1 max-w-sm'}`}>
+                {hasPhoto1 && (
+                  <div
+                    onClick={() =>
+                      setEnlargedImage({
+                        url: car.gallery_image_1_url,
+                        title: `${car.title} - Gallery Image 1`,
+                      })
+                    }
+                    className="relative aspect-video rounded-lg overflow-hidden border border-gray-200 cursor-pointer group bg-gray-100"
+                  >
+                    <img
+                      src={car.gallery_image_1_url}
+                      alt={`${car.title} gallery 1`}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center">
+                      <span className="opacity-0 group-hover:opacity-100 transition bg-black/75 text-white text-[10px] font-bold px-2 py-1 rounded">
+                        Click to Enlarge Photo 1
+                      </span>
+                    </div>
+                    <span className="absolute bottom-1.5 left-1.5 bg-[#071A2B]/85 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                      Gallery Photo 1
+                    </span>
+                  </div>
+                )}
 
-              <div
-                onClick={() =>
-                  setEnlargedImage({
-                    url: car.gallery_image_2_url,
-                    title: `${car.title} - Gallery Image 2`,
-                  })
-                }
-                className="relative aspect-video rounded-lg overflow-hidden border border-gray-200 cursor-pointer group bg-gray-100"
-              >
-                <img
-                  src={car.gallery_image_2_url}
-                  alt={`${car.title} gallery 2`}
-                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                />
-                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center">
-                  <span className="opacity-0 group-hover:opacity-100 transition bg-black/75 text-white text-[10px] font-bold px-2 py-1 rounded">
-                    Click to Enlarge Photo 2
-                  </span>
-                </div>
-                <span className="absolute bottom-1.5 left-1.5 bg-[#071A2B]/85 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
-                  Gallery Photo 2
-                </span>
+                {hasPhoto2 && (
+                  <div
+                    onClick={() =>
+                      setEnlargedImage({
+                        url: car.gallery_image_2_url,
+                        title: `${car.title} - Gallery Image 2`,
+                      })
+                    }
+                    className="relative aspect-video rounded-lg overflow-hidden border border-gray-200 cursor-pointer group bg-gray-100"
+                  >
+                    <img
+                      src={car.gallery_image_2_url}
+                      alt={`${car.title} gallery 2`}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center">
+                      <span className="opacity-0 group-hover:opacity-100 transition bg-black/75 text-white text-[10px] font-bold px-2 py-1 rounded">
+                        Click to Enlarge Photo 2
+                      </span>
+                    </div>
+                    <span className="absolute bottom-1.5 left-1.5 bg-[#071A2B]/85 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                      Gallery Photo 2
+                    </span>
+                  </div>
+                )}
               </div>
-            </div>
+            )}
           </div>
 
           {/* Concierge Action Box & Verification (Col 4) */}
@@ -338,7 +437,11 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Full video walkaround recorded</span>
+                  <span>
+                    {hasVideo
+                      ? 'Full video walkaround recorded'
+                      : 'Video walkaround upload pending'}
+                  </span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />

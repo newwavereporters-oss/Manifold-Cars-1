@@ -337,6 +337,7 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
                               <img
                                 src={thumb}
                                 alt={car.title}
+                                referrerPolicy="no-referrer"
                                 className="w-16 h-11 object-cover rounded-xl bg-gray-100 shrink-0 border border-gray-200"
                               />
                             ) : (
@@ -349,7 +350,8 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
                                 {car.title}
                               </div>
                               <span className="text-[11px] text-gray-500 font-normal">
-                                {car.body_type} · {car.condition}
+                                {car.year}{car.trim ? ` · ${car.trim}` : ''} · {car.body_type} ·{' '}
+                                {car.youtube_video_id ? 'Video ready' : 'Video loading...'}
                               </span>
                             </div>
                           </div>

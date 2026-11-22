@@ -6,6 +6,8 @@ import { brandService } from '../../services/brandService';
 import { modelService } from '../../services/modelService';
 import { categoryService } from '../../services/categoryService';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../../utils/youtube';
+import { buildVehicleModelTitle } from '../../utils/carMedia';
+import { DealerVideoMarketingNotice } from '../../components/dealer/DealerVideoMarketingNotice';
 import {
   CarFront,
   Video,
@@ -351,16 +353,12 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
       setSubmitError('Please provide a detailed vehicle description (at least 20 characters).');
       return;
     }
-    if (!youtubeUrl.trim() || !derivedVideoId) {
-      setSubmitError('A valid YouTube walkaround video URL is required for vehicle review submission.');
+    if (youtubeUrl.trim() && !derivedVideoId) {
+      setSubmitError('The YouTube URL entered is invalid. Clear the field or provide a valid YouTube link.');
       return;
     }
-    if (!image1Url.trim()) {
-      setSubmitError('Image 1 (Front Exterior) is required for submission.');
-      return;
-    }
-    if (!image2Url.trim()) {
-      setSubmitError('Image 2 (Interior Cockpit) is required for submission.');
+    if (!image1Url.trim() && !image2Url.trim()) {
+      setSubmitError('Please attach at least one vehicle photo (Front Exterior recommended) before submitting.');
       return;
     }
 
@@ -1066,29 +1064,32 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
             />
           </div>
 
-          {/* SECTION 5: VIDEO-FIRST LISTING (Section 17) */}
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
-              <Video className="w-5 h-5 text-[#EF233C]" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900">
-                5. Vehicle Video (Video-First)
-              </h2>
+          {/* SECTION 5: VIDEO-FIRST LISTING (OPTIONAL ON SUBMISSION) */}
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Video className="w-5 h-5 text-[#EF233C]" />
+                <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900">
+                  5. Vehicle Video <span className="text-gray-400 font-normal normal-case">(Optional — add now or later)</span>
+                </h2>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded">
+                Optional for Submission
+              </span>
             </div>
 
-            <p className="text-xs text-gray-500">
-              MANIFOLD is a video-first platform. Every car featured prominently on the homepage and detail view requires a dedicated walkaround video.
-            </p>
+            <DealerVideoMarketingNotice />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  YouTube Video URL <span className="text-[#EF233C]">*</span>
+                  YouTube Video URL <span className="text-gray-400 font-normal lowercase">(optional)</span>
                 </label>
                 <input
                   type="url"
                   value={youtubeUrl}
                   onChange={(e) => setYoutubeUrl(e.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                  placeholder="https://www.youtube.com/watch?v=... (or leave blank and add later)"
                   className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
                 />
               </div>
@@ -1123,9 +1124,13 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                   />
                 </div>
               </div>
+            ) : youtubeUrl.trim() ? (
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-center text-xs text-amber-800">
+                Could not detect a valid YouTube video ID from that link. Clear the field to continue without a video, or paste a standard YouTube URL.
+              </div>
             ) : (
-              <div className="p-4 rounded-2xl bg-gray-50 border border-dashed border-gray-200 text-center text-xs text-gray-400">
-                Enter a YouTube link above to preview video embed.
+              <div className="p-4 rounded-2xl bg-gray-50 border border-dashed border-gray-200 text-center text-xs text-gray-500">
+                No video added yet — buyers will see your vehicle photo with a clean <strong>&ldquo;Video loading...&rdquo;</strong> status until you add a link later.
               </div>
             )}
           </div>
@@ -1136,16 +1141,16 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
               <div className="flex items-center gap-2">
                 <ImageIcon className="w-5 h-5 text-[#EF233C]" />
                 <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900">
-                  6. Two Image Gallery
+                  6. Vehicle Photo Gallery
                 </h2>
               </div>
               <span className="text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-red-100 text-[#EF233C]">
-                2 Images Maximum
+                Up to 2 Photos
               </span>
             </div>
 
             <p className="text-xs text-gray-500 leading-relaxed">
-              In accordance with MANIFOLD's video-first design philosophy, exactly two static images are featured: Image 1 for the front exterior signature card, and Image 2 for the cockpit / cabin.
+              Upload or link up to two static images: Image 1 for the front exterior signature card, and Image 2 for the cockpit / cabin (optional if you have one primary photo ready).
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -1158,7 +1163,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                   type="url"
                   value={image1Url}
                   onChange={(e) => setImage1Url(e.target.value)}
-                  placeholder="https://images.unsplash.com/... or hosted image URL"
+                  placeholder="https://example.com/car-front-exterior.jpg"
                   className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
                 />
                 {image1Url ? (
@@ -1189,13 +1194,13 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
               {/* Image 2: Interior */}
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Image 2 (Cabin / Cockpit) <span className="text-[#EF233C]">*</span>
+                  Image 2 (Cabin / Cockpit) <span className="text-gray-400 font-normal lowercase">(optional)</span>
                 </label>
                 <input
                   type="url"
                   value={image2Url}
                   onChange={(e) => setImage2Url(e.target.value)}
-                  placeholder="https://images.unsplash.com/... or hosted image URL"
+                  placeholder="https://example.com/car-cabin-interior.jpg"
                   className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
                 />
                 {image2Url ? (
@@ -1289,8 +1294,12 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
 
             <div className="space-y-3 p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs mb-6">
               <div className="flex justify-between pb-2 border-b border-gray-200">
-                <span className="text-gray-500">Vehicle:</span>
-                <strong className="text-gray-900">{year} {make} {model} {trim}</strong>
+                <span className="text-gray-500">Listing Title:</span>
+                <strong className="text-gray-900">{buildVehicleModelTitle(make, model)}</strong>
+              </div>
+              <div className="flex justify-between pb-2 border-b border-gray-200">
+                <span className="text-gray-500">Year &amp; Variant:</span>
+                <strong className="text-gray-900">{year}{trim.trim() ? ` · ${trim.trim()}` : ''}</strong>
               </div>
               <div className="flex justify-between pb-2 border-b border-gray-200">
                 <span className="text-gray-500">Price:</span>
@@ -1306,11 +1315,15 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
               </div>
               <div className="flex justify-between pb-2 border-b border-gray-200">
                 <span className="text-gray-500">YouTube Video:</span>
-                <strong className="text-gray-900 truncate max-w-[200px]">{youtubeUrl}</strong>
+                <strong className="text-gray-900 truncate max-w-[220px]">
+                  {youtubeUrl.trim() ? youtubeUrl.trim() : 'Not added yet (can add later)'}
+                </strong>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Static Images:</span>
-                <strong className="text-gray-900">2 Gallery Photos Attached</strong>
+                <strong className="text-gray-900">
+                  {[image1Url.trim(), image2Url.trim()].filter(Boolean).length} Gallery Photo(s) Attached
+                </strong>
               </div>
             </div>
 

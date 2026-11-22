@@ -222,8 +222,7 @@ export const AdminGamePlayersView: React.FC = () => {
                 Game World Database Migration Required
               </h3>
               <p className="text-xs text-amber-800 leading-relaxed">
-                Apply <code>src/db/game-world-social-migration.sql</code> in your Supabase SQL Editor to enable
-                the <code>GAME PLAYERS</code> directory, audit logs, and player presence telemetry.
+                Game World tables or permissions require setup or repair in Supabase. For fresh databases, apply <code>src/db/game-world-social-migration.sql</code> once; if tables already exist, apply the idempotent fix in <code>src/db/world-experience-hardening-fix.sql</code> instead of re-running the initial migration.
               </p>
             </div>
           </div>

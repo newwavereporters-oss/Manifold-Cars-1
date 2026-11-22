@@ -1,3 +1,5 @@
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import { GoogleGenAI, Type } from '@google/genai';
 import crypto from 'crypto';
 import { getServerEnv } from '../config/env.js';
@@ -55,6 +57,39 @@ export interface FetchResult {
   error?: string;
 }
 
+export function isDisallowedIpAddress(ip: string): boolean {
+  const normalized = ip.toLowerCase().trim().replace(/^\[|\]$/g, '').split('%')[0];
+  if (!normalized) return true;
+
+  if (
+    normalized === '::1' ||
+    normalized === '::' ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    normalized.startsWith('fe80:') ||
+    normalized.startsWith('::ffff:')
+  ) {
+    if (normalized.startsWith('::ffff:')) {
+      const v4Part = normalized.slice(7);
+      if (net.isIPv4(v4Part)) return isDisallowedIpAddress(v4Part);
+    }
+    return true;
+  }
+
+  if (net.isIPv4(normalized)) {
+    const [oct1, oct2] = normalized.split('.').map((n) => parseInt(n, 10));
+    if (oct1 === 10) return true;
+    if (oct1 === 172 && oct2 >= 16 && oct2 <= 31) return true;
+    if (oct1 === 192 && oct2 === 168) return true;
+    if (oct1 === 127) return true;
+    if (oct1 === 169 && oct2 === 254) return true;
+    if (oct1 === 0) return true;
+    if (oct1 === 100 && oct2 >= 64 && oct2 <= 127) return true; // Carrier-grade NAT 100.64.0.0/10
+  }
+
+  return false;
+}
+
 export function isDisallowedHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().trim().replace(/^\[|\]$/g, '');
 
@@ -73,31 +108,25 @@ export function isDisallowedHostname(hostname: string): boolean {
     return true;
   }
 
-  // IPv6 ULA / link-local / IPv4-mapped loopback
-  if (
-    host.startsWith('fc') ||
-    host.startsWith('fd') ||
-    host.startsWith('fe80:') ||
-    host.startsWith('::ffff:')
-  ) {
-    return true;
-  }
-
-  // IPv4 Private Subnets
-  const ipMatch = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipMatch) {
-    const oct1 = parseInt(ipMatch[1], 10);
-    const oct2 = parseInt(ipMatch[2], 10);
-
-    if (oct1 === 10) return true;
-    if (oct1 === 172 && oct2 >= 16 && oct2 <= 31) return true;
-    if (oct1 === 192 && oct2 === 168) return true;
-    if (oct1 === 127) return true;
-    if (oct1 === 169 && oct2 === 254) return true;
-    if (oct1 === 0) return true;
+  if (net.isIP(host)) {
+    return isDisallowedIpAddress(host);
   }
 
   return false;
+}
+
+async function isDisallowedDnsDestination(hostname: string): Promise<boolean> {
+  if (isDisallowedHostname(hostname)) return true;
+  const host = hostname.toLowerCase().trim().replace(/^\[|\]$/g, '');
+  if (net.isIP(host)) return isDisallowedIpAddress(host);
+
+  try {
+    const records = await dns.lookup(host, { all: true, verbatim: true });
+    if (!records || records.length === 0) return false;
+    return records.some((rec) => isDisallowedIpAddress(rec.address));
+  } catch {
+    return false;
+  }
 }
 
 export async function fetchListingPageSafe(submittedUrl: string): Promise<FetchResult> {
@@ -128,7 +157,7 @@ export async function fetchListingPageSafe(submittedUrl: string): Promise<FetchR
     };
   }
 
-  if (isDisallowedHostname(parsedUrl.hostname)) {
+  if (await isDisallowedDnsDestination(parsedUrl.hostname)) {
     return {
       success: false,
       status: 'SSRF_BLOCKED',
@@ -169,7 +198,7 @@ export async function fetchListingPageSafe(submittedUrl: string): Promise<FetchR
         const nextUrl = new URL(location, currentUrl).toString();
         const nextParsed = new URL(nextUrl);
 
-        if (isDisallowedHostname(nextParsed.hostname)) {
+        if (await isDisallowedDnsDestination(nextParsed.hostname)) {
           return {
             success: false,
             status: 'SSRF_BLOCKED',

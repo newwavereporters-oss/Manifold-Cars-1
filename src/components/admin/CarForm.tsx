@@ -25,6 +25,7 @@ import {
 import { brandService } from '../../services/brandService';
 import { modelService } from '../../services/modelService';
 import { categoryService } from '../../services/categoryService';
+import { buildVehicleModelTitle } from '../../utils/carMedia';
 
 export interface CarFormProps {
   initialCar?: Partial<Car>;
@@ -289,28 +290,13 @@ export const CarForm: React.FC<CarFormProps> = ({
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
-  // Auto-generate title if empty
+  // Auto-generate title strictly as Make + Model (Part 9 rule)
   const handleAutoTitle = () => {
-    const generated = `${year} ${make} ${model} ${trim}`.trim();
+    const generated = buildVehicleModelTitle(make, model);
     setTitle(generated);
     if (!videoTitle) {
       setVideoTitle(`${generated} In-Depth Nigerian Market Review`);
     }
-  };
-
-  // Sample media filler for quick testing
-  const handleFillDemoMedia = () => {
-    setYoutubeUrl('https://www.youtube.com/watch?v=w4-z4_h1wR0');
-    setVideoTitle(`${title || '2022 Toyota Highlander'} MANIFOLD Review`);
-    setGalleryImage1Url(
-      'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1200&q=80'
-    );
-    setGalleryImage2Url(
-      'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=1200&q=80'
-    );
-    setImg1Error(false);
-    setImg2Error(false);
-    setValidationError(null);
   };
 
   const handleCancelClick = () => {
@@ -337,24 +323,14 @@ export const CarForm: React.FC<CarFormProps> = ({
       return;
     }
 
-    // 2. Publish Validation (PART 6 & PART 27)
-    // "A car cannot be published unless it contains:
-    // • YouTube video URL
-    // • Valid YouTube video ID
-    // • Gallery image 1 URL
-    // • Gallery image 2 URL
-    // If any are missing: Do not allow PUBLISH. Display specific message."
+    // 2. Media validation: YouTube video is optional; if entered, validate URL format. Require at least 1 photo on publish.
+    if (youtubeUrl.trim() && (!detectedVideoId || !isVideoValid)) {
+      setValidationError('The YouTube URL entered is invalid. Clear it or provide a valid YouTube link.');
+      return;
+    }
     if (targetStatus === 'PUBLISHED') {
-      if (!youtubeUrl.trim() || !detectedVideoId || !isVideoValid) {
-        setValidationError('Add a primary YouTube review video before publishing this vehicle.');
-        return;
-      }
-      if (!galleryImage1Url.trim()) {
-        setValidationError('Gallery Image 1 is required before publishing this vehicle.');
-        return;
-      }
-      if (!galleryImage2Url.trim()) {
-        setValidationError('Gallery Image 2 is required before publishing this vehicle.');
+      if (!galleryImage1Url.trim() && !galleryImage2Url.trim()) {
+        setValidationError('Please attach at least one gallery image before publishing this vehicle.');
         return;
       }
     }
@@ -451,23 +427,6 @@ export const CarForm: React.FC<CarFormProps> = ({
           </button>
         </div>
       )}
-
-      {/* Quick Test Demo Helper Banner */}
-      <div className="p-3.5 bg-[#071A2B]/5 border border-[#071A2B]/10 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2 text-gray-700">
-          <Sparkles className="w-4 h-4 text-[#EF233C] shrink-0" />
-          <span>
-            <strong>Testing helper:</strong> Need sample media URLs to test YouTube detection & gallery images?
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={handleFillDemoMedia}
-          className="px-3 py-1.5 bg-[#071A2B] hover:bg-[#0B2239] text-white rounded text-xs font-bold whitespace-nowrap transition cursor-pointer self-start sm:self-auto"
-        >
-          Fill Sample Media
-        </button>
-      </div>
 
       {/* SECTION 1: BASIC VEHICLE INFORMATION */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8 shadow-sm space-y-6">
@@ -927,15 +886,15 @@ export const CarForm: React.FC<CarFormProps> = ({
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-extrabold text-[#071A2B] font-display">
-                2. MEDIA & REVIEW (Mandatory for Publishing)
+                2. MEDIA &amp; REVIEW (Optional Video + Photos)
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                MANIFOLD architecture is <strong>Video First + Two Gallery Images</strong>.
+                MANIFOLD is video-first, yet listings can be published with photos now and a video added later.
               </p>
             </div>
           </div>
-          <span className="text-[10px] font-extrabold px-2.5 py-1 bg-red-100 text-[#EF233C] rounded-full uppercase tracking-wider">
-            Required For Live
+          <span className="text-[10px] font-extrabold px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full uppercase tracking-wider">
+            Video Optional
           </span>
         </div>
 
@@ -943,7 +902,7 @@ export const CarForm: React.FC<CarFormProps> = ({
         <div className="space-y-4 p-5 bg-gray-50 rounded-xl border border-gray-200">
           <div className="flex items-center justify-between">
             <label className="block text-xs font-bold uppercase tracking-wider text-[#071A2B]">
-              Primary Car YouTube Video URL <span className="text-[#EF233C]">*</span>
+              Primary Car YouTube Video URL <span className="text-gray-400 font-normal lowercase">(optional)</span>
             </label>
             {isVideoValid && (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
@@ -1133,7 +1092,7 @@ export const CarForm: React.FC<CarFormProps> = ({
           <div className="p-5 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-bold uppercase tracking-wider text-[#071A2B]">
-                Gallery Image 2 URL <span className="text-[#EF233C]">*</span>
+                Gallery Image 2 URL <span className="text-gray-400 font-normal lowercase">(optional)</span>
               </label>
               {galleryImage2Url && !img2Error && (
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
@@ -1230,9 +1189,10 @@ export const CarForm: React.FC<CarFormProps> = ({
                     </span>
                   </>
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 text-xs">
-                    <Video className="w-8 h-8 mb-1 text-gray-600" />
-                    <span>No YouTube video set yet</span>
+                  <div className="w-full h-full flex flex-col items-center justify-center text-gray-300 text-xs">
+                    <Video className="w-8 h-8 mb-1.5 text-gray-400" />
+                    <span className="font-semibold">Video loading...</span>
+                    <span className="text-[10px] text-gray-500 mt-0.5">Listing remains live with photos</span>
                   </div>
                 )}
               </div>

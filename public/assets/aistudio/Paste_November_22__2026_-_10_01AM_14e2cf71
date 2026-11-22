@@ -1,0 +1,1178 @@
+# MANIFOLD — COMPREHENSIVE CODEBASE AUDIT, CORRECTION & IMPLEMENTATION MASTER PROMPT
+
+## YOUR ROLE
+
+Act as a senior full-stack software architect, React/TypeScript engineer, Supabase/PostgreSQL database specialist, AI integration engineer, application security specialist, and product UX engineer.
+
+You are working on the existing MANIFOLD platform.
+
+Your responsibility is to thoroughly inspect the current codebase, identify incomplete implementations, correct existing defects, and implement the requirements below without damaging working features or existing data.
+
+This is a production application. Do not approach it as a prototype.
+
+You must work with the existing architecture and technologies, preserve existing business logic, and ensure that all changes are compatible with the current application.
+
+---
+
+# PART 1 — UNDERSTAND THE EXISTING MANIFOLD PRODUCT
+
+MANIFOLD is a Nigerian automotive marketplace and digital automotive ecosystem.
+
+It has several connected components:
+
+1. MANIFOLD WORLD — a 3D multiplayer game and engagement environment.
+2. MANIFOLD Car Marketplace — a video-first vehicle marketplace.
+3. Dealer Portal — a platform for approved dealers to manage their vehicle inventory and business presence.
+4. Buyer Experience — vehicle discovery, search, comparison, enquiries and purchase progression.
+5. Price Intelligence — existing automotive price intelligence functionality.
+6. Market Intelligence — existing automotive market research, data extraction and analysis functionality.
+7. AI Automotive Assistant — intelligent automotive assistance and vehicle discovery.
+8. Admin Control Centre — platform management, security, AI usage, costs, players, dealers and marketplace operations.
+
+MANIFOLD WORLD is an engagement and acquisition layer within the larger MANIFOLD ecosystem. It is not the entire business or the primary product.
+
+Do not allow the game layer to compromise or distract from the maturity of the marketplace, dealer infrastructure, automotive intelligence, AI systems and operational capabilities.
+
+The marketplace and supporting business systems must remain independently functional even when the game is unavailable.
+
+## Existing technology stack
+
+Preserve and work with the existing stack:
+
+- React 19
+- Vite 8
+- TypeScript
+- Tailwind CSS
+- Node.js
+- Express 4
+- Supabase PostgreSQL
+- Supabase Auth
+- Supabase Storage
+- Vercel
+- Google Gemini through the existing @google/genai integration
+- Three.js for the 3D environment
+- OpenAI API for the additional AI capabilities
+
+Do not introduce another framework or replace the existing architecture without a compelling technical reason.
+
+---
+
+# PART 2 — CRITICAL PLAYER EXPERIENCE: REMOVE INTERNAL DATABASE MIGRATION NOTIFICATIONS
+
+There is an internal migration notification being displayed in the MANIFOLD WORLD player experience.
+
+It refers to a Supabase world migration and tells users to run an SQL migration file in Supabase.
+
+This must not appear to ordinary players.
+
+Players should never encounter:
+
+- SQL migration filenames.
+- Database migration instructions.
+- Supabase configuration warnings.
+- Internal developer diagnostics.
+- Backend implementation details.
+- Technical setup instructions intended for administrators.
+
+## Required implementation
+
+1. Locate the exact React component or conditional rendering logic displaying the migration notification.
+2. Remove this notification from the public player login, signup and onboarding experience.
+3. Ensure that the notification cannot accidentally reappear through another login or registration component.
+4. Preserve genuine player-facing authentication and registration errors.
+5. Keep technical database diagnostics accessible through an appropriate administrator/developer interface.
+6. Do not simply disable database health checks.
+7. Do not bypass database requirements or pretend the database is healthy when it is not.
+8. Do not alter player authentication or registration logic just to hide the notification.
+
+The player-facing experience should look like a finished commercial gaming platform.
+
+If the backend has a genuine operational problem, display a friendly message such as:
+
+"Unable to complete your request right now. Please try again shortly."
+
+Do not expose SQL statements, table names, RPC names or stack traces.
+
+## Important migration status
+
+The migration file named `game-world-social-migration.sql` has already been executed in the MANIFOLD Supabase project.
+
+DO NOT execute it again.
+
+DO NOT blindly recreate its tables, functions, policies or triggers.
+
+First inspect the live database and compare it against the expected migration structure.
+
+The migration contains the following components:
+
+- player_profiles
+- player_presence
+- chat_invitations
+- chat_conversations
+- chat_messages
+- player_blocks
+- player_reports
+- moderation_incidents
+- player_admin_audit_logs
+- chat_moderation_config
+
+It also contains player registration, onboarding, presence, discovery, chat, moderation, blocking, reporting and administration functions.
+
+Inspect the live implementation carefully.
+
+Pay particular attention to:
+
+### A. Player presence RLS recursion
+
+The existing `player_presence` SELECT policy contains an EXISTS query against `public.player_presence` itself.
+
+Determine whether this causes PostgreSQL infinite-recursion errors.
+
+If it does, implement a safe solution using an appropriate SECURITY DEFINER helper function or another secure RLS design.
+
+Do not solve this by making player presence publicly readable without restrictions.
+
+### B. Player registration trigger
+
+Inspect `handle_new_manifold_player()` and the `on_auth_user_created_manifold_player` trigger.
+
+The existing trigger expects metadata including full_name, nickname, phone_number and email.
+
+Ensure the signup form reliably supplies the required metadata.
+
+If registration metadata is incomplete, handle the situation safely without unnecessarily breaking Supabase Auth registration.
+
+Do not silently weaken required player information.
+
+### C. Public registration availability RPC
+
+Inspect `check_player_registration_available(TEXT,TEXT)`.
+
+Determine whether its public execution permissions expose unnecessary player information or enable user enumeration.
+
+Preserve the functionality while reducing information disclosure.
+
+### D. Admin functions
+
+Inspect the existing `is_admin()` and `is_active_admin()` functions and their SECURITY DEFINER behaviour.
+
+Ensure that admin privileges are checked against the actual active admin membership.
+
+Do not introduce an alternative admin authorization system.
+
+### E. Database safety
+
+Before proposing any database correction:
+
+- Inspect the existing object definitions.
+- Identify the exact defect.
+- Check dependencies.
+- Preserve existing records.
+- Avoid destructive table recreation.
+- Avoid duplicate triggers and policies.
+- Avoid blindly rerunning the previous migration.
+
+If a correction is required, provide a separate, targeted and safely repeatable corrective SQL migration.
+
+Do not apply destructive changes merely to make a migration execute successfully.
+
+---
+
+# PART 3 — FIX CLEAN URL ROUTING
+
+There is a routing problem.
+
+Currently, some pages only open when using a hash-based URL, such as:
+
+`https://domain.com/#/cars`
+
+However, the expected URLs should work without the hash:
+
+`https://domain.com/cars`
+
+This must be corrected.
+
+## Required behaviour
+
+1. Direct navigation to nested pages must work.
+2. Refreshing a nested page must not return a 404.
+3. Browser back and forward navigation must work.
+4. Internal navigation must use clean URLs.
+5. Legacy hash-based URLs must be handled gracefully.
+6. The application must not break existing route definitions.
+7. API requests must not be rewritten to the React homepage.
+
+Inspect the custom routing implementation in `src/App.tsx`.
+
+The application currently uses custom `window.history.pushState` and `popstate` navigation rather than React Router.
+
+Preserve the existing routing approach unless a migration is genuinely necessary.
+
+Inspect and correct `vercel.json`.
+
+Ensure:
+
+- API routes reach the Express serverless handler.
+- Static assets load normally.
+- Application routes fall back to `index.html`.
+- API endpoints are never swallowed by the SPA fallback.
+- No rewrite loops occur.
+
+Test all actual existing routes, including:
+
+- `/`
+- `/car-marketplace`
+- `/cars`
+- `/cars/:slug`
+- `/car-hunt`
+- `/reviews`
+- `/sell-a-car`
+- `/services`
+- `/about`
+- `/dealer`
+- `/dealer/dashboard`
+- `/dealer/cars`
+- `/dealer/cars/new`
+- `/admin`
+- `/admin/dashboard`
+- `/admin/market-intelligence`
+
+Do not invent missing pages. Test the routes that actually exist.
+
+---
+
+# PART 4 — BACKEND AND VERCEL SERVERLESS ARCHITECTURE
+
+A previous backend modernization phase introduced the following files:
+
+- `server/config/env.ts`
+- `server/lib/supabaseServer.ts`
+- `server/lib/migrationSql.ts`
+- `server/middleware/auth.ts`
+- `server/middleware/rateLimit.ts`
+- `server/middleware/validate.ts`
+- `server/services/marketIntelligenceBackend.ts`
+- `server/routes/marketIntelligence.ts`
+- `server/routes/world.ts`
+- `server/routes/dealers.ts`
+- `server/app.ts`
+- `api/index.ts`
+- `vercel.json`
+
+The existing `server.ts` was modified to reuse the shared Express application while preserving local development functionality.
+
+First inspect whether these files exist and whether their implementation is correct.
+
+Do not recreate them unnecessarily.
+
+## Requirements
+
+1. Maintain one shared Express application.
+2. Ensure local development and Vercel production use compatible route implementations.
+3. Preserve the existing API contracts.
+4. Ensure Supabase JWT verification is performed server-side.
+5. Ensure admin privileges are verified against active admin membership.
+6. Validate incoming request bodies.
+7. Prevent server-side request forgery in URL-fetching functionality.
+8. Protect billable AI endpoints.
+9. Implement sensible rate limits.
+10. Use appropriate request size limits.
+11. Keep sensitive server credentials out of frontend code.
+12. Ensure errors are logged safely without exposing internal details to users.
+
+The existing in-memory rate limiter is not globally shared across Vercel serverless instances.
+
+Identify this limitation and provide a production-suitable shared rate-limiting design if necessary.
+
+Do not claim that a per-instance in-memory limiter provides global rate protection.
+
+---
+
+# PART 5 — OPENAI INTEGRATION
+
+OpenAI API billing has been activated.
+
+The `OPENAI_API_KEY` environment variable has already been added to Vercel.
+
+The key must remain exclusively server-side.
+
+Never:
+
+- Hardcode the key.
+- Put it in frontend React components.
+- Put it in a `VITE_` environment variable.
+- Expose it through API responses.
+- Include it in logs.
+- Ask the user to paste the key into Google AI Studio.
+- Commit it to GitHub.
+
+Use:
+
+`process.env.OPENAI_API_KEY`
+
+Create or verify a centralized OpenAI service, preferably:
+
+`server/lib/openai.ts`
+
+Use the official OpenAI SDK already installed if available. If not, install the correct package and update the lockfile.
+
+## Environment variables
+
+Support:
+
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `OPENAI_TRANSCRIPTION_MODEL`
+- `OPENAI_EMBEDDING_MODEL`
+
+Use configurable model names rather than scattering hardcoded model identifiers throughout the application.
+
+Recommended initial configuration:
+
+- `OPENAI_MODEL=gpt-6.1-sol`
+- `OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe`
+- `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
+
+Validate model availability and compatibility against the installed SDK and actual API responses.
+
+Do not silently substitute unsupported models.
+
+## Preserve Gemini
+
+Gemini is already integrated into MANIFOLD.
+
+Existing Gemini functionality must continue working.
+
+Do not replace all Gemini integrations simply because OpenAI is being introduced.
+
+Use the most appropriate provider for each task, with a centralized provider-selection strategy.
+
+## Embedding compatibility warning
+
+Existing Market Intelligence uses:
+
+- `gemini-embedding-2-preview`
+- 768-dimensional vectors
+- `public.knowledge_base.embedding vector(768)`
+- Existing `match_knowledge()` retrieval logic
+
+OpenAI `text-embedding-3-small` normally produces 1536-dimensional embeddings.
+
+Even if OpenAI is configured to output 768 dimensions, its vectors must not be mixed with Gemini vectors.
+
+Create separate embedding spaces and retrieval paths if OpenAI embeddings are introduced.
+
+Preserve the existing Gemini retrieval pipeline until a deliberate migration and reindexing process is implemented.
+
+Never overwrite existing Gemini embeddings with OpenAI embeddings.
+
+---
+
+# PART 6 — VEHICLE LISTING: CRITICAL BUSINESS REQUIREMENTS
+
+This section is extremely important.
+
+MANIFOLD is a VIDEO-FIRST automotive marketplace.
+
+However, video must NOT be a compulsory requirement for dealers to submit vehicle listings.
+
+Dealers must be able to submit a listing successfully even when they have not yet supplied a video URL.
+
+Do not block listing submission because the video field is empty.
+
+Do not make a video URL a required database constraint.
+
+Do not make a video URL mandatory in frontend validation, backend validation, Zod schemas or database functions.
+
+## A. Dealer listing form
+
+Inspect the existing dealer vehicle submission form.
+
+The video field should be optional.
+
+A dealer must be able to:
+
+1. Enter vehicle information.
+2. Upload available vehicle photographs.
+3. Enter the vehicle specifications.
+4. Enter the price.
+5. Complete the remaining required fields.
+6. Submit the vehicle listing without supplying a video URL.
+
+The listing should save successfully if all genuinely required fields are complete.
+
+The dealer should be able to add or update the video later by editing the vehicle listing.
+
+## B. Prominent video-first notice
+
+Even though video is optional, make the video-first policy very obvious.
+
+Display a prominent, professional notice within the dealer listing form, close to the video upload field.
+
+Suggested copy:
+
+**MANIFOLD IS A VIDEO-FIRST CAR LISTING PLATFORM**
+
+Your vehicle can be submitted without a video, but we strongly encourage you to upload a detailed walkaround video of the listed car.
+
+A professional video helps buyers understand the vehicle's condition, features and overall presentation, and gives your listing a stronger presence on MANIFOLD.
+
+You can submit your listing now and add the video later.
+
+The message should be visually prominent but should not obstruct the listing process.
+
+Do not make it look like a technical warning or error.
+
+## C. Professional dealer marketing services
+
+Within the same notice or an appropriate supporting section, explain that dealers can engage MANIFOLD to help with their automotive marketing and content production.
+
+Offer these three services:
+
+1. **Car Social Media Setup and Management**
+   We help dealers establish and manage their automotive social media presence.
+
+2. **Professional Vehicle Photography and Video Production**
+   We handle consistent professional photography and detailed video shoots for dealer inventory.
+
+3. **Car Listing YouTube Channel Management**
+   We help dealers establish, operate and manage a dedicated YouTube channel for their car listings.
+
+Display a clear call to action:
+
+**Need professional support? Let MANIFOLD handle your automotive content and digital presence.**
+
+WhatsApp contact:
+
+`+2348169664607`
+
+Use this exact WhatsApp URL:
+
+`https://wa.me/2348169664607?text=Hello%20MANIFOLD%2C%20I%27m%20interested%20in%20your%20dealer%20marketing%20and%20professional%20car%20content%20services.`
+
+Open WhatsApp in a new tab or through a safe external link.
+
+The message should be prefilled automatically.
+
+Do not invent another phone number or use a different contact.
+
+## D. Video status and data handling
+
+Inspect the current vehicle database schema.
+
+Determine whether the existing video URL field and media fields can support this workflow.
+
+Preserve existing vehicle records and video URLs.
+
+If necessary, introduce a clear video availability state without unnecessarily changing the existing database architecture.
+
+Support these states:
+
+- Video available.
+- Video not yet provided.
+- Video loading.
+- Video unavailable or failed to load.
+
+Do not confuse an empty video URL with a loading error.
+
+A listing with no video should remain a valid listing.
+
+---
+
+# PART 7 — VIDEO-FIRST MARKETPLACE CARDS
+
+The public marketplace should maintain MANIFOLD's video-first identity.
+
+However, the absence of a video must never make a vehicle disappear from the marketplace.
+
+## Required card behaviour
+
+When a vehicle has a valid video URL:
+
+- Display the video-first card experience.
+- Load the video appropriately.
+- Preserve existing playback controls and responsive behaviour.
+- Avoid unnecessary autoplay with sound.
+- Handle video loading and playback errors gracefully.
+
+When a vehicle does not yet have a video URL:
+
+- Still display its vehicle card.
+- Display the vehicle's available cover image where appropriate.
+- Show the text:
+
+**Video loading...**
+
+This is the requested visual placeholder for listings awaiting video content.
+
+The placeholder must not prevent users from opening the listing.
+
+Do not display a blank card.
+
+Do not hide the listing.
+
+Do not render a broken video element indefinitely.
+
+If a video exists but genuinely fails to load, provide an appropriate fallback instead of repeatedly displaying an endless loading state.
+
+The user must be able to distinguish between a listing awaiting video and a video that has failed.
+
+---
+
+# PART 8 — VEHICLE DETAIL PAGE AND BUYER JOURNEY
+
+A vehicle without a video must still have a complete detail page.
+
+When a buyer opens a vehicle listing, display:
+
+1. Available vehicle images.
+2. Vehicle make.
+3. Actual vehicle model.
+4. Variant or trim.
+5. Model year.
+6. Price.
+7. Mileage.
+8. Transmission.
+9. Fuel type.
+10. Engine information, where available.
+11. Vehicle condition.
+12. Location.
+13. Description.
+14. Other existing vehicle specifications.
+15. Dealer information, subject to existing visibility rules.
+
+The detail page must not depend on the presence of a video.
+
+If a video is available, display it in the appropriate prominent position.
+
+If a video is unavailable, display the vehicle's images and the other details normally.
+
+Provide the buyer with the existing purchase progression actions, such as:
+
+- Contact dealer.
+- WhatsApp enquiry.
+- Request more information.
+- Arrange inspection.
+- Express buying interest.
+
+Preserve existing enquiry and purchase workflows.
+
+Do not invent a new payment or checkout system.
+
+A missing video must never disable buyer enquiries or other existing purchase actions.
+
+---
+
+# PART 9 — NON-NEGOTIABLE VEHICLE TITLE AND AI CONTENT RULE
+
+Vehicle titles must reflect the actual vehicle model.
+
+Example:
+
+Make: Toyota
+
+Model: Camry
+
+Variant: XSE
+
+Year: 2022
+
+Correct vehicle title:
+
+**Toyota Camry**
+
+The variant and year should be presented in their appropriate fields or supporting metadata.
+
+Do not allow AI to generate promotional vehicle titles that replace the actual model.
+
+Do not generate titles such as:
+
+- Stunning Toyota Camry Ready for You
+- Luxury Toyota Camry You Must See
+- Affordable Toyota Camry for Sale
+
+AI-generated content should be stored in separate fields, such as:
+
+- AI-generated vehicle description.
+- Selling highlights.
+- Vehicle summary.
+- SEO title.
+- Meta description.
+- Search keywords.
+
+Preserve the actual vehicle make and model across:
+
+- Database records.
+- Dealer listing form.
+- Marketplace cards.
+- Vehicle detail pages.
+- Search results.
+- AI search.
+- Dealer dashboard.
+- Admin dashboard.
+
+Do not let an AI content-generation process overwrite the actual vehicle model.
+
+---
+
+# PART 10 — DEALER LISTING INTELLIGENCE
+
+Implement or complete an AI-assisted vehicle listing intelligence service.
+
+It should help dealers prepare high-quality vehicle listings.
+
+The system may assist with:
+
+- Description writing.
+- Vehicle feature summaries.
+- Selling highlights.
+- SEO metadata.
+- Search keywords.
+- Missing-information detection.
+- Listing quality checks.
+- Content suggestions.
+
+It must not fabricate vehicle specifications.
+
+Only use information provided by the dealer or reliably extracted from the supplied vehicle information.
+
+Where data is missing, ask the dealer to supply it or clearly indicate that it is unavailable.
+
+AI should not automatically publish unverified claims.
+
+All generated content should be reviewable and editable by the dealer before saving.
+
+The AI must preserve the actual vehicle model and title rule described above.
+
+---
+
+# PART 11 — VEHICLE INTELLIGENCE SEARCH
+
+Implement or complete the intelligent vehicle discovery system.
+
+It should allow buyers to search using natural language.
+
+Examples:
+
+- I need a Toyota SUV under ₦25 million.
+- Find a fuel-efficient car for Lagos traffic.
+- Show me 2020–2023 Honda vehicles.
+- I want a family car with a spacious interior.
+- Find automatic transmission vehicles below my budget.
+
+The system must search actual MANIFOLD inventory.
+
+It must not return imaginary cars.
+
+It should use structured filters wherever possible:
+
+- Make.
+- Model.
+- Year.
+- Price range.
+- Body type.
+- Transmission.
+- Fuel type.
+- Mileage.
+- Location.
+- Vehicle condition.
+
+Natural-language interpretation should translate user intent into structured search criteria.
+
+Search results must link to real vehicle detail pages.
+
+When no matching vehicle exists, communicate that honestly and suggest reasonable alternatives based on actual inventory.
+
+---
+
+# PART 12 — VOICE VEHICLE SEARCH
+
+Introduce or complete voice-enabled vehicle search.
+
+Allow users to speak their vehicle requirements rather than typing everything.
+
+Use the configured transcription model for uploaded or recorded audio as appropriate.
+
+Implement:
+
+1. Microphone permission handling.
+2. Recording state.
+3. Recording completion.
+4. Audio upload to the secure backend.
+5. Transcription.
+6. Natural-language interpretation.
+7. Actual inventory search.
+8. Display of matching vehicles.
+
+Handle microphone denial, transcription failure and network errors gracefully.
+
+Never expose the transcription API key in the browser.
+
+---
+
+# PART 13 — PRICE INTELLIGENCE
+
+Price Intelligence already exists in MANIFOLD.
+
+Do not create an entirely new price intelligence system without auditing the existing one.
+
+Inspect:
+
+- Existing database tables.
+- Existing functions.
+- Existing price calculation logic.
+- Historical price data.
+- Market comparison features.
+- Current frontend screens.
+- Existing APIs.
+
+Preserve and improve working functionality.
+
+The system should support:
+
+- Vehicle price comparison.
+- Price estimates.
+- Market price ranges.
+- Historical trends where supported by data.
+- Asking-price evaluation.
+- Price competitiveness.
+- Price recommendations.
+
+Do not allow an LLM to invent a market price and present it as a verified valuation.
+
+Where actual data is insufficient, communicate uncertainty.
+
+Use deterministic calculations for numerical valuation wherever possible, with AI used for explanation and interpretation.
+
+---
+
+# PART 14 — MARKET INTELLIGENCE
+
+Market Intelligence is already implemented using Gemini.
+
+Existing capabilities include:
+
+- URL fetching.
+- Text extraction.
+- Embedding.
+- Knowledge-base search.
+- Source validation.
+- Confidence and review status.
+
+Preserve these existing features.
+
+Do not replace working Gemini extraction functionality unnecessarily.
+
+Maintain the existing validation standards, including:
+
+- Source corroboration.
+- Rejection of generic placeholder labels.
+- No unsupported assumptions about vehicle locations.
+- No automatic Lagos default where the source does not support it.
+- Confidence scoring.
+- Human review where required.
+
+Any OpenAI enhancement must remain compatible with the existing data and retrieval architecture.
+
+---
+
+# PART 15 — AI AUTOMOTIVE ASSISTANT
+
+Create or complete a centralized MANIFOLD AI Automotive Assistant.
+
+It should assist buyers and dealers with relevant automotive tasks.
+
+Possible functions include:
+
+- Vehicle discovery.
+- Vehicle comparisons.
+- Explaining vehicle specifications.
+- Helping buyers understand vehicle options.
+- Explaining price intelligence results.
+- Guiding buyers through inspection and purchase enquiries.
+- Helping dealers improve vehicle listings.
+- Answering questions from MANIFOLD's internal knowledge.
+- Accessing current external information only where appropriate.
+
+The assistant must distinguish between:
+
+1. Information retrieved from MANIFOLD's database.
+2. Information retrieved from external sources.
+3. AI-generated explanations or recommendations.
+
+Do not present unsupported information as a verified MANIFOLD fact.
+
+The assistant should be able to use Gemini or OpenAI through the centralized backend provider strategy.
+
+---
+
+# PART 16 — AI USAGE AND ADMIN CONTROL CENTRE
+
+Create or complete the administrator's AI Control Centre.
+
+Administrators should be able to monitor:
+
+- AI provider.
+- Model used.
+- Request count.
+- Successful requests.
+- Failed requests.
+- Usage volume.
+- Estimated costs.
+- Feature consuming the usage.
+- User or dealer associated with a request, subject to privacy and access controls.
+- Daily and monthly usage.
+- Error patterns.
+- Rate-limit activity.
+
+Allow administrators to control supported AI features and model configurations where safely implemented.
+
+Do not expose API keys.
+
+Do not allow ordinary users or dealers to change server-side provider credentials.
+
+Implement cost controls and usage limits to reduce unexpected API bills.
+
+Ensure the usage tracking does not become a source of sensitive-data leakage.
+
+---
+
+# PART 17 — AUTHENTICATION AND AUTHORIZATION
+
+Preserve the existing Supabase Auth implementation.
+
+Maintain separate and appropriate authorization for:
+
+- Buyers.
+- Dealers.
+- Admins.
+- MANIFOLD WORLD players.
+
+Do not assume that being authenticated means a user is an administrator.
+
+Admin access must be verified server-side against the existing active admin membership records.
+
+Dealer access must be verified against the existing dealer records and status.
+
+Do not rely exclusively on frontend route guards.
+
+Protect sensitive API routes on the server.
+
+Ensure that:
+
+- A dealer cannot edit another dealer's inventory.
+- A buyer cannot access dealer-only functionality.
+- A normal user cannot access admin endpoints.
+- An inactive or suspended dealer cannot perform restricted dealer actions.
+- A blocked or restricted player cannot bypass multiplayer moderation controls.
+
+Preserve existing authentication flows.
+
+---
+
+# PART 18 — DATABASE AND STORAGE SAFETY
+
+Before making any database changes:
+
+1. Inspect existing schemas.
+2. Inspect constraints.
+3. Inspect RLS policies.
+4. Inspect triggers.
+5. Inspect RPC functions.
+6. Inspect storage buckets and policies.
+7. Inspect existing relationships and dependencies.
+
+Do not recreate existing tables unnecessarily.
+
+Do not delete production data.
+
+Do not weaken RLS to make the application work.
+
+Ensure vehicle images and video assets use the existing storage architecture or an explicitly approved extension of it.
+
+Validate uploaded files, file sizes, MIME types and ownership.
+
+Ensure dealers can only modify media belonging to their own listings.
+
+Keep video URLs optional.
+
+Keep image uploads and the existing vehicle media workflow functional.
+
+---
+
+# PART 19 — UI/UX QUALITY REQUIREMENTS
+
+MANIFOLD should look and feel like a premium automotive technology platform.
+
+The UI should be:
+
+- Modern.
+- Professional.
+- Responsive.
+- Mobile-first where appropriate.
+- Consistent across pages.
+- Clear and easy to navigate.
+- Visually distinctive.
+- Fast and accessible.
+
+Avoid generic AI-generated interface patterns.
+
+Preserve the existing MANIFOLD design identity and components.
+
+For the dealer listing experience, the video-first notice should be obvious but should not make video submission appear compulsory.
+
+For players, the login and signup experience should feel like entering a finished gaming environment, not a database administration system.
+
+For buyers, missing video content should not make the marketplace look broken.
+
+---
+
+# PART 20 — TESTING AND VERIFICATION
+
+Do not stop after editing code.
+
+Run a complete verification process.
+
+## A. Build verification
+
+Run:
+
+- TypeScript type checking.
+- Vite production build.
+- Backend/serverless compilation or equivalent validation.
+- Relevant linting and tests available in the repository.
+
+Resolve errors introduced by your changes.
+
+## B. Player experience tests
+
+Verify:
+
+- Player login.
+- Player signup.
+- Player onboarding.
+- Player profile creation.
+- Player presence.
+- Player multiplayer functionality.
+- Player chat and moderation.
+- No internal database migration notification appears on public player screens.
+
+## C. URL routing tests
+
+Verify:
+
+- Direct route access.
+- Refresh.
+- Browser back.
+- Browser forward.
+- Legacy hash URL handling.
+- API route handling.
+- Vercel rewrite behaviour.
+
+## D. Dealer listing tests
+
+Test at least these scenarios:
+
+**Scenario 1: Listing without a video**
+
+A dealer completes all required fields, uploads available images and leaves the video URL empty.
+
+Expected result:
+
+- Listing submission succeeds.
+- The listing is saved.
+- No video-required validation error appears.
+- The dealer receives a successful submission response.
+
+**Scenario 2: Listing with a video**
+
+A dealer supplies a valid video URL.
+
+Expected result:
+
+- Listing submission succeeds.
+- Video information is saved.
+- The video appears in the appropriate marketplace experience.
+
+**Scenario 3: Add video later**
+
+A dealer submits a listing without video and subsequently edits it to add a video URL.
+
+Expected result:
+
+- The existing listing is updated.
+- Existing vehicle details and images remain intact.
+- The video becomes available on the marketplace and detail page.
+
+**Scenario 4: Marketplace display without video**
+
+Expected result:
+
+- The vehicle card remains visible.
+- The card displays the available vehicle image.
+- The requested "Video loading..." placeholder is displayed.
+- The buyer can still open the vehicle.
+
+**Scenario 5: Vehicle detail without video**
+
+Expected result:
+
+- Vehicle images appear.
+- Vehicle specifications appear.
+- Price and dealer information appear according to visibility rules.
+- Enquiry and purchase progression actions remain functional.
+
+**Scenario 6: Dealer marketing support**
+
+Expected result:
+
+- The three dealer services are displayed.
+- The WhatsApp link opens correctly.
+- The automated message is prefilled.
+- The correct number is used.
+
+## E. AI tests
+
+Verify:
+
+- OpenAI connection.
+- Gemini connection.
+- Provider selection.
+- Authentication.
+- Rate limiting.
+- Usage tracking.
+- Error handling.
+- Vehicle listing intelligence.
+- Natural-language vehicle search.
+- Voice transcription.
+- AI assistant responses.
+- Embedding separation.
+
+## F. Database tests
+
+Verify that the application uses the existing live database structures correctly.
+
+Do not execute `game-world-social-migration.sql` again.
+
+If the migration has an existing defect, isolate the defect and prepare a targeted correction.
+
+## G. Production verification
+
+Do not claim production deployment is successful merely because local tests pass.
+
+Distinguish between:
+
+- Local verification.
+- Mocked tests.
+- Database verification.
+- Vercel deployment verification.
+- Live production smoke tests.
+
+Clearly state which tests have actually been performed.
+
+---
+
+# PART 21 — IMPLEMENTATION RULES
+
+These rules are mandatory.
+
+1. Inspect before editing.
+2. Preserve existing working functionality.
+3. Do not create duplicate services or duplicate database objects.
+4. Do not remove existing Gemini capabilities.
+5. Do not change the actual vehicle title/model rule.
+6. Do not make video mandatory.
+7. Do not expose internal database notifications to players.
+8. Do not execute the previously applied multiplayer migration again.
+9. Do not weaken security policies.
+10. Do not expose API keys.
+11. Do not create fake vehicle inventory.
+12. Do not claim untested features are complete.
+13. Do not replace the entire project with a new architecture.
+14. Do not silently change existing database structures.
+15. Do not use destructive SQL without identifying and explaining its consequences.
+
+When a database change is required, produce a separate migration file with a clear name and explain when it should be executed.
+
+When a change can safely be completed in application code, prefer application code over unnecessary schema modifications.
+
+---
+
+# PART 22 — REQUIRED FINAL REPORT
+
+After implementation, provide a detailed report containing:
+
+### 1. Audit findings
+What was already working, what was broken, and what was incomplete.
+
+### 2. Files inspected
+List the relevant existing files.
+
+### 3. Files created
+List every newly created file.
+
+### 4. Files modified
+List every modified file and explain the reason.
+
+### 5. Database changes
+List any SQL changes, their purpose and whether they have been executed.
+
+Clearly identify anything that still requires execution in Supabase.
+
+### 6. Security changes
+Explain authentication, authorization, RLS, API protection, rate limits and secrets handling.
+
+### 7. Feature implementation
+Report the status of:
+
+- Player migration notification removal.
+- Player login/signup.
+- Clean URL routing.
+- Backend and Vercel serverless architecture.
+- OpenAI integration.
+- Gemini preservation.
+- Dealer listing without mandatory video.
+- Video-first dealer notification.
+- Marketplace video placeholder.
+- Vehicle detail experience.
+- Dealer WhatsApp services.
+- Dealer listing intelligence.
+- Vehicle intelligence search.
+- Voice search.
+- Price Intelligence.
+- Market Intelligence.
+- AI Automotive Assistant.
+- Admin AI Control Centre.
+
+### 8. Testing results
+Provide actual test results, not assumptions.
+
+### 9. Outstanding issues
+List anything not completed and why.
+
+### 10. Next actions
+Provide the exact next actions required to move MANIFOLD toward production readiness.
+
+---
+
+# FINAL INSTRUCTION
+
+Start with a complete audit of the existing codebase.
+
+Then implement the corrections and features in a dependency-aware sequence.
+
+Do not stop after providing recommendations or code snippets. Make the actual changes in the project wherever the environment permits.
+
+If a feature already works, verify it and preserve it.
+
+If a feature is partially implemented, complete it.
+
+If a feature is broken, correct it.
+
+If a database change is required, inspect the live schema and produce a safe, targeted migration.
+
+Do not ask the user to recreate features that already exist.
+
+Do not sacrifice the marketplace, dealer portal, AI infrastructure or security in order to improve the game layer.
+
+The ultimate objective is a coherent, secure, production-ready MANIFOLD ecosystem in which buyers, dealers, players and administrators each have a polished and reliable experience.

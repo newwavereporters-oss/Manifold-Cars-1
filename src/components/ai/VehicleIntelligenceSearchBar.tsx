@@ -256,7 +256,7 @@ export const VehicleIntelligenceSearchBar: React.FC<VehicleIntelligenceSearchBar
               <button
                 type="button"
                 onClick={stopVoiceCapture}
-                className="h-11 px-4 bg-[#EF233C] hover:bg-[#d91b32] text-white rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center gap-2 animate-pulse cursor-pointer shrink-0"
+                className="h-11 px-4 bg-[#EF233C] hover:bg-[#d91b32] ring-2 ring-red-400/60 text-white rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center gap-2 cursor-pointer shrink-0"
               >
                 <Square className="w-3.5 h-3.5 fill-current" />
                 <span>Stop ({recordSeconds}s)</span>

@@ -92,29 +92,37 @@ export function isPlayerChatRestricted(
 
 function mapWorldError(err: any): string {
   const msg = String(err?.message || err || 'Unexpected error');
+  const lower = msg.toLowerCase();
+
+  if (err?.isTimeout || lower.includes('timed out') || lower.includes('network')) {
+    return 'Connection timed out. Please check your internet connection and try again.';
+  }
+  if (lower.includes('email not confirmed')) {
+    return 'Please verify your email address using the confirmation link in your inbox before signing in.';
+  }
+  if (lower.includes('invalid login credentials')) {
+    return 'Incorrect email address or password. Please check your details and try again.';
+  }
+  if (lower.includes('user already registered') || lower.includes('already been registered')) {
+    return 'An account with this email address already exists. Please sign in instead.';
+  }
+  if (msg.includes('idx_player_profiles_nickname_lower') || lower.includes('nickname')) {
+    return 'That public nickname is already taken or invalid. Choose a unique 3–20 character nickname.';
+  }
   if (
     msg.includes('Could not find the function') ||
     msg.includes('does not exist') ||
+    lower.includes('database error') ||
+    lower.includes('infinite recursion') ||
     err?.code === 'PGRST205' ||
     err?.code === 'PGRST202' ||
     err?.code === '42P01' ||
-    err?.code === '42703'
+    err?.code === '42703' ||
+    err?.code === '42P17'
   ) {
-    return 'Game world database schema is not yet applied. Run src/db/game-world-social-migration.sql in your Supabase SQL Editor.';
+    return 'Unable to complete your MANIFOLD World request right now. Please try again shortly.';
   }
-  if (msg.includes('idx_player_profiles_nickname_lower') || msg.toLowerCase().includes('nickname')) {
-    return 'That public nickname is already taken or invalid. Choose a unique 3–20 character nickname.';
-  }
-  if (msg.toLowerCase().includes('database error saving new user')) {
-    return 'Unable to save player profile during signup. Ensure the latest src/db/game-world-social-migration.sql has been applied and the nickname is unique.';
-  }
-  if (err?.isTimeout || msg.toLowerCase().includes('timed out')) {
-    return 'Connection timed out. Please check your internet connection and try again.';
-  }
-  if (msg.toLowerCase().includes('email not confirmed')) {
-    return 'Please verify your email address using the confirmation link in your inbox before signing in.';
-  }
-  return msg;
+  return 'Something went wrong while connecting to MANIFOLD World. Please try again.';
 }
 
 export async function checkWorldDbStatus(): Promise<WorldDbStatus> {

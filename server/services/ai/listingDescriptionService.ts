@@ -174,7 +174,7 @@ CRITICAL NON-FABRICATION RULES:
 1. NEVER invent features, service history, accident-free status, "first body", "buy and drive", duty papers/customs status, warranty, or inspection results unless explicitly provided in the Verified Vehicle Facts or Dealer Notes.
 2. ONLY mention attributes present in the supplied payload. If a field is omitted, do NOT guess or mention it.
 3. NEVER include dealer phone numbers, WhatsApp numbers, or direct contact bypassing MANIFOLD Concierge.
-4. Keep "seo_title" factual (e.g. "${input.year ? `${input.year} ` : ''}${input.make} ${input.model} | MANIFOLD").
+4. Keep "seo_title" factual (e.g. "${input.make} ${input.model}${input.year ? ` (${input.year})` : ''} | MANIFOLD"). Keep the main listing title strictly as Make + Model (${input.make} ${input.model}).
 5. Generate exactly 5 factual selling_highlights as crisp single-line statements.
 6. Tone: ${input.tone}; Target Buyer: ${input.targetBuyer}; Length target: ${lengthGuidance}; Approach: ${input.approach}; Selling Angle: ${input.sellingAngle}; Call to Action: ${input.callToAction}.
 7. Action mode: ${actionGuidanceMap[input.action]}`;
@@ -202,9 +202,11 @@ CRITICAL NON-FABRICATION RULES:
     temperature: input.action === 'improve_grammar' || input.action === 'shorter' ? 0.2 : 0.45,
   });
 
-  const preservedModelTitle = [input.year, input.make, input.model, input.trim]
-    .filter(Boolean)
-    .join(' ');
+  const cleanMake = input.make.trim();
+  const cleanModel = input.model.trim();
+  const preservedModelTitle = cleanModel.toLowerCase().startsWith(cleanMake.toLowerCase())
+    ? cleanModel
+    : `${cleanMake} ${cleanModel}`.trim();
 
   return {
     output: {

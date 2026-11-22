@@ -325,7 +325,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
       if (!mounted) return;
       setDbStatus(status);
 
-      if (isSupabaseConfigured && !status.migrationRequired) {
+      if (isSupabaseConfigured) {
         const { data: sessionData } = await supabase.auth.getSession();
         accessTokenRef.current = sessionData.session?.access_token || null;
 

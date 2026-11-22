@@ -219,10 +219,9 @@ export const AdminModerationView: React.FC = () => {
                 Game World Database Migration Required
               </h3>
               <p className="text-xs text-amber-800 leading-relaxed">
-                The social &amp; moderation tables (<code>player_profiles</code>,{' '}
+                Some social &amp; moderation tables or permissions (<code>player_profiles</code>,{' '}
                 <code>player_reports</code>, <code>moderation_incidents</code>,{' '}
-                <code>player_admin_audit_logs</code>, <code>chat_moderation_config</code>) have not yet been applied in Supabase. Run{' '}
-                <code>src/db/game-world-social-migration.sql</code> in your Supabase SQL Editor.
+                <code>player_admin_audit_logs</code>, <code>chat_moderation_config</code>) require setup or permission repair in Supabase. If tables already exist, do not re-run <code>game-world-social-migration.sql</code> — apply the idempotent fix in <code>src/db/world-experience-hardening-fix.sql</code> instead.
               </p>
             </div>
           </div>

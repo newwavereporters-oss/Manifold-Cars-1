@@ -555,12 +555,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
   };
 
+  const closeAddCarModal = () => {
+    setShowAddCarModal(false);
+    if (activeRoute === '/admin/cars/new') {
+      navigate('/admin/cars');
+    }
+  };
+
   const handleCreateCarSave = async (carData: Partial<Car>) => {
     setIsSavingCar(true);
     try {
       const created = await carService.createCar(carData);
       setIsSavingCar(false);
-      setShowAddCarModal(false);
+      closeAddCarModal();
       notify(`Vehicle "${created.title}" successfully persisted to Supabase!`);
     } catch (e: any) {
       setIsSavingCar(false);
@@ -847,7 +854,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               </span>
               <span
                 className={`w-2 h-2 rounded-full ${
-                  supabaseActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                  supabaseActive ? 'bg-emerald-400' : 'bg-amber-400'
                 }`}
               />
             </button>
@@ -2513,7 +2520,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               </div>
 
               <button
-                onClick={() => setShowAddCarModal(false)}
+                onClick={closeAddCarModal}
                 className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/10 transition"
               >
                 <X className="w-6 h-6" />
@@ -2525,7 +2532,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 isEditMode={false}
                 isSaving={isSavingCar}
                 onSave={handleCreateCarSave}
-                onCancel={() => setShowAddCarModal(false)}
+                onCancel={closeAddCarModal}
               />
             </div>
           </div>

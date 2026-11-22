@@ -255,10 +255,13 @@ export const AdminAiControlCentreView: React.FC = () => {
 
             <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
               <span className="text-[10px] uppercase font-bold text-gray-400 block">
-                Gemini Market Extraction
+                Embedding Models (Isolated Spaces)
               </span>
-              <span className="font-semibold text-emerald-700 block mt-0.5">
-                Preserved (Knowledge Base)
+              <span className="font-semibold text-gray-800 block mt-0.5 font-mono text-[11px]">
+                OpenAI: {overview?.config.embeddingModel || 'text-embedding-3-small'}
+              </span>
+              <span className="font-semibold text-emerald-700 block mt-0.5 text-[11px]">
+                Gemini KB: gemini-embedding-2-preview (768d)
               </span>
             </div>
           </div>
