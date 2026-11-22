@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, SlidersHorizontal, X, RotateCcw, ChevronDown, Compass, Filter } from 'lucide-react';
 import { VideoCarCard } from '../components/VideoCarCard';
-import { Car, CarBrand, FilterState } from '../types';
+import { BodyTypeCategory, Car, CarBrand, FilterState } from '../types';
 import { BODY_TYPES, NIGERIAN_LOCATIONS, PRICE_OPTIONS } from '../data/brandsAndTypes';
 import { brandService } from '../services/brandService';
+import { categoryService } from '../services/categoryService';
 import { modelService } from '../services/modelService';
 import { FORMAT_NUMBER } from '../data/mockCars';
 import { VehicleIntelligenceSearchBar } from '../components/ai/VehicleIntelligenceSearchBar';
@@ -54,6 +55,10 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
   const [brands, setBrands] = useState<CarBrand[]>(() =>
     brandService.getBrandsSync().filter((b) => b.is_active !== false)
   );
+  const [bodyTypes, setBodyTypes] = useState<BodyTypeCategory[]>(() => {
+    const syncTypes = categoryService.getBodyTypesSync().filter((t) => t.is_active !== false);
+    return syncTypes.length > 0 ? syncTypes : (BODY_TYPES as unknown as BodyTypeCategory[]);
+  });
   const [availableModels, setAvailableModels] = useState<string[]>([]);
 
   useEffect(() => {
@@ -62,6 +67,12 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
       .getActiveBrands()
       .then((data) => {
         if (mounted) setBrands(data);
+      })
+      .catch(() => {});
+    categoryService
+      .getActiveBodyTypes()
+      .then((data) => {
+        if (mounted && data.length > 0) setBodyTypes(data);
       })
       .catch(() => {});
     return () => {
@@ -141,7 +152,12 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
       if (filters.maxPrice !== '' && car.price > Number(filters.maxPrice)) return false;
       if (filters.yearFrom !== '' && car.year < Number(filters.yearFrom)) return false;
       if (filters.yearTo !== '' && car.year > Number(filters.yearTo)) return false;
-      if (filters.bodyType && car.body_type !== filters.bodyType) return false;
+      if (
+        filters.bodyType &&
+        (car.body_type || '').trim().toLowerCase() !== filters.bodyType.trim().toLowerCase()
+      ) {
+        return false;
+      }
       if (filters.condition && car.condition !== filters.condition) return false;
       if (filters.transmission && car.transmission !== filters.transmission) return false;
       if (filters.fuelType && car.fuel_type !== filters.fuelType) return false;
@@ -357,7 +373,7 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
                 className="w-full h-9 px-2.5 bg-gray-50 border border-gray-200 rounded text-xs text-gray-800 font-medium focus:bg-white focus:border-[#071A2B] outline-none"
               >
                 <option value="">All Body Types</option>
-                {BODY_TYPES.map((bt) => (
+                {bodyTypes.map((bt) => (
                   <option key={bt.id} value={bt.name}>
                     {bt.name}
                   </option>
@@ -558,7 +574,7 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
                     className="w-full h-9 px-2 bg-gray-50 border border-gray-200 rounded text-xs"
                   >
                     <option value="">All Types</option>
-                    {BODY_TYPES.map((bt) => (
+                    {bodyTypes.map((bt) => (
                       <option key={bt.id} value={bt.name}>
                         {bt.name}
                       </option>

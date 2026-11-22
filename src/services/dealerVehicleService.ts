@@ -229,7 +229,7 @@ export function formatDealerSupabaseWriteError(
       `A vehicle field failed a database check constraint (${code}): ${rawMessage}${details ? ` (${details})` : ''}.`;
   } else if (code === 'PGRST204' || code === '42703') {
     userMessage =
-      `Database schema column mismatch (${code}): ${rawMessage}. Run src/db/dealer-vehicle-persistence-fix.sql in Supabase SQL Editor to align columns.`;
+      `Database schema column mismatch (${code}): ${rawMessage}. Run src/db/cars-body-type-column-fix.sql and src/db/dealer-vehicle-persistence-fix.sql in Supabase SQL Editor to align columns.`;
   } else {
     userMessage = `Vehicle ${context.operation} failed${code ? ` (${code})` : ''}: ${rawMessage}${details ? ` — ${details}` : ''}`;
   }
