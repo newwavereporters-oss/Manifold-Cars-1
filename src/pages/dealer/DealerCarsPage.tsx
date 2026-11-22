@@ -36,10 +36,13 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
   const { dealerAccount } = useDealerAuth();
   const resolvedApproval = resolveDealerApprovalState(
     dealerAccount?.accountStatus,
-    dealerAccount?.isVerified
+    dealerAccount?.isVerified,
+    dealerAccount?.dealerStatus
   );
   const approvalStatus = dealerAccount?.approvalStatus ?? resolvedApproval.approvalStatus;
-  const isApproved = dealerAccount?.isApproved ?? resolvedApproval.isApproved;
+  const currentDealerStatus = dealerAccount?.dealerStatus ?? resolvedApproval.dealerStatus;
+  const isApproved =
+    currentDealerStatus === 'approved' && (dealerAccount?.isApproved ?? resolvedApproval.isApproved);
   const [cars, setCars] = useState<DealerCarRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,6 +51,30 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
   const [assigningCarId, setAssigningCarId] = useState<string | null>(null);
   const [replacePromptCar, setReplacePromptCar] = useState<DealerCarRecord | null>(null);
   const [billboardToast, setBillboardToast] = useState<string | null>(null);
+  const [persistenceNotice, setPersistenceNotice] = useState<{
+    action: 'created' | 'updated';
+    id: string;
+    status: string;
+    title: string;
+    mediaWarning?: string;
+  } | null>(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const created = sp.get('created');
+      const updated = sp.get('updated');
+      const id = created || updated;
+      if (!id) return null;
+      return {
+        action: created ? 'created' : 'updated',
+        id,
+        status: sp.get('status') || 'DRAFT',
+        title: sp.get('title') || 'Vehicle Listing',
+        mediaWarning: sp.get('mediaWarning') || undefined,
+      };
+    } catch {
+      return null;
+    }
+  });
 
   const loadBillboardState = async () => {
     try {
@@ -227,6 +254,46 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
             <span>CHAT WITH ADMIN ON WHATSAPP</span>
           </a>
         </div>
+
+        {persistenceNotice && (
+          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold">
+                  Vehicle {persistenceNotice.action === 'created' ? 'saved to database' : 'updated in database'}:{' '}
+                  {persistenceNotice.title} ({persistenceNotice.status === 'PENDING_REVIEW' ? 'In Review' : persistenceNotice.status})
+                </p>
+                <p className="text-[11px] text-emerald-800/80 font-mono">
+                  Confirmed Record ID: {persistenceNotice.id}
+                </p>
+                {persistenceNotice.mediaWarning && (
+                  <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-1">
+                    Note: Core vehicle record is saved, but secondary media table sync reported: {persistenceNotice.mediaWarning}. Use Edit Listing if needed.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {persistenceNotice.mediaWarning && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/dealer/cars/${persistenceNotice.id}/edit`)}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-900 font-bold hover:bg-emerald-100 transition"
+                >
+                  Edit Listing
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setPersistenceNotice(null)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-100/80 hover:bg-emerald-200 text-emerald-900 font-semibold transition"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
 
         {billboardToast && (
           <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center gap-2">

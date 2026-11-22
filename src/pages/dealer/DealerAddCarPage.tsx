@@ -1,12 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DealerLayout } from '../../components/dealer/DealerLayout';
 import { useDealerAuth } from '../../context/DealerAuthContext';
-import { dealerVehicleService, DealerCarFormInput } from '../../services/dealerVehicleService';
+import {
+  dealerVehicleService,
+  DealerCarFormInput,
+  DealerVehicleWriteErrorDetails,
+} from '../../services/dealerVehicleService';
 import { brandService } from '../../services/brandService';
 import { modelService } from '../../services/modelService';
 import { categoryService } from '../../services/categoryService';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../../utils/youtube';
-import { buildVehicleModelTitle } from '../../utils/carMedia';
+import {
+  buildVehicleModelTitle,
+  generateUuid,
+  normalizeVehicleCondition,
+} from '../../utils/carMedia';
 import { DealerVideoMarketingNotice } from '../../components/dealer/DealerVideoMarketingNotice';
 import {
   CarFront,
@@ -73,7 +81,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   const [year, setYear] = useState<number>(2021);
   const [typeId, setTypeId] = useState('');
   const [bodyType, setBodyType] = useState('');
-  const [condition, setCondition] = useState('Foreign Used (Tokunbo)');
+  const [condition, setCondition] = useState('Foreign Used');
   const [mileage, setMileage] = useState<string>('45000');
   const [fuelType, setFuelType] = useState('Petrol');
   const [transmission, setTransmission] = useState('Automatic');
@@ -108,8 +116,11 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
   // UI States
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitDiagnostic, setSubmitDiagnostic] = useState<DealerVehicleWriteErrorDetails | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [priceCalc, setPriceCalc] = useState<CommissionCalculationResult | null>(null);
+  const submitLockRef = useRef(false);
+  const submissionAttemptIdRef = useRef<string>(generateUuid());
 
   // Live Dealer Pricing Intelligence calculation
   useEffect(() => {
@@ -265,6 +276,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
     const cleanHp = horsepower ? Number(horsepower.replace(/[^0-9.]/g, '')) : null;
 
     return {
+      submissionId: submissionAttemptIdRef.current,
       brand_id: brandId || undefined,
       make: make || 'Vehicle',
       model: model || 'Model',
@@ -272,7 +284,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
       year: Number(year) || 2024,
       type_id: typeId || undefined,
       body_type: bodyType || 'SUV',
-      condition,
+      condition: normalizeVehicleCondition(condition),
       mileage: cleanMileage,
       fuel_type: fuelType,
       transmission,
@@ -297,6 +309,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
 
   // Section 22: SAVE DRAFT (incomplete information allowed)
   const handleSaveDraft = async () => {
+    if (submitLockRef.current) return;
     if (!isApproved) {
       setSubmitError('Dealership approval (dealer_status = approved) is required before posting listings.');
       return;
@@ -305,29 +318,49 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
       setSubmitError('Dealer identity not found. Please complete dealership onboarding.');
       return;
     }
+    if (youtubeUrl.trim() && !derivedVideoId) {
+      setSubmitError('The YouTube URL entered is invalid. Clear the field (video is optional) or provide a valid YouTube link.');
+      return;
+    }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
+    setSubmitDiagnostic(null);
 
     try {
       const payload = preparePayload();
       const res = await dealerVehicleService.createDealerCar(payload, dealerAccount.dealerId, true);
 
-      if (res.error) {
-        setSubmitError(res.error);
-        setSubmitting(false);
+      if (res.error || !res.car?.id) {
+        setSubmitError(res.error || 'Vehicle draft could not be confirmed in the database. Please try again.');
+        setSubmitDiagnostic(res.errorDetails || null);
       } else {
-        navigate('/dealer/cars');
+        submissionAttemptIdRef.current = generateUuid();
+        const params = new URLSearchParams({
+          created: res.car.id,
+          status: res.car.status,
+          title: res.car.title,
+        });
+        if (res.partialMediaError) {
+          params.set('mediaWarning', res.partialMediaError);
+        }
+        navigate(`/dealer/cars?${params.toString()}`);
       }
-    } catch {
-      setSubmitError('Failed to save vehicle draft. Please check your network and try again.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Network or unexpected error';
+      setSubmitError(`Failed to save vehicle draft: ${msg}`);
+    } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
 
   // Section 21 & 23: VALIDATE AND OPEN REVIEW SUMMARY
   const handleInitiateReview = () => {
+    if (submitLockRef.current) return;
     setSubmitError(null);
+    setSubmitDiagnostic(null);
     if (!isApproved) {
       setSubmitError('Dealership approval (dealer_status = approved) is required before submitting vehicles.');
       return;
@@ -367,6 +400,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
 
   // Section 23: SUBMIT VEHICLE FOR REVIEW
   const handleConfirmSubmitForReview = async () => {
+    if (submitLockRef.current) return;
     if (!isApproved) {
       setSubmitError('Dealership approval (dealer_status = approved) is required before submitting vehicles.');
       return;
@@ -376,25 +410,39 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
       return;
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
+    setSubmitDiagnostic(null);
 
     try {
       const payload = preparePayload();
       const res = await dealerVehicleService.createDealerCar(payload, dealerAccount.dealerId, false);
 
-      if (res.error) {
-        setSubmitError(res.error);
-        setSubmitting(false);
+      if (res.error || !res.car?.id) {
+        setSubmitError(res.error || 'Vehicle submission could not be confirmed in the database. Please try again.');
+        setSubmitDiagnostic(res.errorDetails || null);
         setShowReviewModal(false);
       } else {
+        submissionAttemptIdRef.current = generateUuid();
         setShowReviewModal(false);
-        navigate('/dealer/cars');
+        const params = new URLSearchParams({
+          created: res.car.id,
+          status: res.car.status,
+          title: res.car.title,
+        });
+        if (res.partialMediaError) {
+          params.set('mediaWarning', res.partialMediaError);
+        }
+        navigate(`/dealer/cars?${params.toString()}`);
       }
-    } catch {
-      setSubmitError('Failed to submit vehicle for review. Please try again.');
-      setSubmitting(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Network or unexpected error';
+      setSubmitError(`Failed to submit vehicle for review: ${msg}`);
       setShowReviewModal(false);
+    } finally {
+      submitLockRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -524,7 +572,17 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
         {submitError && (
           <div className="p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3 animate-in fade-in">
             <AlertCircle className="w-5 h-5 text-[#EF233C] shrink-0 mt-0.5" />
-            <p className="text-xs text-red-800 font-medium leading-relaxed">{submitError}</p>
+            <div className="space-y-1 flex-1 min-w-0">
+              <p className="text-xs text-red-800 font-semibold leading-relaxed">{submitError}</p>
+              {submitDiagnostic && (
+                <p className="text-[11px] text-red-700/80 font-mono break-words">
+                  Diagnostic: table={submitDiagnostic.table}
+                  {submitDiagnostic.code ? ` · code=${submitDiagnostic.code}` : ''}
+                  {submitDiagnostic.status ? ` · status=${submitDiagnostic.status}` : ''}
+                  {submitDiagnostic.hint ? ` · hint=${submitDiagnostic.hint}` : ''}
+                </p>
+              )}
+            </div>
           </div>
         )}
 
@@ -708,7 +766,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
                   onChange={(e) => setCondition(e.target.value)}
                   className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
                 >
-                  <option value="Foreign Used (Tokunbo)">Foreign Used (Tokunbo)</option>
+                  <option value="Foreign Used">Foreign Used (Tokunbo)</option>
                   <option value="Nigerian Used">Nigerian Used</option>
                   <option value="Brand New">Brand New</option>
                 </select>

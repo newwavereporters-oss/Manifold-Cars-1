@@ -1,7 +1,7 @@
 import { Car } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl, formatStandardYouTubeUrl } from '../utils/youtube';
-import { buildVehicleModelTitle } from '../utils/carMedia';
+import { buildVehicleModelTitle, generateUuid, normalizeVehicleCondition } from '../utils/carMedia';
 import { brandService } from './brandService';
 import { categoryService } from './categoryService';
 
@@ -210,14 +210,14 @@ class CarService {
       throw new Error('Supabase is not configured. Unable to persist vehicle.');
     }
 
-    const id = carData.id || `car-${Date.now()}`;
+    const id = carData.id && UUID_REGEX.test(carData.id) ? carData.id : generateUuid();
     const canonicalTitle = buildVehicleModelTitle(carData.make || 'Toyota', carData.model || 'Model');
     const title = carData.title?.trim() || canonicalTitle;
     const slugBase = (carData.slug || `${carData.year || ''}-${canonicalTitle}`)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-    const slug = `${slugBase}-${Date.now().toString(36).substring(0, 4)}`;
+      .replace(/^-|-$/g, '') || 'vehicle';
+    const slug = `${slugBase}-${id.slice(0, 8)}`;
 
     const resolveBrandUuid = async (): Promise<string | null> => {
       if (carData.brand_id && UUID_REGEX.test(carData.brand_id)) return carData.brand_id;
@@ -245,7 +245,7 @@ class CarService {
       trim: carData.trim || 'Standard',
       type_id: resolvedTypeId,
       body_type: carData.body_type || 'SUV',
-      condition: carData.condition || 'Foreign Used',
+      condition: normalizeVehicleCondition(carData.condition),
       price: carData.price || 0,
       previous_price: carData.original_price || null,
       original_price: carData.original_price || null,
@@ -292,7 +292,7 @@ class CarService {
       const thumb = carData.video.youtube_thumbnail_url || (vidId ? getYouTubeThumbnailUrl(vidId) : '');
 
       const { error: mediaErr } = await supabase.from('car_media').insert({
-        id: `media-${id}-${Date.now()}`,
+        id: generateUuid(),
         car_id: id,
         media_type: 'youtube_video',
         video_type: carData.video.video_type || 'full_review',
@@ -315,7 +315,7 @@ class CarService {
     // 3. Section 12: Save Gallery Images to public.car_images
     if (carData.gallery_image_1_url) {
       const { error: img1Err } = await supabase.from('car_images').insert({
-        id: `img1-${id}-${Date.now()}`,
+        id: generateUuid(),
         car_id: id,
         image_url: carData.gallery_image_1_url,
         position: 1,
@@ -326,7 +326,7 @@ class CarService {
 
     if (carData.gallery_image_2_url) {
       const { error: img2Err } = await supabase.from('car_images').insert({
-        id: `img2-${id}-${Date.now()}`,
+        id: generateUuid(),
         car_id: id,
         image_url: carData.gallery_image_2_url,
         position: 2,
@@ -427,7 +427,7 @@ class CarService {
       // Delete existing primary video and insert clean record
       await supabase.from('car_media').delete().eq('car_id', id).eq('media_type', 'youtube_video');
       await supabase.from('car_media').insert({
-        id: `media-${id}-${Date.now()}`,
+        id: generateUuid(),
         car_id: id,
         media_type: 'youtube_video',
         video_type: updates.video.video_type || 'full_review',
@@ -449,7 +449,7 @@ class CarService {
       await supabase.from('car_images').delete().eq('car_id', id).eq('position', 1);
       if (updates.gallery_image_1_url) {
         await supabase.from('car_images').insert({
-          id: `img1-${id}-${Date.now()}`,
+          id: generateUuid(),
           car_id: id,
           image_url: updates.gallery_image_1_url,
           position: 1,
@@ -462,7 +462,7 @@ class CarService {
       await supabase.from('car_images').delete().eq('car_id', id).eq('position', 2);
       if (updates.gallery_image_2_url) {
         await supabase.from('car_images').insert({
-          id: `img2-${id}-${Date.now()}`,
+          id: generateUuid(),
           car_id: id,
           image_url: updates.gallery_image_2_url,
           position: 2,
@@ -509,7 +509,7 @@ class CarService {
 
     const duplicateData: Partial<Car> = {
       ...source,
-      id: `car-${Date.now()}`,
+      id: generateUuid(),
       title: `${source.title} (Copy)`,
       status: 'DRAFT',
       is_featured: false,

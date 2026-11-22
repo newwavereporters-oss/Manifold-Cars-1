@@ -10,6 +10,42 @@ export const DEALER_MARKETING_SERVICES = [
   'Car Listing YouTube Channel Management',
 ] as const;
 
+export function generateUuid(): string {
+  try {
+    if (typeof globalThis !== 'undefined' && globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+      return globalThis.crypto.randomUUID();
+    }
+  } catch {
+    // Fall through to deterministic RFC-4122 v4 fallback
+  }
+  const bytes = new Uint8Array(16);
+  if (typeof globalThis !== 'undefined' && globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 16; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'));
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+}
+
+export function normalizeVehicleCondition(raw?: string | null): 'Foreign Used' | 'Nigerian Used' | 'Brand New' {
+  const cleaned = (raw || '').trim().toLowerCase();
+  if (!cleaned || cleaned.includes('foreign') || cleaned.includes('tokunbo')) {
+    return 'Foreign Used';
+  }
+  if (cleaned.includes('nigerian') || cleaned.includes('local')) {
+    return 'Nigerian Used';
+  }
+  if (cleaned.includes('brand') || cleaned === 'new') {
+    return 'Brand New';
+  }
+  return 'Foreign Used';
+}
+
 /**
  * MANIFOLD Title Rule (Part 9):
  * Vehicle listing title must strictly represent the actual vehicle Make + Model

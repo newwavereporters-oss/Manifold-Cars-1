@@ -1,4 +1,5 @@
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl, formatStandardYouTubeUrl } from '../utils/youtube';
+import { generateUuid } from '../utils/carMedia';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export type MediaVideoType =
@@ -141,7 +142,7 @@ class MediaService {
 
     const youtubeUrl = formatStandardYouTubeUrl(videoId);
     const thumbnailUrl = data.youtube_thumbnail_url || getYouTubeThumbnailUrl(videoId);
-    const id = data.id || `media-${Date.now()}`;
+    const id = data.id || generateUuid();
 
     // If marked primary and attached to a vehicle, clear primary on any other video for that vehicle
     if (data.car_id && data.is_primary) {

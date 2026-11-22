@@ -1,12 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DealerLayout } from '../../components/dealer/DealerLayout';
 import { useDealerAuth } from '../../context/DealerAuthContext';
-import { dealerVehicleService, DealerCarFormInput, DealerCarRecord } from '../../services/dealerVehicleService';
+import {
+  dealerVehicleService,
+  DealerCarFormInput,
+  DealerCarRecord,
+  DealerVehicleWriteErrorDetails,
+} from '../../services/dealerVehicleService';
 import { brandService } from '../../services/brandService';
 import { modelService } from '../../services/modelService';
 import { categoryService } from '../../services/categoryService';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../../utils/youtube';
-import { buildVehicleModelTitle } from '../../utils/carMedia';
+import { buildVehicleModelTitle, normalizeVehicleCondition } from '../../utils/carMedia';
 import { DealerVideoMarketingNotice } from '../../components/dealer/DealerVideoMarketingNotice';
 import {
   CarFront,
@@ -42,10 +47,13 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
   const { dealerAccount } = useDealerAuth();
   const resolvedApproval = resolveDealerApprovalState(
     dealerAccount?.accountStatus,
-    dealerAccount?.isVerified
+    dealerAccount?.isVerified,
+    dealerAccount?.dealerStatus
   );
   const approvalStatus = dealerAccount?.approvalStatus ?? resolvedApproval.approvalStatus;
-  const isApproved = dealerAccount?.isApproved ?? resolvedApproval.isApproved;
+  const currentDealerStatus = dealerAccount?.dealerStatus ?? resolvedApproval.dealerStatus;
+  const isApproved =
+    currentDealerStatus === 'approved' && (dealerAccount?.isApproved ?? resolvedApproval.isApproved);
 
   const [loading, setLoading] = useState(true);
   const [unauthorized, setUnauthorized] = useState(false);
@@ -70,7 +78,7 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
   const [year, setYear] = useState<number>(2021);
   const [typeId, setTypeId] = useState('');
   const [bodyType, setBodyType] = useState('');
-  const [condition, setCondition] = useState('Foreign Used (Tokunbo)');
+  const [condition, setCondition] = useState('Foreign Used');
   const [mileage, setMileage] = useState<string>('0');
   const [fuelType, setFuelType] = useState('Petrol');
   const [transmission, setTransmission] = useState('Automatic');
@@ -105,7 +113,9 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
   // Submission State
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitDiagnostic, setSubmitDiagnostic] = useState<DealerVehicleWriteErrorDetails | null>(null);
   const [priceCalc, setPriceCalc] = useState<CommissionCalculationResult | null>(null);
+  const submitLockRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -233,7 +243,7 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
         setYear(car.year);
         setTypeId(car.type_id || '');
         setBodyType(car.body_type);
-        setCondition(car.condition);
+        setCondition(normalizeVehicleCondition(car.condition));
         setMileage(String(car.mileage));
         setFuelType(car.fuel_type);
         setTransmission(car.transmission);
@@ -413,7 +423,7 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
       year: Number(year) || 2024,
       type_id: typeId || undefined,
       body_type: bodyType,
-      condition,
+      condition: normalizeVehicleCondition(condition),
       mileage: cleanMileage,
       fuel_type: fuelType,
       transmission,
@@ -437,6 +447,7 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
   };
 
   const handleSave = async (isDraft: boolean) => {
+    if (submitLockRef.current) return;
     if (!dealerAccount?.dealerId) return;
 
     if (!isDraft && !isApproved) {
@@ -473,21 +484,34 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
       }
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
+    setSubmitDiagnostic(null);
 
     try {
       const payload = preparePayload();
       const res = await dealerVehicleService.updateDealerCar(carId, payload, dealerAccount.dealerId, isDraft);
 
-      if (res.error) {
-        setSubmitError(res.error);
-        setSubmitting(false);
+      if (res.error || !res.car?.id) {
+        setSubmitError(res.error || 'Failed to confirm vehicle update.');
+        setSubmitDiagnostic(res.errorDetails || null);
       } else {
-        navigate('/dealer/cars');
+        const params = new URLSearchParams({
+          updated: res.car.id,
+          status: res.car.status,
+          title: res.car.title,
+        });
+        if (res.partialMediaError) {
+          params.set('mediaWarning', res.partialMediaError);
+        }
+        navigate(`/dealer/cars?${params.toString()}`);
       }
-    } catch {
-      setSubmitError('Failed to update vehicle record.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unexpected error';
+      setSubmitError(`Failed to update vehicle record: ${msg}`);
+    } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
@@ -574,7 +598,17 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
         {submitError && (
           <div className="p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-[#EF233C] shrink-0 mt-0.5" />
-            <p className="text-xs text-red-800 font-medium leading-relaxed">{submitError}</p>
+            <div className="space-y-1 flex-1 min-w-0">
+              <p className="text-xs text-red-800 font-semibold leading-relaxed">{submitError}</p>
+              {submitDiagnostic && (
+                <p className="text-[11px] text-red-700/80 font-mono break-words">
+                  Diagnostic: table={submitDiagnostic.table}
+                  {submitDiagnostic.code ? ` · code=${submitDiagnostic.code}` : ''}
+                  {submitDiagnostic.status ? ` · status=${submitDiagnostic.status}` : ''}
+                  {submitDiagnostic.hint ? ` · hint=${submitDiagnostic.hint}` : ''}
+                </p>
+              )}
+            </div>
           </div>
         )}
 
@@ -751,7 +785,7 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
                   onChange={(e) => setCondition(e.target.value)}
                   className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
                 >
-                  <option value="Foreign Used (Tokunbo)">Foreign Used (Tokunbo)</option>
+                  <option value="Foreign Used">Foreign Used (Tokunbo)</option>
                   <option value="Nigerian Used">Nigerian Used</option>
                   <option value="Brand New">Brand New</option>
                 </select>

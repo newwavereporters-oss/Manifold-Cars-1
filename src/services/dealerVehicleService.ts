@@ -1,11 +1,32 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../utils/youtube';
-import { buildVehicleModelTitle } from '../utils/carMedia';
+import {
+  buildVehicleModelTitle,
+  generateUuid,
+  normalizeVehicleCondition,
+} from '../utils/carMedia';
 import { resolveDealerApprovalState } from './dealerOnboardingService';
 import { categoryService } from './categoryService';
 import { brandService } from './brandService';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const OPTIONAL_CAR_SCHEMA_COLUMNS = new Set([
+  'variant',
+  'trim',
+  'previous_price',
+  'original_price',
+  'views_count',
+  'horsepower',
+  'engine',
+  'seats',
+  'doors',
+  'youtube_url',
+  'youtube_video_id',
+  'youtube_thumbnail_url',
+  'gallery_image_1_url',
+  'gallery_image_2_url',
+]);
 
 export function getDealerListingBlockReason(
   accountStatus: unknown,
@@ -25,6 +46,7 @@ export function getDealerListingBlockReason(
 }
 
 export interface DealerCarFormInput {
+  submissionId?: string;
   brand_id?: string;
   make: string;
   model: string;
@@ -96,6 +118,125 @@ export interface DealerCarRecord {
   gallery_image_2_url?: string;
 }
 
+export interface DealerVehicleWriteErrorDetails {
+  table: string;
+  operation: 'insert' | 'update' | 'verify';
+  code?: string;
+  message: string;
+  details?: string;
+  hint?: string;
+  status?: number;
+  authUserId?: string;
+  dealerId?: string;
+  payloadKeys?: string[];
+}
+
+export interface DealerVehicleMutationResult {
+  car: DealerCarRecord | null;
+  createdCarId?: string | null;
+  error: string | null;
+  errorDetails?: DealerVehicleWriteErrorDetails | null;
+  partialMediaError?: string | null;
+}
+
+interface SupabaseLikeError {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+  status?: number;
+}
+
+export function extractMissingOptionalColumnFromError(
+  error: SupabaseLikeError | null | undefined,
+  payload: Record<string, unknown>
+): string | null {
+  if (!error) return null;
+  const code = (error.code || '').toUpperCase();
+  const msg = error.message || '';
+  const details = error.details || '';
+  const combined = `${msg} ${details}`;
+
+  const isMissingColCode =
+    code === 'PGRST204' ||
+    code === '42703' ||
+    /could not find the ['"][a-z0-9_]+['"] column/i.test(combined) ||
+    /column ['"]?[a-z0-9_.]+['"]? (of relation ['"]?[a-z0-9_]+['"]? )?does not exist/i.test(combined);
+
+  if (!isMissingColCode) return null;
+
+  const pgrstMatch = combined.match(/could not find the ['"]([a-z0-9_]+)['"] column/i);
+  if (pgrstMatch?.[1] && OPTIONAL_CAR_SCHEMA_COLUMNS.has(pgrstMatch[1]) && pgrstMatch[1] in payload) {
+    return pgrstMatch[1];
+  }
+
+  const pgMatch = combined.match(/column (?:[a-z0-9_]+\.)?['"]?([a-z0-9_]+)['"]? (?:of relation ['"]?[a-z0-9_]+['"]? )?does not exist/i);
+  if (pgMatch?.[1] && OPTIONAL_CAR_SCHEMA_COLUMNS.has(pgMatch[1]) && pgMatch[1] in payload) {
+    return pgMatch[1];
+  }
+
+  return null;
+}
+
+export function formatDealerSupabaseWriteError(
+  error: SupabaseLikeError,
+  context: {
+    table: string;
+    operation: 'insert' | 'update' | 'verify';
+    authUserId?: string;
+    dealerId?: string;
+    payloadKeys?: string[];
+    httpStatus?: number;
+  }
+): { userMessage: string; errorDetails: DealerVehicleWriteErrorDetails } {
+  const code = error.code || undefined;
+  const rawMessage = error.message || 'Unknown database error';
+  const details = error.details || undefined;
+  const hint = error.hint || undefined;
+  const status = error.status ?? context.httpStatus;
+
+  const errorDetails: DealerVehicleWriteErrorDetails = {
+    table: context.table,
+    operation: context.operation,
+    code,
+    message: rawMessage,
+    details,
+    hint,
+    status,
+    authUserId: context.authUserId,
+    dealerId: context.dealerId,
+    payloadKeys: context.payloadKeys,
+  };
+
+  let userMessage: string;
+  if (code === '42501') {
+    userMessage =
+      `Permission denied by database row-level security (${code}). Verify your dealership account is approved (account_status = active, dealer_status = approved) and your dealer RLS policies are applied. Detail: ${rawMessage}`;
+  } else if (code === '22P02') {
+    userMessage =
+      `Database rejected an identifier or field format (${code}): ${rawMessage}${details ? ` (${details})` : ''}.`;
+  } else if (code === '23502') {
+    userMessage =
+      `A required database column is missing or null (${code}): ${rawMessage}${details ? ` (${details})` : ''}.`;
+  } else if (code === '23503') {
+    userMessage =
+      `Foreign-key reference validation failed (${code}): ${rawMessage}${details ? ` (${details})` : ''}.`;
+  } else if (code === '23505') {
+    userMessage =
+      `A duplicate vehicle identifier or slug conflicted (${code}): ${rawMessage}. Please retry.`;
+  } else if (code === '23514') {
+    userMessage =
+      `A vehicle field failed a database check constraint (${code}): ${rawMessage}${details ? ` (${details})` : ''}.`;
+  } else if (code === 'PGRST204' || code === '42703') {
+    userMessage =
+      `Database schema column mismatch (${code}): ${rawMessage}. Run src/db/dealer-vehicle-persistence-fix.sql in Supabase SQL Editor to align columns.`;
+  } else {
+    userMessage = `Vehicle ${context.operation} failed${code ? ` (${code})` : ''}: ${rawMessage}${details ? ` — ${details}` : ''}`;
+  }
+
+  return { userMessage, errorDetails };
+}
+
 class DealerVehicleService {
   private async resolveBrandUuid(brandIdOrName?: string | null, makeName?: string | null): Promise<string | null> {
     const raw = (brandIdOrName || '').trim();
@@ -116,6 +257,7 @@ class DealerVehicleService {
 
     return null;
   }
+
   /**
    * Fetches only vehicles belonging to the authenticated dealer
    * Database RLS and application filter guarantee dealer isolation
@@ -135,13 +277,19 @@ class DealerVehicleService {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Failed to query dealer cars:', error);
+        console.error('[dealerVehicleService.getDealerCars] Query failed:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          dealerId,
+        });
         return [];
       }
 
       return (data || []).map((row: any) => this.mapRowToRecord(row));
     } catch (err) {
-      console.error('Error fetching dealer cars:', err);
+      console.error('[dealerVehicleService.getDealerCars] Unexpected error:', err);
       return [];
     }
   }
@@ -164,13 +312,21 @@ class DealerVehicleService {
         .eq('dealer_id', dealerId)
         .maybeSingle();
 
-      if (error || !data) {
+      if (error) {
+        console.error('[dealerVehicleService.getDealerCarById] Query failed:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          carId,
+          dealerId,
+        });
         return null;
       }
 
+      if (!data) return null;
       return this.mapRowToRecord(data);
     } catch (err) {
-      console.error('Error fetching dealer car by id:', err);
+      console.error('[dealerVehicleService.getDealerCarById] Unexpected error:', err);
       return null;
     }
   }
@@ -184,52 +340,82 @@ class DealerVehicleService {
     input: DealerCarFormInput,
     dealerId: string,
     isDraft: boolean
-  ): Promise<{ car: DealerCarRecord | null; error: string | null }> {
+  ): Promise<DealerVehicleMutationResult> {
+    if (!isSupabaseConfigured) {
+      return {
+        car: null,
+        error: 'Supabase is not configured. Unable to persist vehicle record.',
+      };
+    }
+
     if (!dealerId) {
       return { car: null, error: 'Dealership authorization context missing.' };
     }
 
     try {
       // Authoritative security check: resolve current auth session
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        return { car: null, error: 'Authentication required to list vehicles.' };
+      const { data: sessionResult, error: sessionError } = await supabase.auth.getSession();
+      let authUser = sessionResult?.session?.user ?? null;
+      if (!authUser) {
+        const { data: userResult } = await supabase.auth.getUser();
+        authUser = userResult?.user ?? null;
+      }
+
+      if (sessionError || !authUser) {
+        return {
+          car: null,
+          error: 'Authentication session expired or missing. Please sign in again to list vehicles.',
+        };
       }
 
       // Prevent admin users without a dealer account from listing vehicles
       const { data: adminRow } = await supabase
         .from('admin_users')
         .select('role')
-        .eq('user_id', session.user.id)
+        .eq('user_id', authUser.id)
         .eq('status', 'active')
         .maybeSingle();
 
       const { data: dealerAcc, error: dealerAccErr } = await supabase
         .from('dealer_accounts')
         .select('dealer_id, account_status')
-        .eq('user_id', session.user.id)
+        .eq('user_id', authUser.id)
         .maybeSingle();
 
       if (adminRow && !dealerAcc) {
         return { car: null, error: 'Vehicle listing is available to MANIFOLD dealer accounts.' };
       }
 
-      if (dealerAccErr || !dealerAcc) {
-        return { car: null, error: 'A registered dealership account is required to list vehicles.' };
+      if (dealerAccErr || !dealerAcc?.dealer_id) {
+        console.error('[dealerVehicleService.createDealerCar] Dealer account lookup failed:', {
+          authUserId: authUser.id,
+          error: dealerAccErr,
+        });
+        return {
+          car: null,
+          error: dealerAccErr?.message
+            ? `Unable to verify dealership account (${dealerAccErr.code || 'lookup error'}): ${dealerAccErr.message}`
+            : 'A registered dealership account is required to list vehicles.',
+        };
       }
 
-      if (dealerAcc.dealer_id !== dealerId) {
+      const authoritativeDealerId = String(dealerAcc.dealer_id);
+      if (authoritativeDealerId !== String(dealerId)) {
         return { car: null, error: 'Dealership authorization mismatch.' };
       }
 
       // Enforce Admin Approval Gate (dashboard login is allowed when unapproved, car listing is NOT)
       let dealerVerified: boolean | null = null;
       let dealerStatusCol: unknown = undefined;
-      const { data: dealerRow } = await supabase
+      const { data: dealerRow, error: dealerRowErr } = await supabase
         .from('dealers')
         .select('*')
-        .eq('id', dealerId)
+        .eq('id', authoritativeDealerId)
         .maybeSingle();
+
+      if (dealerRowErr) {
+        console.warn('[dealerVehicleService.createDealerCar] Dealers row read warning:', dealerRowErr);
+      }
 
       if (dealerRow) {
         if (typeof (dealerRow as any).is_verified === 'boolean') {
@@ -251,92 +437,172 @@ class DealerVehicleService {
         return { car: null, error: blockReason };
       }
 
-      const id = `car-dlr-${Date.now()}`;
-      const title = buildVehicleModelTitle(input.make, input.model);
+      const makeClean = (input.make || '').trim();
+      const modelClean = (input.model || '').trim();
+      const numericPrice = Number(input.price) || 0;
+      const numericMileage = Math.max(0, Number(input.mileage) || 0);
+
+      if (!isDraft) {
+        if (!makeClean || makeClean.toLowerCase() === 'vehicle') {
+          return { car: null, error: 'Vehicle Brand / Make is required before submitting.' };
+        }
+        if (!modelClean || modelClean.toLowerCase() === 'model') {
+          return { car: null, error: 'Vehicle Model is required before submitting.' };
+        }
+        if (numericPrice <= 0) {
+          return { car: null, error: 'A valid positive retail price (NGN) is required.' };
+        }
+      }
+
+      const id =
+        input.submissionId && UUID_REGEX.test(input.submissionId.trim())
+          ? input.submissionId.trim()
+          : generateUuid();
+      const title = buildVehicleModelTitle(makeClean || 'Vehicle', modelClean || 'Model');
       const slugBase = `${input.year || ''}-${title}`
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
-      const slug = `${slugBase}-${Date.now().toString(36).substring(0, 4)}`;
+        .replace(/^-|-$/g, '') || 'vehicle';
+      const slug = `${slugBase}-${id.slice(0, 8)}`;
 
-      const vidId = input.youtube_url ? extractYouTubeVideoId(input.youtube_url) || '' : '';
+      const rawYoutubeUrl = (input.youtube_url || '').trim();
+      const vidId = rawYoutubeUrl ? extractYouTubeVideoId(rawYoutubeUrl) || '' : '';
+      if (rawYoutubeUrl && !vidId) {
+        return {
+          car: null,
+          error: 'The YouTube URL provided is invalid. Clear the field (video is optional) or paste a valid YouTube link.',
+        };
+      }
       const thumb = vidId ? getYouTubeThumbnailUrl(vidId) : '';
 
       // Security boundary: Enforcement of dealer ownership and status machine
       const status: DealerCarRecord['status'] = isDraft ? 'DRAFT' : 'PENDING_REVIEW';
 
       const [resolvedBrandId, resolvedTypeId] = await Promise.all([
-        this.resolveBrandUuid(input.brand_id, input.make),
+        this.resolveBrandUuid(input.brand_id, makeClean),
         categoryService.resolveTypeId(input.type_id, input.body_type),
       ]);
 
-      const insertPayload: any = {
+      const normalizedCondition = normalizeVehicleCondition(input.condition);
+      const image1 = (input.gallery_image_1_url || '').trim() || null;
+      const image2 = (input.gallery_image_2_url || '').trim() || null;
+
+      const basePayload: Record<string, unknown> = {
         id,
         slug,
         title,
         brand_id: resolvedBrandId,
-        make: input.make,
-        model: input.model,
-        variant: input.trim || null,
-        trim: input.trim || null,
+        make: makeClean || 'Vehicle',
+        model: modelClean || 'Model',
+        variant: input.trim?.trim() || null,
+        trim: input.trim?.trim() || null,
         type_id: resolvedTypeId,
-        body_type: input.body_type || 'SUV',
+        body_type: (input.body_type || '').trim() || 'SUV',
         year: Number(input.year) || 2024,
-        price: Number(input.price) || 0,
+        price: numericPrice,
         previous_price: input.previous_price ? Number(input.previous_price) : null,
         original_price: input.previous_price ? Number(input.previous_price) : null,
         currency: 'NGN',
-        mileage: Number(input.mileage) || 0,
-        condition: input.condition || 'Foreign Used',
+        mileage: numericMileage,
+        condition: normalizedCondition,
         fuel_type: input.fuel_type || 'Petrol',
         transmission: input.transmission || 'Automatic',
         drive_type: input.drive_type || 'AWD',
-        engine: input.engine || null,
+        engine: input.engine?.trim() || null,
         horsepower: input.horsepower ? Number(input.horsepower) : null,
-        exterior_color: input.exterior_color || 'Black',
-        interior_color: input.interior_color || 'Black Leather',
+        exterior_color: input.exterior_color?.trim() || 'Black',
+        interior_color: input.interior_color?.trim() || 'Black Leather',
         seats: Number(input.seats) || 5,
         doors: Number(input.doors) || 4,
-        location: input.location || 'Lagos',
-        state: input.state || 'Lagos',
-        description: input.description || '',
-        
+        location: input.location?.trim() || 'Lagos',
+        state: input.state?.trim() || 'Lagos',
+        description: input.description?.trim() || '',
+
         // PROTECTED FIELDS: Dealer cannot self-publish or self-verify
         status,
         is_verified: false,
         is_featured: false,
         views_count: 0,
-        dealer_id: dealerId,
+        dealer_id: authoritativeDealerId,
 
-        // Media fields on cars table
-        youtube_url: input.youtube_url || null,
+        // Optional video & denormalized image URLs on cars table
+        youtube_url: rawYoutubeUrl || null,
         youtube_video_id: vidId || null,
         youtube_thumbnail_url: thumb || null,
-        gallery_image_1_url: input.gallery_image_1_url || null,
-        gallery_image_2_url: input.gallery_image_2_url || null,
+        gallery_image_1_url: image1,
+        gallery_image_2_url: image2,
       };
 
-      const { error: carError } = await supabase.from('cars').insert(insertPayload);
-      if (carError) {
-        console.error('Error inserting dealer car into public.cars:', carError);
-        if (carError.code === '42501') {
-          return {
-            car: null,
-            error: 'Your dealership account must be approved by an administrator before listing vehicles.',
-          };
+      const candidatePayload = { ...basePayload };
+      let insertedRow: any = null;
+      let carError: SupabaseLikeError | null = null;
+      let httpStatus: number | undefined = undefined;
+
+      for (let attempt = 0; attempt <= 6; attempt += 1) {
+        const res = await supabase
+          .from('cars')
+          .insert(candidatePayload)
+          .select('*')
+          .single();
+
+        insertedRow = res.data;
+        carError = res.error as SupabaseLikeError | null;
+        httpStatus = res.status;
+
+        if (!carError) break;
+
+        const missingCol = extractMissingOptionalColumnFromError(carError, candidatePayload);
+        if (missingCol) {
+          console.warn(
+            `[dealerVehicleService.createDealerCar] Stripping unsupported optional column "${missingCol}" and retrying insert:`,
+            carError.message
+          );
+          delete candidatePayload[missingCol];
+          continue;
         }
-        return { car: null, error: 'Failed to create vehicle record. Please try again.' };
+        break;
       }
 
-      // Save YouTube video to public.car_media if provided
-      if (input.youtube_url && vidId) {
+      // Idempotent guard: if submissionId UUID already exists for this exact dealer, return existing owned row
+      if (carError && carError.code === '23505' && input.submissionId) {
+        const existingOwned = await this.getDealerCarById(id, authoritativeDealerId);
+        if (existingOwned) {
+          return {
+            car: existingOwned,
+            createdCarId: existingOwned.id,
+            error: null,
+          };
+        }
+      }
+
+      if (carError) {
+        const { userMessage, errorDetails } = formatDealerSupabaseWriteError(carError, {
+          table: 'cars',
+          operation: 'insert',
+          authUserId: authUser.id,
+          dealerId: authoritativeDealerId,
+          payloadKeys: Object.keys(candidatePayload),
+          httpStatus,
+        });
+        console.error('[dealerVehicleService.createDealerCar] Insert failed:', errorDetails);
+        return {
+          car: null,
+          error: userMessage,
+          errorDetails,
+        };
+      }
+
+      // Secondary media & gallery image associations (non-fatal if public.cars row was already created)
+      const mediaWarnings: string[] = [];
+
+      if (rawYoutubeUrl && vidId) {
         const { error: mediaErr } = await supabase.from('car_media').insert({
-          id: `media-${id}-${Date.now()}`,
+          id: generateUuid(),
           car_id: id,
           media_type: 'youtube_video',
           video_type: 'walkaround',
-          title: input.youtube_title || `${title} Walkaround Review`,
-          youtube_url: input.youtube_url,
+          title: input.youtube_title?.trim() || `${title} Walkaround Review`,
+          youtube_url: rawYoutubeUrl,
           youtube_video_id: vidId,
           youtube_thumbnail_url: thumb,
           description: input.youtube_description || input.description || '',
@@ -344,35 +610,88 @@ class DealerVehicleService {
           status: 'published',
           sort_order: 1,
         });
-        if (mediaErr) console.warn('Car media insert note:', mediaErr.message);
+        if (mediaErr) {
+          console.error('[dealerVehicleService.createDealerCar] car_media insert failed:', {
+            carId: id,
+            code: mediaErr.code,
+            message: mediaErr.message,
+            details: mediaErr.details,
+          });
+          mediaWarnings.push(`Video metadata (${mediaErr.code || 'error'}): ${mediaErr.message}`);
+        }
       }
 
-      // Save Gallery Images (Image 1 & 2 only) to public.car_images
-      if (input.gallery_image_1_url) {
-        await supabase.from('car_images').insert({
-          id: `img1-${id}-${Date.now()}`,
+      if (image1) {
+        const { error: img1Err } = await supabase.from('car_images').insert({
+          id: generateUuid(),
           car_id: id,
-          image_url: input.gallery_image_1_url,
+          image_url: image1,
           position: 1,
-          is_primary: false,
+          is_primary: true,
         });
+        if (img1Err) {
+          console.error('[dealerVehicleService.createDealerCar] car_images #1 insert failed:', {
+            carId: id,
+            code: img1Err.code,
+            message: img1Err.message,
+            details: img1Err.details,
+          });
+          mediaWarnings.push(`Photo 1 association (${img1Err.code || 'error'}): ${img1Err.message}`);
+        }
       }
 
-      if (input.gallery_image_2_url) {
-        await supabase.from('car_images').insert({
-          id: `img2-${id}-${Date.now()}`,
+      if (image2) {
+        const { error: img2Err } = await supabase.from('car_images').insert({
+          id: generateUuid(),
           car_id: id,
-          image_url: input.gallery_image_2_url,
+          image_url: image2,
           position: 2,
           is_primary: false,
         });
+        if (img2Err) {
+          console.error('[dealerVehicleService.createDealerCar] car_images #2 insert failed:', {
+            carId: id,
+            code: img2Err.code,
+            message: img2Err.message,
+            details: img2Err.details,
+          });
+          mediaWarnings.push(`Photo 2 association (${img2Err.code || 'error'}): ${img2Err.message}`);
+        }
       }
 
-      const fetched = await this.getDealerCarById(id, dealerId);
-      return { car: fetched, error: null };
+      const fetched = await this.getDealerCarById(id, authoritativeDealerId);
+      const confirmedCar = fetched || (insertedRow?.id ? this.mapRowToRecord(insertedRow) : null);
+
+      if (!confirmedCar?.id) {
+        const verifyDetails: DealerVehicleWriteErrorDetails = {
+          table: 'cars',
+          operation: 'verify',
+          message: 'Vehicle insert did not return a confirmed database record on verification read.',
+          authUserId: authUser.id,
+          dealerId: authoritativeDealerId,
+        };
+        console.error('[dealerVehicleService.createDealerCar] Post-insert confirmation failed:', verifyDetails);
+        return {
+          car: null,
+          error:
+            'Vehicle submission could not be confirmed in the database (SELECT RLS check returned no row). Please check your vehicle list before retrying.',
+          errorDetails: verifyDetails,
+        };
+      }
+
+      return {
+        car: confirmedCar,
+        createdCarId: confirmedCar.id,
+        error: null,
+        partialMediaError: mediaWarnings.length > 0 ? mediaWarnings.join(' | ') : null,
+      };
     } catch (err: any) {
-      console.error('Unexpected error creating dealer car:', err);
-      return { car: null, error: 'An unexpected error occurred while saving the vehicle.' };
+      const msg = err instanceof Error ? err.message : 'Unexpected runtime error';
+      console.error('[dealerVehicleService.createDealerCar] Unexpected exception:', err);
+      return {
+        car: null,
+        error: `Unexpected error while saving the vehicle: ${msg}`,
+      };
     }
   }
 
@@ -385,36 +704,59 @@ class DealerVehicleService {
     input: DealerCarFormInput,
     dealerId: string,
     isDraft: boolean
-  ): Promise<{ car: DealerCarRecord | null; error: string | null }> {
+  ): Promise<DealerVehicleMutationResult> {
+    if (!isSupabaseConfigured) {
+      return {
+        car: null,
+        error: 'Supabase is not configured. Unable to update vehicle record.',
+      };
+    }
+
     if (!dealerId || !carId) {
       return { car: null, error: 'Invalid car update request.' };
     }
 
     try {
+      const { data: sessionResult } = await supabase.auth.getSession();
+      let authUser = sessionResult?.session?.user ?? null;
+      if (!authUser) {
+        const { data: userResult } = await supabase.auth.getUser();
+        authUser = userResult?.user ?? null;
+      }
+
+      if (!authUser) {
+        return { car: null, error: 'Authentication required. Please sign in again.' };
+      }
+
+      const { data: dealerAcc, error: dealerAccErr } = await supabase
+        .from('dealer_accounts')
+        .select('dealer_id, account_status')
+        .eq('user_id', authUser.id)
+        .maybeSingle();
+
+      if (dealerAccErr || !dealerAcc?.dealer_id) {
+        return { car: null, error: 'Registered dealership account required.' };
+      }
+
+      const authoritativeDealerId = String(dealerAcc.dealer_id);
+      if (authoritativeDealerId !== String(dealerId)) {
+        return { car: null, error: 'Dealership authorization mismatch.' };
+      }
+
       // First verify ownership
-      const existing = await this.getDealerCarById(carId, dealerId);
+      const existing = await this.getDealerCarById(carId, authoritativeDealerId);
       if (!existing) {
         return { car: null, error: 'Vehicle not found or you do not have permission to modify it.' };
       }
 
       // Prevent unapproved/disapproved dealers from submitting a vehicle for review
       if (!isDraft) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user) {
-          return { car: null, error: 'Authentication required.' };
-        }
-        const { data: dealerAcc } = await supabase
-          .from('dealer_accounts')
-          .select('dealer_id, account_status')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-
         let dealerVerified: boolean | null = null;
         let dealerStatusCol: unknown = undefined;
         const { data: dealerRow } = await supabase
           .from('dealers')
           .select('*')
-          .eq('id', dealerId)
+          .eq('id', authoritativeDealerId)
           .maybeSingle();
 
         if (dealerRow) {
@@ -429,7 +771,7 @@ class DealerVehicleService {
         }
 
         const blockReason = getDealerListingBlockReason(
-          dealerAcc?.account_status ?? 'pending',
+          dealerAcc.account_status ?? 'pending',
           dealerVerified,
           dealerStatusCol
         );
@@ -438,87 +780,141 @@ class DealerVehicleService {
         }
       }
 
-      const title = buildVehicleModelTitle(input.make, input.model);
-      const vidId = input.youtube_url ? extractYouTubeVideoId(input.youtube_url) || '' : '';
+      const makeClean = (input.make || '').trim();
+      const modelClean = (input.model || '').trim();
+      const title = buildVehicleModelTitle(makeClean || 'Vehicle', modelClean || 'Model');
+      const rawYoutubeUrl = (input.youtube_url || '').trim();
+      const vidId = rawYoutubeUrl ? extractYouTubeVideoId(rawYoutubeUrl) || '' : '';
+      if (rawYoutubeUrl && !vidId) {
+        return {
+          car: null,
+          error: 'The YouTube URL provided is invalid. Clear the field (video is optional) or paste a valid YouTube link.',
+        };
+      }
       const thumb = vidId ? getYouTubeThumbnailUrl(vidId) : '';
 
       // If existing vehicle is already published, a resubmission sets it to PENDING_REVIEW; drafts stay DRAFT
       let nextStatus: DealerCarRecord['status'] = isDraft ? 'DRAFT' : 'PENDING_REVIEW';
       if (existing.status === 'PUBLISHED' && isDraft) {
-        // Keep published if just updating notes unless explicitly drafting
         nextStatus = 'PUBLISHED';
       }
 
       const [resolvedBrandId, resolvedTypeId] = await Promise.all([
-        this.resolveBrandUuid(input.brand_id, input.make),
+        this.resolveBrandUuid(input.brand_id, makeClean),
         categoryService.resolveTypeId(input.type_id, input.body_type),
       ]);
 
-      const updates: any = {
+      const image1 = input.gallery_image_1_url !== undefined ? (input.gallery_image_1_url || '').trim() || null : undefined;
+      const image2 = input.gallery_image_2_url !== undefined ? (input.gallery_image_2_url || '').trim() || null : undefined;
+
+      const baseUpdates: Record<string, unknown> = {
         title,
         brand_id: resolvedBrandId,
-        make: input.make,
-        model: input.model,
-        variant: input.trim || null,
-        trim: input.trim || null,
+        make: makeClean || 'Vehicle',
+        model: modelClean || 'Model',
+        variant: input.trim?.trim() || null,
+        trim: input.trim?.trim() || null,
         type_id: resolvedTypeId,
         body_type: input.body_type || 'SUV',
         year: Number(input.year) || 2024,
         price: Number(input.price) || 0,
         previous_price: input.previous_price ? Number(input.previous_price) : null,
         original_price: input.previous_price ? Number(input.previous_price) : null,
-        mileage: Number(input.mileage) || 0,
-        condition: input.condition || 'Foreign Used',
+        mileage: Math.max(0, Number(input.mileage) || 0),
+        condition: normalizeVehicleCondition(input.condition),
         fuel_type: input.fuel_type || 'Petrol',
         transmission: input.transmission || 'Automatic',
         drive_type: input.drive_type || 'AWD',
-        engine: input.engine || null,
+        engine: input.engine?.trim() || null,
         horsepower: input.horsepower ? Number(input.horsepower) : null,
-        exterior_color: input.exterior_color || 'Black',
-        interior_color: input.interior_color || 'Black Leather',
+        exterior_color: input.exterior_color?.trim() || 'Black',
+        interior_color: input.interior_color?.trim() || 'Black Leather',
         seats: Number(input.seats) || 5,
         doors: Number(input.doors) || 4,
-        location: input.location || 'Lagos',
-        state: input.state || 'Lagos',
-        description: input.description || '',
-        
+        location: input.location?.trim() || 'Lagos',
+        state: input.state?.trim() || 'Lagos',
+        description: input.description?.trim() || '',
+
         status: nextStatus,
         updated_at: new Date().toISOString(),
 
-        youtube_url: input.youtube_url || null,
+        youtube_url: rawYoutubeUrl || null,
         youtube_video_id: vidId || null,
         youtube_thumbnail_url: thumb || null,
-        gallery_image_1_url: input.gallery_image_1_url || null,
-        gallery_image_2_url: input.gallery_image_2_url || null,
+        ...(image1 !== undefined ? { gallery_image_1_url: image1 } : {}),
+        ...(image2 !== undefined ? { gallery_image_2_url: image2 } : {}),
       };
 
-      const { error: carError } = await supabase
-        .from('cars')
-        .update(updates)
-        .eq('id', carId)
-        .eq('dealer_id', dealerId);
+      const candidateUpdates = { ...baseUpdates };
+      let updatedRow: any = null;
+      let carError: SupabaseLikeError | null = null;
+      let httpStatus: number | undefined = undefined;
 
-      if (carError) {
-        console.error('Error updating dealer car in public.cars:', carError);
-        if (carError.code === '42501') {
-          return {
-            car: null,
-            error: 'Your dealership account must be approved by an administrator before submitting vehicles for review.',
-          };
+      for (let attempt = 0; attempt <= 6; attempt += 1) {
+        const res = await supabase
+          .from('cars')
+          .update(candidateUpdates)
+          .eq('id', carId)
+          .eq('dealer_id', authoritativeDealerId)
+          .select('*')
+          .single();
+
+        updatedRow = res.data;
+        carError = res.error as SupabaseLikeError | null;
+        httpStatus = res.status;
+
+        if (!carError) break;
+
+        const missingCol = extractMissingOptionalColumnFromError(carError, candidateUpdates);
+        if (missingCol) {
+          console.warn(
+            `[dealerVehicleService.updateDealerCar] Stripping unsupported optional column "${missingCol}" and retrying update:`,
+            carError.message
+          );
+          delete candidateUpdates[missingCol];
+          continue;
         }
-        return { car: null, error: 'Failed to update vehicle record.' };
+        break;
       }
 
+      if (carError) {
+        const { userMessage, errorDetails } = formatDealerSupabaseWriteError(carError, {
+          table: 'cars',
+          operation: 'update',
+          authUserId: authUser.id,
+          dealerId: authoritativeDealerId,
+          payloadKeys: Object.keys(candidateUpdates),
+          httpStatus,
+        });
+        console.error('[dealerVehicleService.updateDealerCar] Update failed:', errorDetails);
+        return {
+          car: null,
+          error: userMessage,
+          errorDetails,
+        };
+      }
+
+      const mediaWarnings: string[] = [];
+
       // Update car_media cleanly (replace when provided, or remove stale youtube_video if cleared)
-      await supabase.from('car_media').delete().eq('car_id', carId).eq('media_type', 'youtube_video');
-      if (input.youtube_url && vidId) {
-        await supabase.from('car_media').insert({
-          id: `media-${carId}-${Date.now()}`,
+      const { error: delMediaErr } = await supabase
+        .from('car_media')
+        .delete()
+        .eq('car_id', carId)
+        .eq('media_type', 'youtube_video');
+
+      if (delMediaErr) {
+        console.warn('[dealerVehicleService.updateDealerCar] car_media delete note:', delMediaErr);
+      }
+
+      if (rawYoutubeUrl && vidId) {
+        const { error: insMediaErr } = await supabase.from('car_media').insert({
+          id: generateUuid(),
           car_id: carId,
           media_type: 'youtube_video',
           video_type: 'walkaround',
-          title: input.youtube_title || `${title} Walkaround Review`,
-          youtube_url: input.youtube_url,
+          title: input.youtube_title?.trim() || `${title} Walkaround Review`,
+          youtube_url: rawYoutubeUrl,
           youtube_video_id: vidId,
           youtube_thumbnail_url: thumb,
           description: input.youtube_description || input.description || '',
@@ -526,40 +922,70 @@ class DealerVehicleService {
           status: 'published',
           sort_order: 1,
         });
+        if (insMediaErr) {
+          console.error('[dealerVehicleService.updateDealerCar] car_media insert failed:', insMediaErr);
+          mediaWarnings.push(`Video metadata (${insMediaErr.code || 'error'}): ${insMediaErr.message}`);
+        }
       }
 
       // Update car_images (Position 1 & 2)
-      if (input.gallery_image_1_url !== undefined) {
+      if (image1 !== undefined) {
         await supabase.from('car_images').delete().eq('car_id', carId).eq('position', 1);
-        if (input.gallery_image_1_url) {
-          await supabase.from('car_images').insert({
-            id: `img1-${carId}-${Date.now()}`,
+        if (image1) {
+          const { error: img1Err } = await supabase.from('car_images').insert({
+            id: generateUuid(),
             car_id: carId,
-            image_url: input.gallery_image_1_url,
+            image_url: image1,
             position: 1,
-            is_primary: false,
+            is_primary: true,
           });
+          if (img1Err) {
+            console.error('[dealerVehicleService.updateDealerCar] car_images #1 insert failed:', img1Err);
+            mediaWarnings.push(`Photo 1 association (${img1Err.code || 'error'}): ${img1Err.message}`);
+          }
         }
       }
 
-      if (input.gallery_image_2_url !== undefined) {
+      if (image2 !== undefined) {
         await supabase.from('car_images').delete().eq('car_id', carId).eq('position', 2);
-        if (input.gallery_image_2_url) {
-          await supabase.from('car_images').insert({
-            id: `img2-${carId}-${Date.now()}`,
+        if (image2) {
+          const { error: img2Err } = await supabase.from('car_images').insert({
+            id: generateUuid(),
             car_id: carId,
-            image_url: input.gallery_image_2_url,
+            image_url: image2,
             position: 2,
             is_primary: false,
           });
+          if (img2Err) {
+            console.error('[dealerVehicleService.updateDealerCar] car_images #2 insert failed:', img2Err);
+            mediaWarnings.push(`Photo 2 association (${img2Err.code || 'error'}): ${img2Err.message}`);
+          }
         }
       }
 
-      const refreshed = await this.getDealerCarById(carId, dealerId);
-      return { car: refreshed, error: null };
+      const refreshed = await this.getDealerCarById(carId, authoritativeDealerId);
+      const confirmedCar = refreshed || (updatedRow?.id ? this.mapRowToRecord(updatedRow) : null);
+
+      if (!confirmedCar?.id) {
+        return {
+          car: null,
+          error: 'Vehicle update could not be verified on readback.',
+        };
+      }
+
+      return {
+        car: confirmedCar,
+        createdCarId: confirmedCar.id,
+        error: null,
+        partialMediaError: mediaWarnings.length > 0 ? mediaWarnings.join(' | ') : null,
+      };
     } catch (err: any) {
-      console.error('Unexpected error updating dealer car:', err);
-      return { car: null, error: 'An unexpected error occurred while updating the vehicle.' };
+      const msg = err instanceof Error ? err.message : 'Unexpected runtime error';
+      console.error('[dealerVehicleService.updateDealerCar] Unexpected exception:', err);
+      return {
+        car: null,
+        error: `Unexpected error while updating the vehicle: ${msg}`,
+      };
     }
   }
 
