@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   MarketDataSource,
@@ -9,6 +10,31 @@ import {
   ExtractedVehicleItem,
   ObservationStatus,
 } from '../types/marketIntelligence';
+
+export class MarketSourceSaveError extends Error {
+  public readonly code?: string;
+  public readonly details?: string | null;
+  public readonly hint?: string | null;
+
+  constructor(params: {
+    message: string;
+    code?: string;
+    details?: string | null;
+    hint?: string | null;
+  }) {
+    const parts = [
+      params.code ? `[${params.code}]` : null,
+      params.message,
+      params.details ? `Details: ${params.details}` : null,
+      params.hint ? `Hint: ${params.hint}` : null,
+    ].filter(Boolean);
+    super(parts.join(' · '));
+    this.name = 'MarketSourceSaveError';
+    this.code = params.code;
+    this.details = params.details ?? null;
+    this.hint = params.hint ?? null;
+  }
+}
 
 const LOCAL_STORAGE_KEY_OBS = 'manifold_market_observations_cache';
 const LOCAL_STORAGE_KEY_SOURCES = 'manifold_market_sources_cache';
@@ -303,87 +329,232 @@ class MarketIntelligenceService {
     return [];
   }
 
-  public async createSource(source: Omit<MarketDataSource, 'id' | 'created_at' | 'updated_at'>): Promise<MarketDataSource> {
+  private async resolveAuthenticatedUserId(client: SupabaseClient): Promise<string> {
+    const { data: sessionResult, error: sessionError } = await client.auth.getSession();
+    let authUser = sessionResult?.session?.user ?? null;
+
+    if (!authUser) {
+      const { data: userResult, error: userError } = await client.auth.getUser();
+      authUser = userResult?.user ?? null;
+      if (!authUser && userError) {
+        throw new MarketSourceSaveError({
+          code: 'AUTH_SESSION_ERROR',
+          message: userError.message || 'Unable to verify active Supabase Auth session.',
+        });
+      }
+    }
+
+    if (!authUser && sessionError) {
+      throw new MarketSourceSaveError({
+        code: 'AUTH_SESSION_ERROR',
+        message: sessionError.message || 'Unable to read active Supabase Auth session.',
+      });
+    }
+
+    if (!authUser?.id) {
+      throw new MarketSourceSaveError({
+        code: 'AUTH_SESSION_MISSING',
+        message: 'No active Supabase Auth session found. Please sign in as an active admin before saving data sources.',
+        hint: 'public.market_data_sources requires an authenticated admin session and created_by/updated_by Auth UUID.',
+      });
+    }
+
+    return authUser.id;
+  }
+
+  private async buildSourceSaveError(
+    client: SupabaseClient,
+    error: { code?: string; message?: string; details?: string | null; hint?: string | null },
+    authUserId: string
+  ): Promise<MarketSourceSaveError> {
+    let details = error.details || null;
+    let hint = error.hint || null;
+    const msgLower = (error.message || '').toLowerCase();
+
+    if (
+      error.code === '42501' ||
+      msgLower.includes('row-level security') ||
+      msgLower.includes('permission denied')
+    ) {
+      const diagParts: string[] = [`auth.uid()=${authUserId}`];
+      try {
+        const rpcRes = await client.rpc('is_active_admin');
+        if (rpcRes.error) {
+          diagParts.push(`is_active_admin() error: ${rpcRes.error.message}`);
+        } else {
+          diagParts.push(`is_active_admin()=${String(rpcRes.data)}`);
+        }
+      } catch {
+        // ignore diagnostic rpc failure
+      }
+      try {
+        const adminRes = await client
+          .from('admin_users')
+          .select('id, user_id, role, status')
+          .eq('user_id', authUserId)
+          .maybeSingle();
+        if (adminRes.error) {
+          diagParts.push(`admin_users check error: ${adminRes.error.message}`);
+        } else if (!adminRes.data) {
+          diagParts.push('no matching row in public.admin_users for user_id');
+        } else {
+          diagParts.push(
+            `admin_users row role=${String(adminRes.data.role)}, status=${String(adminRes.data.status)}`
+          );
+        }
+      } catch {
+        // ignore diagnostic query failure
+      }
+      const rlsDiag = diagParts.join('; ');
+      details = details ? `${details} | ${rlsDiag}` : rlsDiag;
+      if (!hint) {
+        hint = 'Confirm the signed-in account has an active admin row in public.admin_users with user_id linked to auth.users.id.';
+      }
+    }
+
+    return new MarketSourceSaveError({
+      code: error.code,
+      message: error.message || 'Supabase write failed on market_data_sources.',
+      details,
+      hint,
+    });
+  }
+
+  public async createSource(
+    source: Omit<MarketDataSource, 'id' | 'created_at' | 'updated_at'>,
+    clientOverride?: SupabaseClient
+  ): Promise<MarketDataSource> {
+    const cleanName = (source.source_name || source.name || '').trim();
+    if (!cleanName) {
+      throw new MarketSourceSaveError({
+        code: 'VALIDATION_ERROR',
+        message: 'Source name is required.',
+      });
+    }
+
+    const client = clientOverride ?? supabase;
+    const useSupabase = Boolean(clientOverride) || isSupabaseConfigured;
+
+    if (useSupabase) {
+      const authUserId = await this.resolveAuthenticatedUserId(client);
+      const mappedHours = this.mapFrequencyToHours(source.crawl_frequency);
+      const cleanBaseUrl = source.base_url?.trim() || null;
+      const cleanNotes = source.notes?.trim() || null;
+
+      const insertPayload: Record<string, any> = {
+        source_name: cleanName,
+        source_type: source.source_type || 'marketplace',
+        base_url: cleanBaseUrl,
+        trust_level: source.trust_level || 'unverified',
+        is_active: source.is_active ?? true,
+        crawl_enabled: source.crawl_enabled ?? false,
+        notes: cleanNotes,
+        fetch_settings: source.settings || {},
+        created_by: authUserId,
+        updated_by: authUserId,
+      };
+
+      if (mappedHours !== null) {
+        insertPayload.crawl_frequency_hours = mappedHours;
+      }
+
+      const { data, error } = await client
+        .from('market_data_sources')
+        .insert(insertPayload)
+        .select(
+          'id, source_name, source_type, base_url, trust_level, is_active, crawl_enabled, crawl_frequency_hours, notes, fetch_settings, created_by, updated_by, created_at, updated_at'
+        )
+        .single();
+
+      if (error) {
+        const detailedError = await this.buildSourceSaveError(client, error, authUserId);
+        console.warn('Error inserting source into Supabase:', {
+          code: detailedError.code,
+          message: detailedError.message,
+          details: detailedError.details,
+          hint: detailedError.hint,
+        });
+        throw detailedError;
+      }
+
+      if (!data) {
+        throw new MarketSourceSaveError({
+          code: 'EMPTY_INSERT_RESPONSE',
+          message: 'Supabase insert completed without returning the created market_data_sources row.',
+        });
+      }
+
+      return this.mapSourceRow(data);
+    }
+
     const newId = `src-${Date.now()}`;
     const newSource: MarketDataSource = {
       ...source,
+      name: cleanName,
+      source_name: cleanName,
       id: newId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-
-    const status = await this.checkDatabaseStatus();
-    if (status.tablesExist) {
-      try {
-        const { data, error } = await supabase
-          .from('market_data_sources')
-          .insert({
-            source_name: source.source_name || source.name,
-            base_url: source.base_url,
-            source_type: source.source_type,
-            trust_level: source.trust_level,
-            is_active: source.is_active,
-            crawl_enabled: source.crawl_enabled,
-            crawl_frequency_hours: this.mapFrequencyToHours(source.crawl_frequency),
-            notes: source.notes,
-            fetch_settings: source.settings || {},
-          })
-          .select()
-          .single();
-
-        if (!error && data) {
-          return this.mapSourceRow(data);
-        }
-        if (error) {
-          throw new Error(error.message);
-        }
-      } catch (err) {
-        console.warn('Error inserting source into Supabase:', err);
-        throw err;
-      }
-    }
-
     this.localSources.push(newSource);
     this.saveLocalCache();
     return newSource;
   }
 
-  public async updateSource(id: string, updates: Partial<MarketDataSource>): Promise<MarketDataSource | null> {
-    const status = await this.checkDatabaseStatus();
-    if (status.tablesExist) {
-      try {
-        const payload: Record<string, any> = {
-          updated_at: new Date().toISOString(),
-        };
-        if (updates.source_name || updates.name) payload.source_name = updates.source_name || updates.name;
-        if (updates.base_url !== undefined) payload.base_url = updates.base_url;
-        if (updates.source_type !== undefined) payload.source_type = updates.source_type;
-        if (updates.trust_level !== undefined) payload.trust_level = updates.trust_level;
-        if (updates.is_active !== undefined) payload.is_active = updates.is_active;
-        if (updates.crawl_enabled !== undefined) payload.crawl_enabled = updates.crawl_enabled;
-        if (updates.crawl_frequency !== undefined) {
-          payload.crawl_frequency_hours = this.mapFrequencyToHours(updates.crawl_frequency);
-        }
-        if (updates.notes !== undefined) payload.notes = updates.notes;
-        if (updates.settings !== undefined) payload.fetch_settings = updates.settings;
+  public async updateSource(
+    id: string,
+    updates: Partial<MarketDataSource>,
+    clientOverride?: SupabaseClient
+  ): Promise<MarketDataSource | null> {
+    const client = clientOverride ?? supabase;
+    const useSupabase = Boolean(clientOverride) || isSupabaseConfigured;
 
-        const { data, error } = await supabase
-          .from('market_data_sources')
-          .update(payload)
-          .eq('id', id)
-          .select()
-          .single();
-
-        if (!error && data) {
-          return this.mapSourceRow(data);
+    if (useSupabase) {
+      const authUserId = await this.resolveAuthenticatedUserId(client);
+      const payload: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+        updated_by: authUserId,
+      };
+      const cleanUpdatedName = (updates.source_name || updates.name || '').trim();
+      if (cleanUpdatedName) payload.source_name = cleanUpdatedName;
+      if (updates.base_url !== undefined) payload.base_url = updates.base_url?.trim() || null;
+      if (updates.source_type !== undefined) payload.source_type = updates.source_type;
+      if (updates.trust_level !== undefined) payload.trust_level = updates.trust_level;
+      if (updates.is_active !== undefined) payload.is_active = updates.is_active;
+      if (updates.crawl_enabled !== undefined) payload.crawl_enabled = updates.crawl_enabled;
+      if (updates.crawl_frequency !== undefined) {
+        const mappedHours = this.mapFrequencyToHours(updates.crawl_frequency);
+        if (mappedHours !== null) {
+          payload.crawl_frequency_hours = mappedHours;
         }
-        if (error) {
-          throw new Error(error.message);
-        }
-      } catch (err) {
-        console.warn('Error updating source in Supabase:', err);
-        throw err;
       }
+      if (updates.notes !== undefined) payload.notes = updates.notes?.trim() || null;
+      if (updates.settings !== undefined) payload.fetch_settings = updates.settings;
+
+      const { data, error } = await client
+        .from('market_data_sources')
+        .update(payload)
+        .eq('id', id)
+        .select(
+          'id, source_name, source_type, base_url, trust_level, is_active, crawl_enabled, crawl_frequency_hours, notes, fetch_settings, created_by, updated_by, created_at, updated_at'
+        )
+        .single();
+
+      if (error) {
+        const detailedError = await this.buildSourceSaveError(client, error, authUserId);
+        console.warn('Error updating source in Supabase:', {
+          code: detailedError.code,
+          message: detailedError.message,
+          details: detailedError.details,
+          hint: detailedError.hint,
+        });
+        throw detailedError;
+      }
+
+      if (data) {
+        return this.mapSourceRow(data);
+      }
+      return null;
     }
 
     this.localSources = this.localSources.map((s) => (s.id === id ? { ...s, ...updates, updated_at: new Date().toISOString() } : s));

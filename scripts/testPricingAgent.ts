@@ -41,6 +41,10 @@ import {
 } from '../server/services/pricingAgent/agentRunner.js';
 import { computeNextScheduledRunAt } from '../server/services/pricingAgent/scheduler.js';
 import type { MatchCandidate } from '../server/services/pricingAgent/types.js';
+import {
+  marketIntelligenceService,
+  MarketSourceSaveError,
+} from '../src/services/marketIntelligenceService.js';
 
 let passed = 0;
 
@@ -598,6 +602,171 @@ async function main() {
       String(updatedRuns[0].error_summary || '').includes(
         'simulated database query failure on market_data_sources'
       )
+    );
+  });
+
+  // 14. createSource populates created_by/updated_by from Supabase Auth and uses valid market_data_sources columns
+  await runCase('13. createSource populates created_by from Supabase Auth and maps actual schema columns', async () => {
+    const capturedInserts: any[] = [];
+    const authUserId = '9c4e7f21-6c8b-4d4e-9b7a-1234567890ab';
+
+    const mockSupabase: any = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: authUserId, email: 'admin@manifold.ng' } } },
+          error: null,
+        }),
+        getUser: async () => ({
+          data: { user: { id: authUserId, email: 'admin@manifold.ng' } },
+          error: null,
+        }),
+      },
+      from: (table: string) => {
+        assert.equal(table, 'market_data_sources');
+        return {
+          insert: (payload: any) => {
+            capturedInserts.push(payload);
+            return {
+              select: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'src-uuid-1',
+                    ...payload,
+                    crawl_frequency_hours: payload.crawl_frequency_hours ?? null,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  },
+                  error: null,
+                }),
+              }),
+            };
+          },
+        };
+      },
+    };
+
+    const created = await marketIntelligenceService.createSource(
+      {
+        name: '  Carmart Nigeria  ',
+        base_url: '   ',
+        source_type: 'marketplace',
+        trust_level: 'unverified',
+        crawl_frequency: 'manual',
+        is_active: true,
+        crawl_enabled: false,
+        notes: '   ',
+        last_successful_fetch: null,
+        last_error: null,
+      },
+      mockSupabase
+    );
+
+    assert.equal(capturedInserts.length, 1);
+    const ins = capturedInserts[0];
+    assert.equal(ins.source_name, 'Carmart Nigeria');
+    assert.equal(ins.base_url, null);
+    assert.equal(ins.notes, null);
+    assert.equal(ins.created_by, authUserId);
+    assert.equal(ins.updated_by, authUserId);
+    assert.equal('crawl_frequency_hours' in ins, false);
+    assert.equal('name' in ins, false);
+    assert.equal('crawl_frequency' in ins, false);
+    assert.equal('settings' in ins, false);
+    assert.equal(created.source_name, 'Carmart Nigeria');
+    assert.equal(created.crawl_frequency, 'manual');
+  });
+
+  // 15. createSource rejects missing auth session and preserves RLS code/details/hint on insert failure
+  await runCase('14. createSource rejects missing Auth session and preserves RLS error code, details & hint', async () => {
+    const noSessionClient: any = {
+      auth: {
+        getSession: async () => ({ data: { session: null }, error: null }),
+        getUser: async () => ({ data: { user: null }, error: null }),
+      },
+    };
+
+    await assert.rejects(
+      () =>
+        marketIntelligenceService.createSource(
+          {
+            name: 'Carmart Nigeria',
+            base_url: 'https://carmart.ng',
+            source_type: 'marketplace',
+            trust_level: 'unverified',
+            crawl_frequency: 'weekly',
+            is_active: true,
+            crawl_enabled: false,
+            notes: null,
+            last_successful_fetch: null,
+            last_error: null,
+          },
+          noSessionClient
+        ),
+      (err: any) => err instanceof MarketSourceSaveError && err.code === 'AUTH_SESSION_MISSING'
+    );
+
+    const authUserId = '9c4e7f21-6c8b-4d4e-9b7a-1234567890ab';
+    const rlsFailClient: any = {
+      auth: {
+        getSession: async () => ({ data: { session: { user: { id: authUserId } } }, error: null }),
+        getUser: async () => ({ data: { user: { id: authUserId } }, error: null }),
+      },
+      rpc: async (fn: string) => {
+        assert.equal(fn, 'is_active_admin');
+        return { data: false, error: null };
+      },
+      from: (table: string) => {
+        if (table === 'admin_users') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: null, error: null }),
+              }),
+            }),
+          };
+        }
+        return {
+          insert: () => ({
+            select: () => ({
+              single: async () => ({
+                data: null,
+                error: {
+                  code: '42501',
+                  message: 'new row violates row-level security policy for table "market_data_sources"',
+                  details: 'Failing row contains (id, source_name, ...).',
+                  hint: null,
+                },
+              }),
+            }),
+          }),
+        };
+      },
+    };
+
+    await assert.rejects(
+      () =>
+        marketIntelligenceService.createSource(
+          {
+            name: 'Carmart Nigeria',
+            base_url: 'https://carmart.ng',
+            source_type: 'marketplace',
+            trust_level: 'unverified',
+            crawl_frequency: 'weekly',
+            is_active: true,
+            crawl_enabled: false,
+            notes: 'Notes',
+            last_successful_fetch: null,
+            last_error: null,
+          },
+          rlsFailClient
+        ),
+      (err: any) =>
+        err instanceof MarketSourceSaveError &&
+        err.code === '42501' &&
+        err.message.includes('[42501]') &&
+        err.message.includes('new row violates row-level security policy') &&
+        err.message.includes('is_active_admin()=false') &&
+        err.message.includes('no matching row in public.admin_users')
     );
   });
 

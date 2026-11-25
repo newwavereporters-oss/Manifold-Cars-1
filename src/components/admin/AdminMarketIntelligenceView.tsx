@@ -22,6 +22,7 @@ import {
   Search,
   CheckCircle2,
   XCircle,
+  AlertCircle,
   AlertTriangle,
   Clock,
   RefreshCw,
@@ -105,6 +106,8 @@ export const AdminMarketIntelligenceView: React.FC = () => {
   const [srcActive, setSrcActive] = useState(true);
   const [srcCrawlEnabled, setSrcCrawlEnabled] = useState(true);
   const [srcNotes, setSrcNotes] = useState('');
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [isSavingSource, setIsSavingSource] = useState(false);
 
   // OpenAI Market Synthesis state (preserves Gemini ingestion/embeddings untouched)
   const [aiTopic, setAiTopic] = useState('');
@@ -431,6 +434,20 @@ export const AdminMarketIntelligenceView: React.FC = () => {
     setHistoryRevisions(revs);
   };
 
+  const formatSourceError = (err: any, fallback: string): string => {
+    if (!err) return fallback;
+    if (err.name === 'MarketSourceSaveError' && err.message) {
+      return err.message;
+    }
+    const parts = [
+      err.code ? `[${err.code}]` : null,
+      err.message || fallback,
+      err.details ? `Details: ${err.details}` : null,
+      err.hint ? `Hint: ${err.hint}` : null,
+    ].filter(Boolean);
+    return parts.join(' · ');
+  };
+
   // Source Actions
   const handleOpenAddSource = () => {
     setEditingSource(null);
@@ -442,12 +459,13 @@ export const AdminMarketIntelligenceView: React.FC = () => {
     setSrcActive(true);
     setSrcCrawlEnabled(false);
     setSrcNotes('');
+    setSourceError(null);
     setShowSourceModal(true);
   };
 
   const handleOpenEditSource = (src: MarketDataSource) => {
     setEditingSource(src);
-    setSrcName(src.name);
+    setSrcName(src.source_name || src.name);
     setSrcBaseUrl(src.base_url || '');
     setSrcType(src.source_type);
     setSrcTrust(src.trust_level);
@@ -455,59 +473,74 @@ export const AdminMarketIntelligenceView: React.FC = () => {
     setSrcActive(src.is_active);
     setSrcCrawlEnabled(src.crawl_enabled);
     setSrcNotes(src.notes || '');
+    setSourceError(null);
     setShowSourceModal(true);
   };
 
   const handleSaveSource = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!srcName.trim()) {
-      showNotify('Source name is required.');
+    const cleanName = srcName.trim();
+    if (!cleanName) {
+      const msg = 'Source name is required.';
+      setSourceError(msg);
+      showNotify(msg);
       return;
     }
+
+    setSourceError(null);
+    setIsSavingSource(true);
+    const cleanBaseUrl = srcBaseUrl.trim() || null;
+    const cleanNotes = srcNotes.trim() || null;
 
     try {
       if (editingSource) {
         await marketIntelligenceService.updateSource(editingSource.id, {
-          name: srcName,
-          base_url: srcBaseUrl,
+          name: cleanName,
+          source_name: cleanName,
+          base_url: cleanBaseUrl,
           source_type: srcType,
           trust_level: srcTrust,
           crawl_frequency: srcFreq,
           is_active: srcActive,
           crawl_enabled: srcCrawlEnabled,
-          notes: srcNotes,
+          notes: cleanNotes,
         });
-        showNotify(`Updated source "${srcName}".`);
+        showNotify(`Updated source "${cleanName}".`);
       } else {
         await marketIntelligenceService.createSource({
-          name: srcName,
-          base_url: srcBaseUrl,
+          name: cleanName,
+          source_name: cleanName,
+          base_url: cleanBaseUrl,
           source_type: srcType,
           trust_level: srcTrust,
           crawl_frequency: srcFreq,
           is_active: srcActive,
           crawl_enabled: srcCrawlEnabled,
-          notes: srcNotes,
+          notes: cleanNotes,
           last_successful_fetch: null,
           last_error: null,
         });
-        showNotify(`Created trusted data source "${srcName}".`);
+        showNotify(`Created data source "${cleanName}".`);
       }
 
       setShowSourceModal(false);
       await loadAllData();
-    } catch (err) {
-      showNotify('Failed to save data source.');
+    } catch (err: any) {
+      const detailedMsg = formatSourceError(err, 'Failed to save data source.');
+      setSourceError(detailedMsg);
+      showNotify(detailedMsg);
+    } finally {
+      setIsSavingSource(false);
     }
   };
 
   const handleToggleSourceActive = async (src: MarketDataSource) => {
     try {
       await marketIntelligenceService.updateSource(src.id, { is_active: !src.is_active });
-      showNotify(`Source "${src.name}" ${!src.is_active ? 'activated' : 'deactivated'}.`);
+      showNotify(`Source "${src.source_name || src.name}" ${!src.is_active ? 'activated' : 'deactivated'}.`);
       await loadAllData();
-    } catch (err) {
-      showNotify('Failed to update source status.');
+    } catch (err: any) {
+      showNotify(formatSourceError(err, 'Failed to update source status.'));
     }
   };
 
@@ -2077,6 +2110,19 @@ export const AdminMarketIntelligenceView: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveSource} className="space-y-3.5 text-xs">
+              {sourceError && (
+                <div
+                  role="alert"
+                  className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-[11px] flex items-start gap-2 break-words"
+                >
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <div className="font-bold">Failed to save data source</div>
+                    <div className="font-mono text-[10px] leading-relaxed">{sourceError}</div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block font-bold text-gray-700 mb-1">Source Name <span className="text-[#EF233C]">*</span></label>
                 <input
@@ -2172,15 +2218,17 @@ export const AdminMarketIntelligenceView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowSourceModal(false)}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl font-bold cursor-pointer"
+                  disabled={isSavingSource}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl font-bold cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#EF233C] text-white rounded-xl font-bold cursor-pointer"
+                  disabled={isSavingSource}
+                  className="px-5 py-2 bg-[#EF233C] text-white rounded-xl font-bold cursor-pointer disabled:opacity-60"
                 >
-                  Save Source
+                  {isSavingSource ? 'Saving...' : 'Save Source'}
                 </button>
               </div>
             </form>

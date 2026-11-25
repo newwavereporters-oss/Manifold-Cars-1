@@ -37,6 +37,9 @@ export interface MarketDataSource {
   last_error: string | null;
   notes: string | null;
   settings?: Record<string, any>;
+  crawl_frequency_hours?: number | null;
+  created_by?: string | null;
+  updated_by?: string | null;
   created_at?: string;
   updated_at?: string;
 }
