@@ -69,6 +69,7 @@ export function App() {
   const [assistantSignal, setAssistantSignal] = useState<number>(0);
   const [slugCar, setSlugCar] = useState<Car | null>(null);
   const [slugCarLoading, setSlugCarLoading] = useState(false);
+  const [slugCarError, setSlugCarError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = carService.subscribe((updated) => {
@@ -218,6 +219,7 @@ export function App() {
     if (!selectedCarSlug) {
       setSlugCar(null);
       setSlugCarLoading(false);
+      setSlugCarError(null);
       return;
     }
 
@@ -227,16 +229,19 @@ export function App() {
     if (foundInList) {
       setSlugCar(foundInList);
       setSlugCarLoading(false);
+      setSlugCarError(null);
     } else {
       setSlugCarLoading(true);
+      setSlugCarError(null);
       carService
         .getCarBySlug(selectedCarSlug)
         .then((car) => {
           setSlugCar(car);
           setSlugCarLoading(false);
         })
-        .catch(() => {
+        .catch((err: any) => {
           setSlugCar(null);
+          setSlugCarError(err?.message || 'Unable to load requested vehicle.');
           setSlugCarLoading(false);
         });
     }
@@ -458,9 +463,13 @@ export function App() {
             />
           ) : (
             <div className="min-h-screen bg-[#F7F8FA] pt-32 pb-20 text-center px-4">
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Vehicle Not Found</h2>
-              <p className="text-xs text-gray-500 mb-4">
-                The requested vehicle record could not be found in the live MANIFOLD inventory.
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                {slugCarError ? 'Unable to Load Vehicle' : 'Vehicle Not Found'}
+              </h2>
+              <p className="text-xs text-gray-500 mb-4 max-w-md mx-auto">
+                {slugCarError
+                  ? slugCarError
+                  : 'The requested vehicle record could not be found in the live MANIFOLD inventory.'}
               </p>
               <button
                 onClick={() => navigate('/cars')}

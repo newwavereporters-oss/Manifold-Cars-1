@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { getSupabaseClient } from '../lib/supabaseServer.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { getServerEnv } from '../config/env.js';
+import {
+  extractBearerToken,
+  getSupabaseAdminClient,
+  getSupabaseClient,
+} from '../lib/supabaseServer.js';
 import { sendMigrationSqlFile } from '../lib/migrationSql.js';
 import { requireAuth } from '../middleware/auth.js';
 import { chatModerationLimiter, standardApiLimiter } from '../middleware/rateLimit.js';
@@ -9,38 +15,104 @@ import { getGenAI } from '../services/marketIntelligenceBackend.js';
 
 const router = Router();
 
-router.get('/db-status', standardApiLimiter, async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  const supabase = getSupabaseClient(authHeader);
+export const WORLD_REQUIRED_TABLES = [
+  'player_profiles',
+  'player_presence',
+  'chat_invitations',
+  'chat_conversations',
+  'chat_messages',
+  'player_blocks',
+  'player_reports',
+  'moderation_incidents',
+  'player_admin_audit_logs',
+  'chat_moderation_config',
+] as const;
 
-  if (!supabase) {
-    return res.json({
+const AUTH_ONLY_WORLD_RPCS = new Set([
+  'admin_get_players_directory',
+  'admin_get_player_detail',
+  'admin_get_moderation_overview',
+]);
+
+export function extractSupabaseHost(rawUrl?: string | null): string | null {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(trimmed).host;
+  } catch {
+    return null;
+  }
+}
+
+export interface WorldDbCheckEntry {
+  exists: boolean;
+  unverifiedAnonRestricted?: boolean;
+  code?: string;
+  error?: string;
+}
+
+export type WorldVerificationMode = 'service_role' | 'authenticated_user' | 'anon';
+
+export interface WorldDbStatusPayload {
+  configured: boolean;
+  tablesExist: boolean;
+  migrationRequired: boolean;
+  verificationMode: WorldVerificationMode;
+  supabaseHost: string | null;
+  checks: Record<string, WorldDbCheckEntry>;
+  networkUnreachable?: boolean;
+  migrationFilePath: string;
+  error?: string;
+}
+
+function isSchemaMissingError(error: any, isRpc: boolean): boolean {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(error.message || '').toLowerCase();
+  if (isRpc) {
+    return (
+      code === 'PGRST202' ||
+      code === '42883' ||
+      msg.includes('could not find the function') ||
+      (msg.includes('function') && msg.includes('does not exist'))
+    );
+  }
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    code === '42703' ||
+    msg.includes('does not exist')
+  );
+}
+
+export async function evaluateWorldDbStatus(params: {
+  client: SupabaseClient | null;
+  verificationMode: WorldVerificationMode;
+  supabaseUrl?: string | null;
+}): Promise<WorldDbStatusPayload> {
+  const { client, verificationMode, supabaseUrl } = params;
+  const supabaseHost = extractSupabaseHost(supabaseUrl);
+
+  if (!client) {
+    return {
       configured: false,
       tablesExist: false,
       migrationRequired: true,
-      error: 'Supabase URL or Key not configured in environment.',
-    });
+      verificationMode,
+      supabaseHost,
+      checks: {},
+      migrationFilePath: 'src/db/game-world-social-migration.sql',
+      error: 'Supabase URL or Key not configured in server environment.',
+    };
   }
 
-  const worldTables = [
-    'player_profiles',
-    'player_presence',
-    'chat_invitations',
-    'chat_conversations',
-    'chat_messages',
-    'player_blocks',
-    'player_reports',
-    'moderation_incidents',
-    'player_admin_audit_logs',
-    'chat_moderation_config',
-  ];
+  const checks: Record<string, WorldDbCheckEntry> = {};
 
-  const checks: Record<string, { exists: boolean; code?: string; error?: string }> = {};
   const checkOneTable = async (t: string) => {
     try {
       const cols = t === 'player_profiles' ? 'created_at, chat_status' : 'created_at';
       const result = await Promise.race([
-        supabase.from(t).select(cols).limit(1),
+        client.from(t).select(cols).limit(1),
         new Promise<{ error: { code: string; message: string } }>((resolve) =>
           setTimeout(
             () => resolve({ error: { code: 'TIMEOUT', message: 'Supabase check timed out' } }),
@@ -49,30 +121,43 @@ router.get('/db-status', standardApiLimiter, async (req: Request, res: Response)
         ),
       ]);
       const error = (result as any)?.error;
-      if (
-        error &&
-        (error.code === 'PGRST205' ||
-          error.code === '42P01' ||
-          error.code === '42703' ||
-          error.message?.includes('does not exist'))
-      ) {
-        checks[t] = { exists: false, code: error.code, error: error.message };
-      } else if (error && error.code !== '42501' && error.code !== 'PGRST116') {
-        checks[t] = { exists: false, code: error.code, error: error.message };
-      } else {
+      if (!error || error.code === 'PGRST116') {
         checks[t] = { exists: true };
+        return;
       }
+
+      if (isSchemaMissingError(error, false)) {
+        checks[t] = { exists: false, code: error.code, error: error.message };
+        return;
+      }
+
+      // 42501 = permission denied / RLS restriction on an existing table
+      if (error.code === '42501') {
+        checks[t] = {
+          exists: true,
+          unverifiedAnonRestricted: verificationMode === 'anon',
+          code: error.code,
+          error: error.message,
+        };
+        return;
+      }
+
+      if (error.code === 'TIMEOUT' || error.code === 'FETCH_ERROR') {
+        checks[t] = { exists: false, code: error.code, error: error.message };
+        return;
+      }
+
+      // Other PostgreSQL/PostgREST runtime errors mean the table exists in schema
+      checks[t] = { exists: true, code: error.code, error: error.message };
     } catch (err: any) {
       checks[t] = { exists: false, code: 'FETCH_ERROR', error: err?.message || 'Fetch failed' };
     }
   };
 
-  await Promise.all(worldTables.map((t) => checkOneTable(t)));
-
   const checkRpcExists = async (fnName: string, args: Record<string, any>) => {
     try {
       const result = await Promise.race([
-        supabase.rpc(fnName, args),
+        client.rpc(fnName, args),
         new Promise<{ error: { code: string; message: string } }>((resolve) =>
           setTimeout(
             () => resolve({ error: { code: 'TIMEOUT', message: 'Supabase check timed out' } }),
@@ -81,39 +166,96 @@ router.get('/db-status', standardApiLimiter, async (req: Request, res: Response)
         ),
       ]);
       const error = (result as any)?.error;
-      if (
-        error &&
-        (error.code === 'PGRST202' ||
-          error.code === '42883' ||
-          error.message?.includes('Could not find the function') ||
-          (error.message?.includes('function') && error.message?.includes('does not exist')))
-      ) {
-        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
-      } else if (error && (error.code === 'TIMEOUT' || error.code === 'FETCH_ERROR')) {
-        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
-      } else {
+      if (!error) {
         checks[`rpc:${fnName}`] = { exists: true };
+        return;
       }
+
+      // PostgREST omits functions revoked from `anon` from anon's schema cache (returning PGRST202/42501).
+      // That is expected privilege isolation, NOT a missing migration.
+      if (
+        verificationMode === 'anon' &&
+        AUTH_ONLY_WORLD_RPCS.has(fnName) &&
+        (error.code === 'PGRST202' || error.code === '42501')
+      ) {
+        checks[`rpc:${fnName}`] = {
+          exists: true,
+          unverifiedAnonRestricted: true,
+          code: error.code,
+          error:
+            'Restricted from anonymous RPC schema cache (expected for authenticated-only admin RPCs).',
+        };
+        return;
+      }
+
+      if (isSchemaMissingError(error, true)) {
+        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
+        return;
+      }
+
+      if (error.code === 'TIMEOUT' || error.code === 'FETCH_ERROR') {
+        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
+        return;
+      }
+
+      // e.g. P0001 ("Admin privileges required") proves the RPC exists and executed!
+      checks[`rpc:${fnName}`] = { exists: true, code: error.code, error: error.message };
     } catch (err: any) {
-      checks[`rpc:${fnName}`] = { exists: false, code: 'FETCH_ERROR', error: err?.message || 'Fetch failed' };
+      checks[`rpc:${fnName}`] = {
+        exists: false,
+        code: 'FETCH_ERROR',
+        error: err?.message || 'Fetch failed',
+      };
     }
   };
 
   await Promise.all([
+    ...WORLD_REQUIRED_TABLES.map((t) => checkOneTable(t)),
     checkRpcExists('check_player_registration_available', { p_email: '', p_nickname: '' }),
     checkRpcExists('admin_get_players_directory', {}),
   ]);
 
-  const timedOut = Object.values(checks).every((c) => c.code === 'TIMEOUT' || c.code === 'FETCH_ERROR');
-  const allExist = Object.values(checks).every((c) => c.exists);
-  return res.json({
+  const entries = Object.values(checks);
+  const timedOut =
+    entries.length > 0 && entries.every((c) => c.code === 'TIMEOUT' || c.code === 'FETCH_ERROR');
+  const allExist = entries.every((c) => c.exists);
+
+  return {
     configured: true,
     tablesExist: timedOut ? true : allExist,
     migrationRequired: timedOut ? false : !allExist,
+    verificationMode,
+    supabaseHost,
     checks,
     networkUnreachable: timedOut,
     migrationFilePath: 'src/db/game-world-social-migration.sql',
+  };
+}
+
+router.get('/db-status', standardApiLimiter, async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+
+  const env = getServerEnv();
+  const authHeader = req.headers.authorization;
+  const adminClient = getSupabaseAdminClient();
+  const bearerToken = extractBearerToken(authHeader);
+  const userClient = getSupabaseClient(authHeader);
+
+  const client = adminClient || userClient;
+  const verificationMode: WorldVerificationMode = adminClient
+    ? 'service_role'
+    : bearerToken
+    ? 'authenticated_user'
+    : 'anon';
+
+  const status = await evaluateWorldDbStatus({
+    client,
+    verificationMode,
+    supabaseUrl: env.supabaseUrl,
   });
+
+  return res.json(status);
 });
 
 router.get('/migration-sql', standardApiLimiter, (_req: Request, res: Response) => {

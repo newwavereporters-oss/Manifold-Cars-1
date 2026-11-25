@@ -85,11 +85,6 @@ export const AdminGamePlayersView: React.FC = () => {
     const status = await checkWorldDbStatus();
     setDbStatus(status);
 
-    if (status.migrationRequired) {
-      setLoading(false);
-      return;
-    }
-
     const res = await adminFetchPlayersDirectory({
       search: appliedSearch,
       accountStatus: accountFilter,
@@ -212,17 +207,58 @@ export const AdminGamePlayersView: React.FC = () => {
         </button>
       </div>
 
-      {/* Migration Notice */}
+      {/* Supabase Project Mismatch Warning (non-secret hostnames only) */}
+      {dbStatus?.hostMismatch && (
+        <div className="bg-red-50 border border-red-300 rounded-2xl p-4 flex items-start gap-3 text-xs text-red-900">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h3 className="font-black text-red-950">Supabase Project Mismatch Detected</h3>
+            <p>
+              The browser client is connected to <code>{dbStatus.clientSupabaseHost}</code>, while the
+              API server is connected to <code>{dbStatus.supabaseHost}</code>. Ensure{' '}
+              <code>VITE_SUPABASE_URL</code> and server <code>SUPABASE_URL</code> point to the same
+              Supabase project.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Migration / Schema Diagnostic Notice */}
       {dbStatus?.migrationRequired && (
         <div className="bg-amber-50 border border-amber-300 rounded-2xl p-5 space-y-3">
           <div className="flex items-start gap-3">
             <Database className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="flex-1 space-y-1">
+            <div className="flex-1 space-y-1.5">
               <h3 className="text-sm font-black text-amber-950">
-                Game World Database Migration Required
+                Game World Schema or Configuration Check Failed
               </h3>
               <p className="text-xs text-amber-800 leading-relaxed">
-                Game World tables or permissions require setup or repair in Supabase. For fresh databases, apply <code>src/db/game-world-social-migration.sql</code> once; if tables already exist, apply the idempotent fix in <code>src/db/world-experience-hardening-fix.sql</code> instead of re-running the initial migration.
+                {dbStatus.error
+                  ? dbStatus.error
+                  : 'One or more Game World tables or RPC checks failed on the database.'}{' '}
+                {dbStatus.supabaseHost && (
+                  <span>
+                    Target DB host: <code>{dbStatus.supabaseHost}</code> (mode:{' '}
+                    <code>{dbStatus.verificationMode || 'unknown'}</code>).
+                  </span>
+                )}
+              </p>
+              {dbStatus.checks && (
+                <ul className="text-[11px] text-amber-900 space-y-1 pt-1 font-mono">
+                  {Object.entries(dbStatus.checks)
+                    .filter(([, entry]) => !entry.exists)
+                    .map(([name, entry]) => (
+                      <li key={name}>
+                        {name}: {entry.code ? `[${entry.code}] ` : ''}
+                        {entry.error || 'Missing or inaccessible'}
+                      </li>
+                    ))}
+                </ul>
+              )}
+              <p className="text-[11px] text-amber-800 leading-relaxed pt-1">
+                For fresh databases, apply <code>src/db/game-world-social-migration.sql</code> once; if
+                tables already exist, apply <code>src/db/world-experience-hardening-fix.sql</code>{' '}
+                (and <code>src/db/admin-auth-fix.sql</code> if admin roles fail).
               </p>
             </div>
           </div>
@@ -237,10 +273,24 @@ export const AdminGamePlayersView: React.FC = () => {
         </div>
       )}
 
+      {dbStatus?.error && !dbStatus?.migrationRequired && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-center gap-2.5 text-xs text-amber-900 font-semibold">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+          <span>Status Check Notice: {dbStatus.error}</span>
+        </div>
+      )}
+
       {errorMsg && (
-        <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2.5 text-xs text-red-700 font-semibold">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          <span>{errorMsg}</span>
+        <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2.5 text-xs text-red-700 font-semibold">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <span className="block">{errorMsg}</span>
+            {errorMsg.toLowerCase().includes('admin privileges required') && (
+              <span className="block text-[11px] font-normal text-red-600">
+                Note: The database RPC rejected the current session via <code>public.is_active_admin()</code>. Ensure your admin user is active in <code>public.admin_users</code> and apply <code>src/db/admin-auth-fix.sql</code> if you ran <code>game-world-social-migration.sql</code> afterwards.
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -252,7 +302,7 @@ export const AdminGamePlayersView: React.FC = () => {
       )}
 
       {/* 8 KPI Cards */}
-      {!dbStatus?.migrationRequired && (
+      {(directory || !dbStatus?.migrationRequired) && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
             {[
@@ -386,6 +436,12 @@ export const AdminGamePlayersView: React.FC = () => {
               <div className="p-12 flex flex-col items-center justify-center gap-3 text-gray-500">
                 <Loader2 className="w-6 h-6 animate-spin text-[#EF233C]" />
                 <span className="text-xs font-semibold">Loading registered game players...</span>
+              </div>
+            ) : !directory && errorMsg ? (
+              <div className="p-12 text-center space-y-2">
+                <AlertTriangle className="w-8 h-8 text-red-500 mx-auto" />
+                <p className="text-sm font-bold text-gray-900">Unable to load game players</p>
+                <p className="text-xs text-red-600 max-w-lg mx-auto">{errorMsg}</p>
               </div>
             ) : !directory || directory.players.length === 0 ? (
               <div className="p-12 text-center space-y-2">

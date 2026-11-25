@@ -491,6 +491,22 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
 
           {/* Right: Video-First Vehicle Grid */}
           <div className="lg:col-span-3 space-y-8">
+            {loadState.error && cars.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between gap-3 text-xs text-red-700">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{loadState.error}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void carService.getCars().catch(() => {})}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-red-200 font-bold hover:bg-red-100 shrink-0 cursor-pointer"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
             {loadState.loading && cars.length === 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
                 {[0, 1, 2, 3, 4, 5].map((idx) => (
@@ -523,12 +539,42 @@ export const ListingsPage: React.FC<ListingsPageProps> = ({
                 </p>
                 <button
                   type="button"
-                  onClick={() => void carService.getCars()}
+                  onClick={() => void carService.getCars().catch(() => {})}
                   className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#071A2B] hover:bg-[#0B2239] text-white text-xs font-bold uppercase tracking-wider rounded-lg transition cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   <span>Retry Loading Cars</span>
                 </button>
+              </div>
+            ) : cars.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-8 sm:p-12 text-center space-y-4 shadow-sm">
+                <div className="w-16 h-16 rounded-full bg-red-50 text-[#EF233C] mx-auto flex items-center justify-center">
+                  <Compass className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-bold text-[#071A2B] font-display">
+                  No public vehicles available yet.
+                </h3>
+                <p className="text-sm text-gray-500 max-w-md mx-auto">
+                  No public listings were returned from inventory. Refresh inventory or submit a
+                  Car Hunt request and our team will source a verified vehicle for you.
+                </p>
+                <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void carService.getCars().catch(() => {})}
+                    className="inline-flex items-center gap-1.5 h-10 px-4 border border-gray-300 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 whitespace-nowrap cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Refresh Inventory</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/car-hunt')}
+                    className="h-10 px-5 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow whitespace-nowrap cursor-pointer"
+                  >
+                    Start a Car Hunt
+                  </button>
+                </div>
               </div>
             ) : filteredCars.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-200 p-8 sm:p-12 text-center space-y-4 shadow-sm">

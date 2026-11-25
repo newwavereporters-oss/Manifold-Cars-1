@@ -238,16 +238,38 @@ class DealerService {
   private publicCache: PublicDealerRecord[] = [];
 
   public async getPublicDealers(): Promise<PublicDealerRecord[]> {
+    const PUBLIC_COLS_FULL =
+      'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year';
+    const PUBLIC_COLS_MINIMAL = 'id, name, slug, city, state, is_verified, joined_year';
+
+    let rows: any[] = [];
+
     if (!checkIsSupabaseConfigured()) {
-      return [];
+      const res = await fetch('/api/dealers/public', {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(8000),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        const msg = body?.error
+          ? `${body.code ? `[${body.code}] ` : ''}${body.error}`
+          : `Unable to load dealers directory (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      rows = Array.isArray(body?.dealers) ? body.dealers : [];
+    } else {
+      let query = await supabase.from('dealers').select(PUBLIC_COLS_FULL);
+      if (query.error?.code === '42703') {
+        query = await supabase.from('dealers').select(PUBLIC_COLS_MINIMAL);
+      }
+      if (query.error) {
+        const codePrefix = query.error.code ? `[${query.error.code}] ` : '';
+        throw new Error(`Unable to load dealers directory: ${codePrefix}${query.error.message}`);
+      }
+      rows = query.data || [];
     }
 
-    const { data, error } = await supabase.from('dealers').select('*');
-    if (error) {
-      throw new Error(`Unable to load dealers directory: ${error.message}`);
-    }
-
-    const baseRows = (data || [])
+    const baseRows = rows
       .filter((d: any) => {
         const st = String(d?.dealer_status || '').trim().toLowerCase();
         return st !== 'disapproved' && st !== 'suspended';

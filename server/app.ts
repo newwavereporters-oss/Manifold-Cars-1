@@ -2,6 +2,7 @@ import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { getServerEnv } from './config/env.js';
 import { dealersRouter } from './routes/dealers.js';
+import { carsRouter } from './routes/cars.js';
 import { marketIntelligenceRouter } from './routes/marketIntelligence.js';
 import { worldRouter } from './routes/world.js';
 import { aiRouter } from './routes/ai.js';
@@ -27,6 +28,7 @@ export function createApp() {
   app.use('/api/market-intelligence', marketIntelligenceRouter);
   app.use('/api/world', worldRouter);
   app.use('/api/dealers', dealersRouter);
+  app.use('/api/cars', carsRouter);
   app.use('/api/ai', aiRouter);
 
   // Explicit 404 JSON handler for unmatched /api/* routes so API requests never fall through to SPA HTML

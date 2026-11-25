@@ -297,8 +297,9 @@ init_env();
 import express from "express";
 
 // server/routes/dealers.ts
+init_env();
 init_supabaseServer();
-import { Router } from "express";
+import { Router as Router3 } from "express";
 
 // server/lib/migrationSql.ts
 import fs from "fs";
@@ -439,70 +440,15 @@ var aiAssistantLimiter = createRateLimiter({
   message: "Automotive assistant rate limit reached. Please pause briefly."
 });
 
-// server/routes/dealers.ts
-var router = Router();
-router.get("/db-status", standardApiLimiter, async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const supabase = getSupabaseClient(authHeader);
-  if (!supabase) {
-    return res.json({
-      configured: false,
-      migrationRequired: true,
-      error: "Supabase URL or Key not configured in environment."
-    });
-  }
-  const checkRpcExists = async (fnName, args) => {
-    try {
-      const result = await Promise.race([
-        supabase.rpc(fnName, args),
-        new Promise(
-          (resolve) => setTimeout(
-            () => resolve({ error: { code: "TIMEOUT", message: "Supabase check timed out" } }),
-            2500
-          )
-        )
-      ]);
-      const error = result?.error;
-      if (error && (error.code === "PGRST202" || error.code === "42883" || error.message?.includes("Could not find the function") || error.message?.includes("function") && error.message?.includes("does not exist"))) {
-        return { exists: false, code: error.code, error: error.message };
-      }
-      if (error && (error.code === "TIMEOUT" || error.code === "FETCH_ERROR")) {
-        return { exists: false, code: error.code, error: error.message };
-      }
-      return { exists: true };
-    } catch (err) {
-      return { exists: false, code: "FETCH_ERROR", error: err?.message || "Fetch failed" };
-    }
-  };
-  const [listCheck, setStatusCheck, approvedFnCheck] = await Promise.all([
-    checkRpcExists("admin_list_dealer_accounts", {}),
-    checkRpcExists("admin_set_dealer_approval_status", { p_dealer_id: "", p_action: "pending", p_reason: null }),
-    checkRpcExists("is_approved_dealer", {})
-  ]);
-  const checks = {
-    "rpc:admin_list_dealer_accounts": listCheck,
-    "rpc:admin_set_dealer_approval_status": setStatusCheck,
-    "rpc:is_approved_dealer": approvedFnCheck
-  };
-  const timedOut = Object.values(checks).every((c) => c.code === "TIMEOUT" || c.code === "FETCH_ERROR");
-  const allExist = Object.values(checks).every((c) => c.exists);
-  return res.json({
-    configured: true,
-    migrationRequired: timedOut ? false : !allExist,
-    networkUnreachable: timedOut,
-    checks,
-    migrationFilePath: "src/db/dealer-approval-migration.sql"
-  });
-});
-router.get("/migration-sql", standardApiLimiter, (_req, res) => {
-  sendMigrationSqlFile("dealer-approval-migration.sql", "-- Dealer approval migration SQL not found.", res);
-});
-var dealersRouter = router;
-
-// server/routes/marketIntelligence.ts
+// server/routes/cars.ts
 init_env();
 init_supabaseServer();
-import { Router as Router3 } from "express";
+import { Router as Router2 } from "express";
+
+// server/routes/world.ts
+init_env();
+init_supabaseServer();
+import { Router } from "express";
 
 // server/middleware/auth.ts
 init_supabaseServer();
@@ -1423,10 +1369,614 @@ async function persistExtractionTrace(authHeader, submissionType, rawInput, fetc
   }
 }
 
+// server/routes/world.ts
+var router = Router();
+var WORLD_REQUIRED_TABLES = [
+  "player_profiles",
+  "player_presence",
+  "chat_invitations",
+  "chat_conversations",
+  "chat_messages",
+  "player_blocks",
+  "player_reports",
+  "moderation_incidents",
+  "player_admin_audit_logs",
+  "chat_moderation_config"
+];
+var AUTH_ONLY_WORLD_RPCS = /* @__PURE__ */ new Set([
+  "admin_get_players_directory",
+  "admin_get_player_detail",
+  "admin_get_moderation_overview"
+]);
+function extractSupabaseHost(rawUrl) {
+  const trimmed = String(rawUrl || "").trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(trimmed).host;
+  } catch {
+    return null;
+  }
+}
+function isSchemaMissingError(error, isRpc) {
+  if (!error) return false;
+  const code = String(error.code || "");
+  const msg = String(error.message || "").toLowerCase();
+  if (isRpc) {
+    return code === "PGRST202" || code === "42883" || msg.includes("could not find the function") || msg.includes("function") && msg.includes("does not exist");
+  }
+  return code === "PGRST205" || code === "42P01" || code === "42703" || msg.includes("does not exist");
+}
+async function evaluateWorldDbStatus(params) {
+  const { client, verificationMode, supabaseUrl } = params;
+  const supabaseHost = extractSupabaseHost(supabaseUrl);
+  if (!client) {
+    return {
+      configured: false,
+      tablesExist: false,
+      migrationRequired: true,
+      verificationMode,
+      supabaseHost,
+      checks: {},
+      migrationFilePath: "src/db/game-world-social-migration.sql",
+      error: "Supabase URL or Key not configured in server environment."
+    };
+  }
+  const checks = {};
+  const checkOneTable = async (t) => {
+    try {
+      const cols = t === "player_profiles" ? "created_at, chat_status" : "created_at";
+      const result = await Promise.race([
+        client.from(t).select(cols).limit(1),
+        new Promise(
+          (resolve) => setTimeout(
+            () => resolve({ error: { code: "TIMEOUT", message: "Supabase check timed out" } }),
+            2500
+          )
+        )
+      ]);
+      const error = result?.error;
+      if (!error || error.code === "PGRST116") {
+        checks[t] = { exists: true };
+        return;
+      }
+      if (isSchemaMissingError(error, false)) {
+        checks[t] = { exists: false, code: error.code, error: error.message };
+        return;
+      }
+      if (error.code === "42501") {
+        checks[t] = {
+          exists: true,
+          unverifiedAnonRestricted: verificationMode === "anon",
+          code: error.code,
+          error: error.message
+        };
+        return;
+      }
+      if (error.code === "TIMEOUT" || error.code === "FETCH_ERROR") {
+        checks[t] = { exists: false, code: error.code, error: error.message };
+        return;
+      }
+      checks[t] = { exists: true, code: error.code, error: error.message };
+    } catch (err) {
+      checks[t] = { exists: false, code: "FETCH_ERROR", error: err?.message || "Fetch failed" };
+    }
+  };
+  const checkRpcExists = async (fnName, args) => {
+    try {
+      const result = await Promise.race([
+        client.rpc(fnName, args),
+        new Promise(
+          (resolve) => setTimeout(
+            () => resolve({ error: { code: "TIMEOUT", message: "Supabase check timed out" } }),
+            2500
+          )
+        )
+      ]);
+      const error = result?.error;
+      if (!error) {
+        checks[`rpc:${fnName}`] = { exists: true };
+        return;
+      }
+      if (verificationMode === "anon" && AUTH_ONLY_WORLD_RPCS.has(fnName) && (error.code === "PGRST202" || error.code === "42501")) {
+        checks[`rpc:${fnName}`] = {
+          exists: true,
+          unverifiedAnonRestricted: true,
+          code: error.code,
+          error: "Restricted from anonymous RPC schema cache (expected for authenticated-only admin RPCs)."
+        };
+        return;
+      }
+      if (isSchemaMissingError(error, true)) {
+        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
+        return;
+      }
+      if (error.code === "TIMEOUT" || error.code === "FETCH_ERROR") {
+        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
+        return;
+      }
+      checks[`rpc:${fnName}`] = { exists: true, code: error.code, error: error.message };
+    } catch (err) {
+      checks[`rpc:${fnName}`] = {
+        exists: false,
+        code: "FETCH_ERROR",
+        error: err?.message || "Fetch failed"
+      };
+    }
+  };
+  await Promise.all([
+    ...WORLD_REQUIRED_TABLES.map((t) => checkOneTable(t)),
+    checkRpcExists("check_player_registration_available", { p_email: "", p_nickname: "" }),
+    checkRpcExists("admin_get_players_directory", {})
+  ]);
+  const entries = Object.values(checks);
+  const timedOut = entries.length > 0 && entries.every((c) => c.code === "TIMEOUT" || c.code === "FETCH_ERROR");
+  const allExist = entries.every((c) => c.exists);
+  return {
+    configured: true,
+    tablesExist: timedOut ? true : allExist,
+    migrationRequired: timedOut ? false : !allExist,
+    verificationMode,
+    supabaseHost,
+    checks,
+    networkUnreachable: timedOut,
+    migrationFilePath: "src/db/game-world-social-migration.sql"
+  };
+}
+router.get("/db-status", standardApiLimiter, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  const env = getServerEnv();
+  const authHeader = req.headers.authorization;
+  const adminClient = getSupabaseAdminClient();
+  const bearerToken = extractBearerToken(authHeader);
+  const userClient = getSupabaseClient(authHeader);
+  const client = adminClient || userClient;
+  const verificationMode = adminClient ? "service_role" : bearerToken ? "authenticated_user" : "anon";
+  const status = await evaluateWorldDbStatus({
+    client,
+    verificationMode,
+    supabaseUrl: env.supabaseUrl
+  });
+  return res.json(status);
+});
+router.get("/migration-sql", standardApiLimiter, (_req, res) => {
+  sendMigrationSqlFile("game-world-social-migration.sql", "-- Game world migration SQL not found.", res);
+});
+router.post(
+  "/moderate-chat",
+  requireAuth,
+  chatModerationLimiter,
+  validateModerateChatBody,
+  async (req, res) => {
+    const { content } = req.body;
+    const trimmed = content.trim();
+    if (trimmed.length === 0 || trimmed.length > 500) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "INVALID_LENGTH",
+        reason: "Message must be 1 to 500 characters."
+      });
+    }
+    const lower = trimmed.toLowerCase();
+    const collapsed = lower.replace(/[^a-z0-9@.+]/g, "");
+    const phonePattern = /(\+?234[\s\-.]?[0-9]{2,4}[\s\-.]?[0-9]{3,4}[\s\-.]?[0-9]{3,4}|0[789][01][\s\-.]?[0-9]{3,4}[\s\-.]?[0-9]{4})/;
+    const phoneSpanPattern = /(?:^|[^0-9,])(\+?[0-9](?:[\s\-.()]*[0-9]){7,14})(?:[^0-9]|$)/;
+    const spokenPhonePattern = /(zero|oh)\s*(eight|seven|nine)\s*(zero|one|two|three|four|five|six|seven|eight|nine)/i;
+    const emailPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+    const obfuscatedEmailPattern = /[a-z0-9._%+-]+\s*(at|\(at\)|\[at\])\s*(gmail|yahoo|outlook|hotmail|icloud|proton)\s*(dot|\.)\s*(com|net|org|ng)/i;
+    const linkPattern = /(https?:\/\/|www\.|wa\.me\/|t\.me\/|bit\.ly\/|instagram\.com|tiktok\.com|snapchat\.com|discord\.gg)/i;
+    const offPlatformAppsPattern = /\b(whatsapp|whatsap|watsapp|whats app|telegram|snapchat|signal app|viber|wechat)\b/i;
+    const socialPlatformInvite = /\b(instagram|insta|tiktok|discord)\b/i.test(lower) && /\b(add|dm|follow|reach|text|chat|message|handle|me|my)\b/i.test(lower);
+    const contactSolicitPattern = /\b(call me|text me|ring me|drop your number|send your number|here is my number|take my number|dm me on|hit me up on|add me on)\b/i;
+    const handleInvitePattern = /(@[a-z0-9_.]{3,})/i.test(lower) && /\b(add|dm|follow|reach|text|chat|message|handle|snap|ig|tg)\b/i.test(lower);
+    const datingPattern = /\b(hookup|hook up|wanna link tonight|link up tonight|date me|be my girlfriend|be my boyfriend|sugar daddy|sugar mommy|looking for a girlfriend|looking for a boyfriend|netflix and chill|come over to my place)\b/i;
+    const sexualPattern = /\b(send nudes|send me nudes|nudes|horny|sexting|erotic|blowjob|handjob|fuck me|suck my|orgasm|porn|onlyfans)\b/i;
+    const harassmentScamPattern = /\b(kill yourself|i will kill you|stab you|shoot you|wire transfer|send me your bank|bank details|bvn|otp code|motherfucker|retard|faggot)\b/i;
+    const ambiguousReviewPattern = /\b(send pics|my digits|drop your @|meet in person alone|bank account)\b/i;
+    if (phonePattern.test(trimmed) || phoneSpanPattern.test(trimmed) || spokenPhonePattern.test(lower)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "PERSONAL_CONTACT_PHONE",
+        reason: "Sharing phone numbers or numeric contact details is not permitted in MANIFOLD community chat."
+      });
+    }
+    if (emailPattern.test(trimmed) || obfuscatedEmailPattern.test(lower)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "PERSONAL_CONTACT_EMAIL",
+        reason: "Sharing email addresses is not permitted in MANIFOLD community chat."
+      });
+    }
+    if (linkPattern.test(trimmed) || /(wame|tme|http|https)[a-z0-9]{3,}/.test(collapsed)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "EXTERNAL_LINK",
+        reason: "Sharing external links or URLs is not permitted."
+      });
+    }
+    if (offPlatformAppsPattern.test(lower) || socialPlatformInvite || contactSolicitPattern.test(lower) || handleInvitePattern) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "OFF_PLATFORM_SOLICITATION",
+        reason: "Sharing social handles or moving conversations off MANIFOLD is not allowed."
+      });
+    }
+    if (datingPattern.test(lower)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "DATING_SOLICITATION",
+        reason: "Dating or personal meetup solicitation is not allowed in MANIFOLD driving chat."
+      });
+    }
+    if (sexualPattern.test(lower)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "SEXUAL_EXPLICIT",
+        reason: "Sexually explicit content is strictly prohibited."
+      });
+    }
+    if (harassmentScamPattern.test(lower)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "HARASSMENT_OR_SCAM",
+        reason: "Threats, hate speech, harassment, or financial solicitation is prohibited."
+      });
+    }
+    if (ambiguousReviewPattern.test(lower)) {
+      return res.json({
+        allowed: true,
+        severity: "flagged_for_review",
+        action: "flag_review",
+        category: "AMBIGUOUS_REVIEW",
+        reason: "Flagged conservatively for safety review without penalizing the player."
+      });
+    }
+    const genAI = getGenAI();
+    if (genAI) {
+      try {
+        const result = await Promise.race([
+          genAI.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `Evaluate this in-game car-driving chat message.
+ALLOW normal everyday conversation about cars, driving, Lagos routes, music, sports, entertainment, everyday hobbies, and MANIFOLD marketplace discoveries (including benign slang like "killing it on Third Mainland Bridge", "shoot a clip of that AMG", "my number 1 dream car", "love this song").
+BLOCK ONLY clear, unambiguous violations: (1) phone/email/off-platform handle sharing or external links, (2) dating or sexually explicit solicitation, (3) genuine threats, hate speech, severe abuse, or financial scams.
+If borderline/ambiguous, set action="flag_review" and allowed=true instead of blocking.
+Respond ONLY with JSON {"allowed": boolean, "action": "allow"|"flag_review"|"block", "category": string, "reason": string|null}.
+Message: ${JSON.stringify(trimmed)}`,
+            config: { responseMimeType: "application/json" }
+          }),
+          new Promise((resolve) => setTimeout(() => resolve(null), 2200))
+        ]);
+        if (result && "text" in result && result.text) {
+          const parsed = JSON.parse(result.text.replace(/```json|```/gi, "").trim());
+          if (parsed && parsed.allowed === false && parsed.action === "block") {
+            return res.json({
+              allowed: false,
+              severity: "block",
+              action: "block",
+              category: parsed.category || "CONTEXTUAL_POLICY_VIOLATION",
+              reason: parsed.reason || "This message violates MANIFOLD community chat safety guidelines."
+            });
+          }
+          if (parsed && parsed.action === "flag_review") {
+            return res.json({
+              allowed: true,
+              severity: "flagged_for_review",
+              action: "flag_review",
+              category: parsed.category || "AMBIGUOUS_REVIEW",
+              reason: parsed.reason || "Flagged conservatively for safety review."
+            });
+          }
+        }
+      } catch {
+      }
+    }
+    return res.json({ allowed: true, severity: "clean", action: "allow", category: "CLEAN", reason: null });
+  }
+);
+var worldRouter = router;
+
+// server/routes/cars.ts
+var router2 = Router2();
+var PUBLIC_DEALER_SELECT_FULL = "id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year";
+var PUBLIC_DEALER_SELECT_MINIMAL = "id, name, slug, city, state, is_verified, joined_year";
+function sanitizePublicDealerPayload(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const {
+    phone: _p,
+    email: _e,
+    address: _a,
+    address_line_1: _a1,
+    address_line_2: _a2,
+    cac_registration_number: _cac,
+    ...safeRest
+  } = raw;
+  return safeRest;
+}
+function isPublicCarStatus(status) {
+  const upper = String(status || "").trim().toUpperCase();
+  return upper !== "DRAFT" && upper !== "ARCHIVED";
+}
+function formatPgError(error) {
+  return {
+    error: String(error?.message || "Supabase query failed"),
+    ...error?.code ? { code: String(error.code) } : {},
+    ...error?.details ? { details: String(error.details) } : {},
+    ...error?.hint ? { hint: String(error.hint) } : {}
+  };
+}
+async function fetchPublicCarsFromSupabase(client) {
+  let primary = await client.from("cars").select(
+    `
+      *,
+      car_media (*),
+      car_images (*),
+      dealers (${PUBLIC_DEALER_SELECT_FULL})
+    `
+  ).order("created_at", { ascending: false });
+  if (primary.error?.code === "42703") {
+    primary = await client.from("cars").select(
+      `
+        *,
+        car_media (*),
+        car_images (*),
+        dealers (${PUBLIC_DEALER_SELECT_MINIMAL})
+      `
+    ).order("created_at", { ascending: false });
+  }
+  let resolvedRows = null;
+  if (!primary.error && Array.isArray(primary.data)) {
+    resolvedRows = primary.data;
+  } else {
+    let fallbackCars = await client.from("cars").select("*").order("created_at", { ascending: false });
+    if (fallbackCars.error && fallbackCars.error.code === "42703") {
+      fallbackCars = await client.from("cars").select("*");
+    }
+    if (fallbackCars.error) {
+      return {
+        ok: false,
+        status: 502,
+        payload: formatPgError(fallbackCars.error)
+      };
+    }
+    const baseRows = Array.isArray(fallbackCars.data) ? fallbackCars.data : [];
+    const publicBase = baseRows.filter((r) => isPublicCarStatus(r?.status));
+    const carIds = Array.from(new Set(publicBase.map((r) => String(r.id || "")).filter(Boolean)));
+    const dealerIds = Array.from(
+      new Set(publicBase.map((r) => String(r.dealer_id || "")).filter(Boolean))
+    );
+    const fetchSafeDealers = async () => {
+      if (dealerIds.length === 0) return { data: [] };
+      const first = await client.from("dealers").select(PUBLIC_DEALER_SELECT_FULL).in("id", dealerIds);
+      if (first.error?.code === "42703") {
+        return client.from("dealers").select(PUBLIC_DEALER_SELECT_MINIMAL).in("id", dealerIds);
+      }
+      return first;
+    };
+    const [mediaSettled, imagesSettled, dealersSettled] = await Promise.allSettled([
+      carIds.length > 0 ? client.from("car_media").select("*").in("car_id", carIds) : Promise.resolve({ data: [] }),
+      carIds.length > 0 ? client.from("car_images").select("*").in("car_id", carIds) : Promise.resolve({ data: [] }),
+      fetchSafeDealers()
+    ]);
+    const mediaRows = mediaSettled.status === "fulfilled" && Array.isArray(mediaSettled.value?.data) ? mediaSettled.value.data : [];
+    const imageRows = imagesSettled.status === "fulfilled" && Array.isArray(imagesSettled.value?.data) ? imagesSettled.value.data : [];
+    const dealerRows = dealersSettled.status === "fulfilled" && Array.isArray(dealersSettled.value?.data) ? dealersSettled.value.data : [];
+    const mediaByCar = /* @__PURE__ */ new Map();
+    mediaRows.forEach((m) => {
+      const k = String(m.car_id || "");
+      if (!k) return;
+      const arr = mediaByCar.get(k) || [];
+      arr.push(m);
+      mediaByCar.set(k, arr);
+    });
+    const imagesByCar = /* @__PURE__ */ new Map();
+    imageRows.forEach((img) => {
+      const k = String(img.car_id || "");
+      if (!k) return;
+      const arr = imagesByCar.get(k) || [];
+      arr.push(img);
+      imagesByCar.set(k, arr);
+    });
+    const dealerById = /* @__PURE__ */ new Map();
+    dealerRows.forEach((d) => {
+      const safe = sanitizePublicDealerPayload(d);
+      if (safe?.id) {
+        dealerById.set(String(safe.id), safe);
+      }
+    });
+    resolvedRows = publicBase.map((row) => ({
+      ...row,
+      car_media: mediaByCar.get(String(row.id)) || [],
+      car_images: imagesByCar.get(String(row.id)) || [],
+      dealers: row.dealer_id ? dealerById.get(String(row.dealer_id)) || null : null
+    }));
+  }
+  const sanitized = (resolvedRows || []).filter((row) => isPublicCarStatus(row?.status)).map((row) => ({
+    ...row,
+    dealers: sanitizePublicDealerPayload(row?.dealers)
+  }));
+  return { ok: true, cars: sanitized };
+}
+router2.get("/", standardApiLimiter, async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  const env = getServerEnv();
+  const client = getSupabaseClient();
+  const supabaseHost = extractSupabaseHost(env.supabaseUrl);
+  if (!client) {
+    return res.status(503).json({
+      error: "Supabase is not configured on the API server.",
+      code: "SUPABASE_NOT_CONFIGURED",
+      supabaseHost
+    });
+  }
+  const result = await fetchPublicCarsFromSupabase(client);
+  if (!result.ok) {
+    return res.status(result.status).json({
+      ...result.payload,
+      supabaseHost
+    });
+  }
+  return res.json({
+    cars: result.cars,
+    supabaseHost
+  });
+});
+router2.get("/:slugOrId", standardApiLimiter, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  const env = getServerEnv();
+  const client = getSupabaseClient();
+  const supabaseHost = extractSupabaseHost(env.supabaseUrl);
+  const slugOrId = String(req.params.slugOrId || "").trim();
+  if (!slugOrId) {
+    return res.status(400).json({ error: "Vehicle slug or ID is required." });
+  }
+  if (!client) {
+    return res.status(503).json({
+      error: "Supabase is not configured on the API server.",
+      code: "SUPABASE_NOT_CONFIGURED",
+      supabaseHost
+    });
+  }
+  const result = await fetchPublicCarsFromSupabase(client);
+  if (!result.ok) {
+    return res.status(result.status).json({
+      ...result.payload,
+      supabaseHost
+    });
+  }
+  const match = result.cars.find(
+    (c) => String(c.slug || "") === slugOrId || String(c.id || "") === slugOrId
+  );
+  if (!match) {
+    return res.status(404).json({ error: "Vehicle not found.", supabaseHost });
+  }
+  return res.json({ car: match, supabaseHost });
+});
+var carsRouter = router2;
+
+// server/routes/dealers.ts
+var router3 = Router3();
+var PUBLIC_DEALER_COLUMNS_FULL = "id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year";
+var PUBLIC_DEALER_COLUMNS_MINIMAL = "id, name, slug, city, state, is_verified, joined_year";
+router3.get("/public", standardApiLimiter, async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  const env = getServerEnv();
+  const supabaseHost = extractSupabaseHost(env.supabaseUrl);
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return res.status(503).json({
+      error: "Supabase is not configured on the API server.",
+      code: "SUPABASE_NOT_CONFIGURED",
+      supabaseHost
+    });
+  }
+  let query = await supabase.from("dealers").select(PUBLIC_DEALER_COLUMNS_FULL);
+  if (query.error?.code === "42703") {
+    query = await supabase.from("dealers").select(PUBLIC_DEALER_COLUMNS_MINIMAL);
+  }
+  if (query.error) {
+    return res.status(502).json({
+      error: query.error.message,
+      code: query.error.code,
+      details: query.error.details,
+      hint: query.error.hint,
+      supabaseHost
+    });
+  }
+  const dealers = (query.data || []).filter((d) => {
+    const st = String(d?.dealer_status || "").trim().toLowerCase();
+    return st !== "disapproved" && st !== "suspended";
+  }).map((d) => sanitizePublicDealerPayload(d)).filter(Boolean);
+  return res.json({ dealers, supabaseHost });
+});
+router3.get("/db-status", standardApiLimiter, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  const authHeader = req.headers.authorization;
+  const supabase = getSupabaseClient(authHeader);
+  if (!supabase) {
+    return res.json({
+      configured: false,
+      migrationRequired: true,
+      error: "Supabase URL or Key not configured in environment."
+    });
+  }
+  const checkRpcExists = async (fnName, args) => {
+    try {
+      const result = await Promise.race([
+        supabase.rpc(fnName, args),
+        new Promise(
+          (resolve) => setTimeout(
+            () => resolve({ error: { code: "TIMEOUT", message: "Supabase check timed out" } }),
+            2500
+          )
+        )
+      ]);
+      const error = result?.error;
+      if (error && (error.code === "PGRST202" || error.code === "42883" || error.message?.includes("Could not find the function") || error.message?.includes("function") && error.message?.includes("does not exist"))) {
+        return { exists: false, code: error.code, error: error.message };
+      }
+      if (error && (error.code === "TIMEOUT" || error.code === "FETCH_ERROR")) {
+        return { exists: false, code: error.code, error: error.message };
+      }
+      return { exists: true };
+    } catch (err) {
+      return { exists: false, code: "FETCH_ERROR", error: err?.message || "Fetch failed" };
+    }
+  };
+  const [listCheck, setStatusCheck, approvedFnCheck] = await Promise.all([
+    checkRpcExists("admin_list_dealer_accounts", {}),
+    checkRpcExists("admin_set_dealer_approval_status", { p_dealer_id: "", p_action: "pending", p_reason: null }),
+    checkRpcExists("is_approved_dealer", {})
+  ]);
+  const checks = {
+    "rpc:admin_list_dealer_accounts": listCheck,
+    "rpc:admin_set_dealer_approval_status": setStatusCheck,
+    "rpc:is_approved_dealer": approvedFnCheck
+  };
+  const timedOut = Object.values(checks).every((c) => c.code === "TIMEOUT" || c.code === "FETCH_ERROR");
+  const allExist = Object.values(checks).every((c) => c.exists);
+  return res.json({
+    configured: true,
+    migrationRequired: timedOut ? false : !allExist,
+    networkUnreachable: timedOut,
+    checks,
+    migrationFilePath: "src/db/dealer-approval-migration.sql"
+  });
+});
+router3.get("/migration-sql", standardApiLimiter, (_req, res) => {
+  sendMigrationSqlFile("dealer-approval-migration.sql", "-- Dealer approval migration SQL not found.", res);
+});
+var dealersRouter = router3;
+
+// server/routes/marketIntelligence.ts
+init_env();
+init_supabaseServer();
+import { Router as Router5 } from "express";
+
 // server/routes/pricingAgent.ts
 init_env();
 import crypto4 from "node:crypto";
-import { Router as Router2 } from "express";
+import { Router as Router4 } from "express";
 import { z } from "zod";
 init_supabaseServer();
 
@@ -2673,7 +3223,8 @@ async function executeProviderSearch(params) {
   const maxResults = Math.min(Math.max(params.maxResults ?? 6, 1), 10);
   const startedAt = Date.now();
   const cfg = isProviderConfigured(providerKey);
-  if (!cfg.configured) {
+  const hasExplicitSupabase = (providerKey === "approved_feed" || providerKey === "manifold_inventory") && Boolean(params.supabase);
+  if (!cfg.configured && !hasExplicitSupabase) {
     return {
       ok: false,
       providerKey,
@@ -2834,44 +3385,72 @@ async function executeProviderSearch(params) {
       };
     }
     try {
-      const { data: sources, error } = await params.supabase.from("market_data_sources").select("id, name, domain, base_url, crawl_enabled, is_active").eq("is_active", true).eq("crawl_enabled", true).limit(8);
-      if (error || !sources || sources.length === 0) {
+      const { data: sources, error } = await params.supabase.from("market_data_sources").select(
+        "id, source_name, source_type, base_url, trust_level, is_active, crawl_enabled, crawl_frequency_hours, fetch_settings"
+      ).eq("is_active", true).eq("crawl_enabled", true).limit(8);
+      if (error) {
+        return {
+          ok: false,
+          providerKey,
+          latencyMs: Date.now() - startedAt,
+          costUsd: 0,
+          results: [],
+          error: `market_data_sources query failed: ${error.message}`
+        };
+      }
+      if (!sources || sources.length === 0) {
         return {
           ok: true,
           providerKey,
           latencyMs: Date.now() - startedAt,
           costUsd: 0,
           results: [],
-          error: error ? error.message : "No crawl-enabled public sources configured in market_data_sources."
+          notice: "No active crawl-enabled sources configured in market_data_sources."
         };
       }
       const feedResults = [];
+      const fetchErrors = [];
       const targetMakeNorm = normalizeBrandName(target.make);
       const targetModelNorm = normalizeModelName(target.model);
       for (const src of sources.slice(0, 4)) {
         const baseUrl = String(src.base_url || "").trim();
         if (!baseUrl.startsWith("http")) continue;
         const page = await fetchListingPageSafe(baseUrl);
-        if (!page.success) continue;
+        if (!page.success) {
+          fetchErrors.push(`${src.source_name || baseUrl}: ${page.error || page.status}`);
+          continue;
+        }
         const textLower = `${page.title || ""} ${page.extractedText || ""}`.toLowerCase();
         if (textLower.includes(targetMakeNorm) || textLower.includes(targetModelNorm)) {
+          const resolvedUrl = normalizeListingUrl(page.finalUrl || baseUrl);
           feedResults.push({
             providerKey: "approved_feed",
-            title: page.title || src.name || baseUrl,
-            url: normalizeListingUrl(page.finalUrl || baseUrl),
+            title: page.title || src.source_name || baseUrl,
+            url: resolvedUrl,
             snippet: (page.extractedText || "").slice(0, 600),
-            sourceDomain: src.domain || extractDomainFromUrl(baseUrl),
+            sourceDomain: extractDomainFromUrl(resolvedUrl),
             publishedDate: page.fetchTimestamp,
             detectedPriceNgn: extractNairaPriceFromText(page.extractedText)
           });
         }
+      }
+      if (feedResults.length === 0 && fetchErrors.length > 0 && fetchErrors.length === sources.slice(0, 4).length) {
+        return {
+          ok: false,
+          providerKey,
+          latencyMs: Date.now() - startedAt,
+          costUsd: 0,
+          results: [],
+          error: `All configured approved_feed sources failed fetch: ${fetchErrors.join("; ")}`
+        };
       }
       return {
         ok: true,
         providerKey,
         latencyMs: Date.now() - startedAt,
         costUsd: 0,
-        results: feedResults
+        results: feedResults,
+        notice: fetchErrors.length > 0 ? fetchErrors.join("; ") : void 0
       };
     } catch (err) {
       return {
@@ -2983,7 +3562,7 @@ async function testProviderConnection(providerKey, supabase) {
     httpStatus: result.httpStatus,
     resultCount: result.results.length,
     sampleTitle: result.results[0]?.title,
-    message: result.ok ? `Connected cleanly (${result.latencyMs}ms \xB7 ${result.results.length} result(s)).` : `Connection failed: ${result.error || "Unknown error"}`
+    message: result.ok ? result.notice ? `Connected (${result.latencyMs}ms): ${result.notice}` : `Connected cleanly (${result.latencyMs}ms \xB7 ${result.results.length} result(s)).` : `Connection failed: ${result.error || "Unknown error"}`
   };
 }
 
@@ -3735,7 +4314,7 @@ async function persistMarketEstimateSnapshot(supabase, estimate, agentRunId) {
 async function runPricingAgentResearch(options) {
   const startedAt = (/* @__PURE__ */ new Date()).toISOString();
   const runId = crypto3.randomUUID();
-  const supabase = getSupabaseAdminClient() ?? getSupabaseClient(options.authHeader);
+  const supabase = options.supabaseOverride !== void 0 ? options.supabaseOverride : getSupabaseAdminClient() ?? getSupabaseClient(options.authHeader);
   const { config } = await loadPricingAgentConfig(supabase);
   if (config.is_paused && options.triggerType === "scheduled") {
     return {
@@ -3816,6 +4395,7 @@ async function runPricingAgentResearch(options) {
   const restrictedDomains = /* @__PURE__ */ new Set();
   const fetchedUrlsInRun = /* @__PURE__ */ new Set();
   const providerUsage = {};
+  const providerErrors = [];
   const sourceOutcomes = [];
   const estimates = [];
   const activeExternalProviders = (config.provider_priority || []).filter(
@@ -3857,7 +4437,12 @@ async function runPricingAgentResearch(options) {
       providerUsage[providerKey].queries++;
       providerUsage[providerKey].results += searchRes.results.length;
       providerUsage[providerKey].costUsd += searchRes.costUsd;
-      if (!searchRes.ok) providerUsage[providerKey].errors++;
+      if (!searchRes.ok) {
+        providerUsage[providerKey].errors++;
+        if (searchRes.error) {
+          providerErrors.push(`${providerKey}: ${searchRes.error}`);
+        }
+      }
       if (supabase && runTableAvailable) {
         try {
           await supabase.from("pricing_provider_usage").insert({
@@ -3866,9 +4451,10 @@ async function runPricingAgentResearch(options) {
             query_text: target.queryText,
             results_count: searchRes.results.length,
             http_status: searchRes.httpStatus || null,
+            success: searchRes.ok,
             latency_ms: searchRes.latencyMs,
             estimated_cost_usd: searchRes.costUsd,
-            error_message: searchRes.error || null
+            error_message: searchRes.error || searchRes.notice || null
           });
         } catch {
         }
@@ -4103,7 +4689,9 @@ async function runPricingAgentResearch(options) {
     if (savedEst) estimatesUpdated++;
   }
   const completedAt = (/* @__PURE__ */ new Date()).toISOString();
-  const finalStatus = activeExternalProviders.length === 0 && estimates.length > 0 ? "partial" : estimates.length > 0 ? "completed" : "failed";
+  const hasProviderErrors = providerErrors.length > 0;
+  const finalStatus = hasProviderErrors && estimatesUpdated === 0 && observationsCollected === 0 ? "partial" : activeExternalProviders.length === 0 && estimates.length > 0 ? "partial" : hasProviderErrors ? "partial" : estimates.length > 0 ? "completed" : "failed";
+  const errorSummary = providerErrors.length > 0 ? Array.from(new Set(providerErrors)).join(" | ").slice(0, 1e3) : null;
   let persistedRun = false;
   if (supabase && runTableAvailable) {
     try {
@@ -4119,6 +4707,7 @@ async function runPricingAgentResearch(options) {
         estimated_cost_usd: Number(estimatedCostUsd.toFixed(4)),
         provider_usage: providerUsage,
         source_outcomes: sourceOutcomes.slice(0, 50),
+        error_summary: errorSummary,
         completed_at: completedAt
       }).eq("id", runId);
       persistedRun = !error;
@@ -4145,7 +4734,7 @@ async function runPricingAgentResearch(options) {
     sourceOutcomes,
     estimates,
     persistedToDb: persistedRun,
-    notice: activeExternalProviders.length === 0 ? "No external search API keys (SERPER_API_KEY, GOOGLE_CSE_API_KEY, BRAVE_SEARCH_API_KEY) are configured; estimates reflect internal MANIFOLD listings and previously approved observations." : void 0
+    notice: errorSummary ? `Provider warning(s): ${errorSummary}` : activeExternalProviders.length === 0 ? "No external search API keys (SERPER_API_KEY, GOOGLE_CSE_API_KEY, BRAVE_SEARCH_API_KEY) are configured; estimates reflect internal MANIFOLD listings and previously approved observations." : void 0
   };
 }
 
@@ -4201,7 +4790,7 @@ async function runDueScheduledResearch(options) {
 }
 
 // server/routes/pricingAgent.ts
-var router2 = Router2();
+var router4 = Router4();
 var PROVIDER_KEYS = [
   "manifold_inventory",
   "approved_feed",
@@ -4249,10 +4838,10 @@ function verifyCronSecret(authHeader) {
   if (expectedBuf.length !== providedBuf.length) return false;
   return crypto4.timingSafeEqual(expectedBuf, providedBuf);
 }
-router2.get("/migration-sql", standardApiLimiter, (_req, res) => {
+router4.get("/migration-sql", standardApiLimiter, (_req, res) => {
   sendMigrationSqlFile("pricing-agent-migration.sql", "-- Pricing agent migration SQL missing.", res);
 });
-router2.get(
+router4.get(
   "/status",
   requireAuth,
   requireAdmin,
@@ -4298,7 +4887,7 @@ router2.get(
     });
   }
 );
-router2.patch(
+router4.patch(
   "/config",
   requireAuth,
   requireAdmin,
@@ -4328,7 +4917,7 @@ router2.patch(
     });
   }
 );
-router2.post(
+router4.post(
   "/providers/test",
   requireAuth,
   requireAdmin,
@@ -4343,7 +4932,7 @@ router2.post(
     return res.json(result);
   }
 );
-router2.post(
+router4.post(
   "/run",
   requireAuth,
   requireAdmin,
@@ -4366,7 +4955,7 @@ router2.post(
     return res.json(result);
   }
 );
-router2.get(
+router4.get(
   "/runs",
   requireAuth,
   requireAdmin,
@@ -4387,7 +4976,7 @@ router2.get(
     });
   }
 );
-router2.get(
+router4.get(
   "/estimates",
   optionalAuth,
   standardApiLimiter,
@@ -4429,7 +5018,7 @@ router2.get(
     });
   }
 );
-router2.all("/cron", aiIngestionLimiter, async (req, res) => {
+router4.all("/cron", aiIngestionLimiter, async (req, res) => {
   const authHeader = req.headers.authorization;
   let authorized = verifyCronSecret(authHeader);
   if (!authorized && authHeader) {
@@ -4448,12 +5037,12 @@ router2.all("/cron", aiIngestionLimiter, async (req, res) => {
   const result = await runDueScheduledResearch({ force });
   return res.json(result);
 });
-var pricingAgentRouter = router2;
+var pricingAgentRouter = router4;
 
 // server/routes/marketIntelligence.ts
-var router3 = Router3();
-router3.use("/agent", pricingAgentRouter);
-router3.get("/health", standardApiLimiter, (_req, res) => {
+var router5 = Router5();
+router5.use("/agent", pricingAgentRouter);
+router5.get("/health", standardApiLimiter, (_req, res) => {
   const { supabaseUrl, supabaseAnonKey } = getServerEnv();
   res.json({
     status: "ok",
@@ -4465,7 +5054,7 @@ router3.get("/health", standardApiLimiter, (_req, res) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 });
-router3.get("/db-migration-status", standardApiLimiter, async (req, res) => {
+router5.get("/db-migration-status", standardApiLimiter, async (req, res) => {
   const authHeader = req.headers.authorization;
   const supabase = getSupabaseClient(authHeader);
   if (!supabase) {
@@ -4513,10 +5102,10 @@ router3.get("/db-migration-status", standardApiLimiter, async (req, res) => {
     migrationFilePath: "src/db/market-intelligence-migration.sql"
   });
 });
-router3.get("/migration-sql", standardApiLimiter, (_req, res) => {
+router5.get("/migration-sql", standardApiLimiter, (_req, res) => {
   sendMigrationSqlFile("market-intelligence-migration.sql", "-- Migration file not found.", res);
 });
-router3.post(
+router5.post(
   "/fetch-url",
   requireAuth,
   requireAdmin,
@@ -4570,7 +5159,7 @@ router3.post(
     });
   }
 );
-router3.post(
+router5.post(
   "/extract-text",
   requireAuth,
   requireAdmin,
@@ -4605,7 +5194,7 @@ router3.post(
     });
   }
 );
-router3.post(
+router5.post(
   "/embed",
   requireAuth,
   requireAdmin,
@@ -4643,7 +5232,7 @@ router3.post(
     }
   }
 );
-router3.post(
+router5.post(
   "/search-knowledge",
   standardApiLimiter,
   validateSearchKnowledgeBody,
@@ -4674,254 +5263,10 @@ router3.post(
     }
   }
 );
-var marketIntelligenceRouter = router3;
-
-// server/routes/world.ts
-init_supabaseServer();
-import { Router as Router4 } from "express";
-var router4 = Router4();
-router4.get("/db-status", standardApiLimiter, async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const supabase = getSupabaseClient(authHeader);
-  if (!supabase) {
-    return res.json({
-      configured: false,
-      tablesExist: false,
-      migrationRequired: true,
-      error: "Supabase URL or Key not configured in environment."
-    });
-  }
-  const worldTables = [
-    "player_profiles",
-    "player_presence",
-    "chat_invitations",
-    "chat_conversations",
-    "chat_messages",
-    "player_blocks",
-    "player_reports",
-    "moderation_incidents",
-    "player_admin_audit_logs",
-    "chat_moderation_config"
-  ];
-  const checks = {};
-  const checkOneTable = async (t) => {
-    try {
-      const cols = t === "player_profiles" ? "created_at, chat_status" : "created_at";
-      const result = await Promise.race([
-        supabase.from(t).select(cols).limit(1),
-        new Promise(
-          (resolve) => setTimeout(
-            () => resolve({ error: { code: "TIMEOUT", message: "Supabase check timed out" } }),
-            2500
-          )
-        )
-      ]);
-      const error = result?.error;
-      if (error && (error.code === "PGRST205" || error.code === "42P01" || error.code === "42703" || error.message?.includes("does not exist"))) {
-        checks[t] = { exists: false, code: error.code, error: error.message };
-      } else if (error && error.code !== "42501" && error.code !== "PGRST116") {
-        checks[t] = { exists: false, code: error.code, error: error.message };
-      } else {
-        checks[t] = { exists: true };
-      }
-    } catch (err) {
-      checks[t] = { exists: false, code: "FETCH_ERROR", error: err?.message || "Fetch failed" };
-    }
-  };
-  await Promise.all(worldTables.map((t) => checkOneTable(t)));
-  const checkRpcExists = async (fnName, args) => {
-    try {
-      const result = await Promise.race([
-        supabase.rpc(fnName, args),
-        new Promise(
-          (resolve) => setTimeout(
-            () => resolve({ error: { code: "TIMEOUT", message: "Supabase check timed out" } }),
-            2500
-          )
-        )
-      ]);
-      const error = result?.error;
-      if (error && (error.code === "PGRST202" || error.code === "42883" || error.message?.includes("Could not find the function") || error.message?.includes("function") && error.message?.includes("does not exist"))) {
-        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
-      } else if (error && (error.code === "TIMEOUT" || error.code === "FETCH_ERROR")) {
-        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
-      } else {
-        checks[`rpc:${fnName}`] = { exists: true };
-      }
-    } catch (err) {
-      checks[`rpc:${fnName}`] = { exists: false, code: "FETCH_ERROR", error: err?.message || "Fetch failed" };
-    }
-  };
-  await Promise.all([
-    checkRpcExists("check_player_registration_available", { p_email: "", p_nickname: "" }),
-    checkRpcExists("admin_get_players_directory", {})
-  ]);
-  const timedOut = Object.values(checks).every((c) => c.code === "TIMEOUT" || c.code === "FETCH_ERROR");
-  const allExist = Object.values(checks).every((c) => c.exists);
-  return res.json({
-    configured: true,
-    tablesExist: timedOut ? true : allExist,
-    migrationRequired: timedOut ? false : !allExist,
-    checks,
-    networkUnreachable: timedOut,
-    migrationFilePath: "src/db/game-world-social-migration.sql"
-  });
-});
-router4.get("/migration-sql", standardApiLimiter, (_req, res) => {
-  sendMigrationSqlFile("game-world-social-migration.sql", "-- Game world migration SQL not found.", res);
-});
-router4.post(
-  "/moderate-chat",
-  requireAuth,
-  chatModerationLimiter,
-  validateModerateChatBody,
-  async (req, res) => {
-    const { content } = req.body;
-    const trimmed = content.trim();
-    if (trimmed.length === 0 || trimmed.length > 500) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "INVALID_LENGTH",
-        reason: "Message must be 1 to 500 characters."
-      });
-    }
-    const lower = trimmed.toLowerCase();
-    const collapsed = lower.replace(/[^a-z0-9@.+]/g, "");
-    const phonePattern = /(\+?234[\s\-.]?[0-9]{2,4}[\s\-.]?[0-9]{3,4}[\s\-.]?[0-9]{3,4}|0[789][01][\s\-.]?[0-9]{3,4}[\s\-.]?[0-9]{4})/;
-    const phoneSpanPattern = /(?:^|[^0-9,])(\+?[0-9](?:[\s\-.()]*[0-9]){7,14})(?:[^0-9]|$)/;
-    const spokenPhonePattern = /(zero|oh)\s*(eight|seven|nine)\s*(zero|one|two|three|four|five|six|seven|eight|nine)/i;
-    const emailPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
-    const obfuscatedEmailPattern = /[a-z0-9._%+-]+\s*(at|\(at\)|\[at\])\s*(gmail|yahoo|outlook|hotmail|icloud|proton)\s*(dot|\.)\s*(com|net|org|ng)/i;
-    const linkPattern = /(https?:\/\/|www\.|wa\.me\/|t\.me\/|bit\.ly\/|instagram\.com|tiktok\.com|snapchat\.com|discord\.gg)/i;
-    const offPlatformAppsPattern = /\b(whatsapp|whatsap|watsapp|whats app|telegram|snapchat|signal app|viber|wechat)\b/i;
-    const socialPlatformInvite = /\b(instagram|insta|tiktok|discord)\b/i.test(lower) && /\b(add|dm|follow|reach|text|chat|message|handle|me|my)\b/i.test(lower);
-    const contactSolicitPattern = /\b(call me|text me|ring me|drop your number|send your number|here is my number|take my number|dm me on|hit me up on|add me on)\b/i;
-    const handleInvitePattern = /(@[a-z0-9_.]{3,})/i.test(lower) && /\b(add|dm|follow|reach|text|chat|message|handle|snap|ig|tg)\b/i.test(lower);
-    const datingPattern = /\b(hookup|hook up|wanna link tonight|link up tonight|date me|be my girlfriend|be my boyfriend|sugar daddy|sugar mommy|looking for a girlfriend|looking for a boyfriend|netflix and chill|come over to my place)\b/i;
-    const sexualPattern = /\b(send nudes|send me nudes|nudes|horny|sexting|erotic|blowjob|handjob|fuck me|suck my|orgasm|porn|onlyfans)\b/i;
-    const harassmentScamPattern = /\b(kill yourself|i will kill you|stab you|shoot you|wire transfer|send me your bank|bank details|bvn|otp code|motherfucker|retard|faggot)\b/i;
-    const ambiguousReviewPattern = /\b(send pics|my digits|drop your @|meet in person alone|bank account)\b/i;
-    if (phonePattern.test(trimmed) || phoneSpanPattern.test(trimmed) || spokenPhonePattern.test(lower)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "PERSONAL_CONTACT_PHONE",
-        reason: "Sharing phone numbers or numeric contact details is not permitted in MANIFOLD community chat."
-      });
-    }
-    if (emailPattern.test(trimmed) || obfuscatedEmailPattern.test(lower)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "PERSONAL_CONTACT_EMAIL",
-        reason: "Sharing email addresses is not permitted in MANIFOLD community chat."
-      });
-    }
-    if (linkPattern.test(trimmed) || /(wame|tme|http|https)[a-z0-9]{3,}/.test(collapsed)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "EXTERNAL_LINK",
-        reason: "Sharing external links or URLs is not permitted."
-      });
-    }
-    if (offPlatformAppsPattern.test(lower) || socialPlatformInvite || contactSolicitPattern.test(lower) || handleInvitePattern) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "OFF_PLATFORM_SOLICITATION",
-        reason: "Sharing social handles or moving conversations off MANIFOLD is not allowed."
-      });
-    }
-    if (datingPattern.test(lower)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "DATING_SOLICITATION",
-        reason: "Dating or personal meetup solicitation is not allowed in MANIFOLD driving chat."
-      });
-    }
-    if (sexualPattern.test(lower)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "SEXUAL_EXPLICIT",
-        reason: "Sexually explicit content is strictly prohibited."
-      });
-    }
-    if (harassmentScamPattern.test(lower)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "HARASSMENT_OR_SCAM",
-        reason: "Threats, hate speech, harassment, or financial solicitation is prohibited."
-      });
-    }
-    if (ambiguousReviewPattern.test(lower)) {
-      return res.json({
-        allowed: true,
-        severity: "flagged_for_review",
-        action: "flag_review",
-        category: "AMBIGUOUS_REVIEW",
-        reason: "Flagged conservatively for safety review without penalizing the player."
-      });
-    }
-    const genAI = getGenAI();
-    if (genAI) {
-      try {
-        const result = await Promise.race([
-          genAI.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: `Evaluate this in-game car-driving chat message.
-ALLOW normal everyday conversation about cars, driving, Lagos routes, music, sports, entertainment, everyday hobbies, and MANIFOLD marketplace discoveries (including benign slang like "killing it on Third Mainland Bridge", "shoot a clip of that AMG", "my number 1 dream car", "love this song").
-BLOCK ONLY clear, unambiguous violations: (1) phone/email/off-platform handle sharing or external links, (2) dating or sexually explicit solicitation, (3) genuine threats, hate speech, severe abuse, or financial scams.
-If borderline/ambiguous, set action="flag_review" and allowed=true instead of blocking.
-Respond ONLY with JSON {"allowed": boolean, "action": "allow"|"flag_review"|"block", "category": string, "reason": string|null}.
-Message: ${JSON.stringify(trimmed)}`,
-            config: { responseMimeType: "application/json" }
-          }),
-          new Promise((resolve) => setTimeout(() => resolve(null), 2200))
-        ]);
-        if (result && "text" in result && result.text) {
-          const parsed = JSON.parse(result.text.replace(/```json|```/gi, "").trim());
-          if (parsed && parsed.allowed === false && parsed.action === "block") {
-            return res.json({
-              allowed: false,
-              severity: "block",
-              action: "block",
-              category: parsed.category || "CONTEXTUAL_POLICY_VIOLATION",
-              reason: parsed.reason || "This message violates MANIFOLD community chat safety guidelines."
-            });
-          }
-          if (parsed && parsed.action === "flag_review") {
-            return res.json({
-              allowed: true,
-              severity: "flagged_for_review",
-              action: "flag_review",
-              category: parsed.category || "AMBIGUOUS_REVIEW",
-              reason: parsed.reason || "Flagged conservatively for safety review."
-            });
-          }
-        }
-      } catch {
-      }
-    }
-    return res.json({ allowed: true, severity: "clean", action: "allow", category: "CLEAN", reason: null });
-  }
-);
-var worldRouter = router4;
+var marketIntelligenceRouter = router5;
 
 // server/routes/ai.ts
-import { Router as Router5 } from "express";
+import { Router as Router6 } from "express";
 import multer from "multer";
 import crypto5 from "crypto";
 import { z as z6 } from "zod";
@@ -6583,7 +6928,7 @@ GROUNDING RULES:
 }
 
 // server/routes/ai.ts
-var aiRouter = Router5();
+var aiRouter = Router6();
 var uploadAudio = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -7346,6 +7691,7 @@ function createApp() {
   app2.use("/api/market-intelligence", marketIntelligenceRouter);
   app2.use("/api/world", worldRouter);
   app2.use("/api/dealers", dealersRouter);
+  app2.use("/api/cars", carsRouter);
   app2.use("/api/ai", aiRouter);
   app2.use("/api", (_req, res) => {
     res.status(404).json({ error: "API endpoint not found." });

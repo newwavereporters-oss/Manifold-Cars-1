@@ -30,8 +30,8 @@ class BrandService {
   }
 
   /**
-   * Reads brands with calculated car_count from public.car_brand_inventory view.
-   * Never writes to car_brand_inventory and handles 0-car inventories cleanly.
+   * Reads brands with calculated car_count from public.car_brand_inventory view,
+   * falling back to direct public.car_brands table if the view is blocked/unavailable.
    */
   public async getBrands(): Promise<CarBrand[]> {
     if (!isSupabaseConfigured) {
@@ -43,22 +43,33 @@ class BrandService {
       .select('*')
       .order('name', { ascending: true });
 
-    if (error) {
-      console.error('[BrandService] Failed to query public.car_brand_inventory:', {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-      });
-      throw new Error(`Failed to load brands from Supabase: ${error.message}`);
+    if (!error) {
+      this.cache = (data || []).map((row: any) => this.mapBrandRow(row));
+      return [...this.cache];
     }
 
-    this.cache = (data || []).map((row: any) => this.mapBrandRow(row));
+    console.warn('[BrandService] car_brand_inventory query failed; falling back to public.car_brands:', {
+      code: error.code,
+      message: error.message,
+    });
+
+    const fallback = await supabase
+      .from('car_brands')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (fallback.error) {
+      const codePrefix = fallback.error.code ? `[${fallback.error.code}] ` : '';
+      throw new Error(`Failed to load brands from Supabase: ${codePrefix}${fallback.error.message}`);
+    }
+
+    this.cache = (fallback.data || []).map((row: any) => this.mapBrandRow(row));
     return [...this.cache];
   }
 
   /**
-   * Reads active brands (including those with car_count = 0) from public.car_brand_inventory.
+   * Reads active brands (including those with car_count = 0) from public.car_brand_inventory,
+   * falling back to public.car_brands if the view query fails.
    */
   public async getActiveBrands(): Promise<CarBrand[]> {
     if (!isSupabaseConfigured) {
@@ -71,17 +82,31 @@ class BrandService {
       .eq('is_active', true)
       .order('name', { ascending: true });
 
-    if (error) {
-      console.error('[BrandService] Failed to query active brands from public.car_brand_inventory:', {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-      });
-      throw new Error(`Failed to load active brands from Supabase: ${error.message}`);
+    if (!error) {
+      const activeBrands = (data || []).map((row: any) => this.mapBrandRow(row));
+      if (this.cache.length === 0) {
+        this.cache = activeBrands;
+      }
+      return activeBrands;
     }
 
-    const activeBrands = (data || []).map((row: any) => this.mapBrandRow(row));
+    console.warn('[BrandService] active car_brand_inventory query failed; falling back to public.car_brands:', {
+      code: error.code,
+      message: error.message,
+    });
+
+    const fallback = await supabase
+      .from('car_brands')
+      .select('*')
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+
+    if (fallback.error) {
+      const codePrefix = fallback.error.code ? `[${fallback.error.code}] ` : '';
+      throw new Error(`Failed to load active brands from Supabase: ${codePrefix}${fallback.error.message}`);
+    }
+
+    const activeBrands = (fallback.data || []).map((row: any) => this.mapBrandRow(row));
     if (this.cache.length === 0) {
       this.cache = activeBrands;
     }
@@ -101,19 +126,26 @@ class BrandService {
       .ilike('name', name.trim())
       .maybeSingle();
 
-    if (error) {
-      console.error('[BrandService] Failed to look up brand by name from public.car_brand_inventory:', {
+    if (!error) {
+      return data ? this.mapBrandRow(data) : null;
+    }
+
+    const fallback = await supabase
+      .from('car_brands')
+      .select('*')
+      .ilike('name', name.trim())
+      .maybeSingle();
+
+    if (fallback.error) {
+      console.warn('[BrandService] Failed to look up brand by name:', {
         name,
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
+        code: fallback.error.code,
+        message: fallback.error.message,
       });
       return null;
     }
 
-    if (!data) return null;
-    return this.mapBrandRow(data);
+    return fallback.data ? this.mapBrandRow(fallback.data) : null;
   }
 
   public async getBrandBySlug(slug: string): Promise<CarBrand | null> {
@@ -125,19 +157,26 @@ class BrandService {
       .eq('slug', slug.trim().toLowerCase())
       .maybeSingle();
 
-    if (error) {
-      console.error('[BrandService] Failed to look up brand by slug from public.car_brand_inventory:', {
+    if (!error) {
+      return data ? this.mapBrandRow(data) : null;
+    }
+
+    const fallback = await supabase
+      .from('car_brands')
+      .select('*')
+      .eq('slug', slug.trim().toLowerCase())
+      .maybeSingle();
+
+    if (fallback.error) {
+      console.warn('[BrandService] Failed to look up brand by slug:', {
         slug,
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
+        code: fallback.error.code,
+        message: fallback.error.message,
       });
       return null;
     }
 
-    if (!data) return null;
-    return this.mapBrandRow(data);
+    return fallback.data ? this.mapBrandRow(fallback.data) : null;
   }
 
   /**

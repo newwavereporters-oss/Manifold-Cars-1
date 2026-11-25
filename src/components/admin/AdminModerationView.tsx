@@ -73,11 +73,6 @@ export const AdminModerationView: React.FC = () => {
     const status = await checkWorldDbStatus();
     setDbStatus(status);
 
-    if (status.migrationRequired) {
-      setLoading(false);
-      return;
-    }
-
     const res = await adminFetchModerationOverview();
     if (!res.success || !res.data) {
       setErrorMsg(res.error || 'Unable to load moderation overview.');
@@ -209,19 +204,55 @@ export const AdminModerationView: React.FC = () => {
         </div>
       </div>
 
-      {/* Migration Notice */}
+      {/* Supabase Project Mismatch Warning */}
+      {dbStatus?.hostMismatch && (
+        <div className="bg-red-50 border border-red-300 rounded-2xl p-4 flex items-start gap-3 text-xs text-red-900">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h3 className="font-black text-red-950">Supabase Project Mismatch Detected</h3>
+            <p>
+              Browser client connects to <code>{dbStatus.clientSupabaseHost}</code> while API server
+              connects to <code>{dbStatus.supabaseHost}</code>.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Migration / Schema Diagnostic Notice */}
       {dbStatus?.migrationRequired && (
         <div className="bg-amber-50 border border-amber-300 rounded-2xl p-5 space-y-3">
           <div className="flex items-start gap-3">
             <Database className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="flex-1 space-y-1">
+            <div className="flex-1 space-y-1.5">
               <h3 className="text-sm font-black text-amber-950">
-                Game World Database Migration Required
+                Game World Schema or Configuration Check Failed
               </h3>
               <p className="text-xs text-amber-800 leading-relaxed">
-                Some social &amp; moderation tables or permissions (<code>player_profiles</code>,{' '}
-                <code>player_reports</code>, <code>moderation_incidents</code>,{' '}
-                <code>player_admin_audit_logs</code>, <code>chat_moderation_config</code>) require setup or permission repair in Supabase. If tables already exist, do not re-run <code>game-world-social-migration.sql</code> — apply the idempotent fix in <code>src/db/world-experience-hardening-fix.sql</code> instead.
+                {dbStatus.error
+                  ? dbStatus.error
+                  : 'Some social & moderation tables or RPC checks failed.'}{' '}
+                {dbStatus.supabaseHost && (
+                  <span>
+                    Target DB host: <code>{dbStatus.supabaseHost}</code> (mode:{' '}
+                    <code>{dbStatus.verificationMode || 'unknown'}</code>).
+                  </span>
+                )}
+              </p>
+              {dbStatus.checks && (
+                <ul className="text-[11px] text-amber-900 space-y-1 pt-1 font-mono">
+                  {Object.entries(dbStatus.checks)
+                    .filter(([, entry]) => !entry.exists)
+                    .map(([name, entry]) => (
+                      <li key={name}>
+                        {name}: {entry.code ? `[${entry.code}] ` : ''}
+                        {entry.error || 'Missing or inaccessible'}
+                      </li>
+                    ))}
+                </ul>
+              )}
+              <p className="text-[11px] text-amber-800 leading-relaxed pt-1">
+                If tables already exist, do not re-run <code>game-world-social-migration.sql</code> —
+                apply <code>src/db/world-experience-hardening-fix.sql</code> instead.
               </p>
             </div>
           </div>
@@ -252,7 +283,7 @@ export const AdminModerationView: React.FC = () => {
       )}
 
       {/* Sub-navigation */}
-      {!dbStatus?.migrationRequired && (
+      {(overview || !dbStatus?.migrationRequired) && (
         <>
           <div className="flex flex-wrap gap-2">
             {[

@@ -6,6 +6,10 @@ import { brandService } from './brandService';
 import { categoryService } from './categoryService';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PUBLIC_DEALER_SELECT_FULL =
+  'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year';
+const PUBLIC_DEALER_SELECT_MINIMAL =
+  'id, name, slug, city, state, is_verified, joined_year';
 
 type CarChangeListener = (cars: Car[]) => void;
 
@@ -22,10 +26,27 @@ export function isPublicMarketplaceCar(car: Pick<Car, 'status'>): boolean {
   return statusUpper !== 'DRAFT' && statusUpper !== 'ARCHIVED';
 }
 
-function sanitizePublicDealerRow(raw: any): any | null {
+export function sanitizePublicDealerRow(raw: any): any | null {
   if (!raw || typeof raw !== 'object') return null;
-  const { phone: _p, email: _e, address: _a, ...safeRest } = raw;
+  const {
+    phone: _p,
+    email: _e,
+    address: _a,
+    address_line_1: _a1,
+    address_line_2: _a2,
+    cac_registration_number: _cac,
+    ...safeRest
+  } = raw;
   return safeRest;
+}
+
+export function formatCarQueryError(prefix: string, error: any): string {
+  if (!error) return prefix;
+  const code = error?.code ? `[${error.code}] ` : '';
+  const msg = String(error?.message || error || 'Unknown error');
+  const details = error?.details ? ` | ${error.details}` : '';
+  const hint = error?.hint ? ` (Hint: ${error.hint})` : '';
+  return `${prefix}: ${code}${msg}${details}${hint}`;
 }
 
 function mapSupabaseToCar(row: any): Car {
@@ -190,6 +211,21 @@ class CarService {
       new Set(rawCarRows.map((r) => String(r.dealer_id || '')).filter(Boolean))
     );
 
+    const fetchSafeDealers = async () => {
+      if (dealerIds.length === 0) return { data: [], error: null };
+      const first = await supabase
+        .from('dealers')
+        .select(PUBLIC_DEALER_SELECT_FULL)
+        .in('id', dealerIds);
+      if (first.error?.code === '42703') {
+        return supabase
+          .from('dealers')
+          .select(PUBLIC_DEALER_SELECT_MINIMAL)
+          .in('id', dealerIds);
+      }
+      return first;
+    };
+
     const [mediaSettled, imagesSettled, dealersSettled] = await Promise.allSettled([
       carIds.length > 0
         ? supabase.from('car_media').select('*').in('car_id', carIds)
@@ -197,9 +233,7 @@ class CarService {
       carIds.length > 0
         ? supabase.from('car_images').select('*').in('car_id', carIds)
         : Promise.resolve({ data: [], error: null }),
-      dealerIds.length > 0
-        ? supabase.from('dealers').select('*').in('id', dealerIds)
-        : Promise.resolve({ data: [], error: null }),
+      fetchSafeDealers(),
     ]);
 
     const mediaRows =
@@ -281,16 +315,38 @@ class CarService {
     });
   }
 
-  public async getCars(): Promise<Car[]> {
-    if (!isSupabaseConfigured) {
-      this.hasLoaded = true;
-      this.loading = false;
-      this.lastError =
-        'Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.';
-      this.notifyLoadState();
-      throw new Error(this.lastError);
+  private async fetchPublicCarsViaApi(): Promise<any[]> {
+    const res = await fetch('/api/cars', {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      const errMsg = body?.error
+        ? formatCarQueryError('Unable to load public vehicle inventory', body)
+        : `Unable to load public vehicle inventory (HTTP ${res.status})`;
+      throw new Error(errMsg);
     }
+    return Array.isArray(body?.cars) ? body.cars : [];
+  }
 
+  private async fetchPublicCarViaApi(slugOrId: string): Promise<any | null> {
+    const res = await fetch(`/api/cars/${encodeURIComponent(slugOrId)}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.status === 404) return null;
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      const errMsg = body?.error
+        ? formatCarQueryError('Unable to load vehicle', body)
+        : `Unable to load vehicle (HTTP ${res.status})`;
+      throw new Error(errMsg);
+    }
+    return body?.car || null;
+  }
+
+  public async getCars(): Promise<Car[]> {
     if (this.inflightFetch) {
       return this.inflightFetch;
     }
@@ -301,41 +357,61 @@ class CarService {
 
     this.inflightFetch = (async () => {
       try {
-        // 1. Primary relational query
-        const { data, error } = await supabase
-          .from('cars')
-          .select(`
-            *,
-            car_media (*),
-            car_images (*),
-            dealers (*)
-          `)
-          .order('created_at', { ascending: false });
-
         let resolvedRows: any[] | null = null;
 
-        if (!error && Array.isArray(data)) {
-          resolvedRows = data;
+        if (!isSupabaseConfigured) {
+          // Browser has no VITE_SUPABASE_* / localStorage config (e.g. incognito / new device):
+          // load shared public inventory from /api/cars instead of failing.
+          resolvedRows = await this.fetchPublicCarsViaApi();
         } else {
-          // 2. Fallback when relational FKs or join permissions fail (e.g. PGRST200)
-          console.warn(
-            '[carService] Relational cars query failed; falling back to decoupled table fetch:',
-            error?.message
-          );
-          let fallbackQuery = await supabase
+          // 1. Primary relational query with non-PII dealer projection
+          let primary = await supabase
             .from('cars')
-            .select('*')
+            .select(`
+              *,
+              car_media (*),
+              car_images (*),
+              dealers (${PUBLIC_DEALER_SELECT_FULL})
+            `)
             .order('created_at', { ascending: false });
 
-          if (fallbackQuery.error) {
-            fallbackQuery = await supabase.from('cars').select('*');
+          if (primary.error?.code === '42703') {
+            primary = await supabase
+              .from('cars')
+              .select(`
+                *,
+                car_media (*),
+                car_images (*),
+                dealers (${PUBLIC_DEALER_SELECT_MINIMAL})
+              `)
+              .order('created_at', { ascending: false });
           }
 
-          if (fallbackQuery.error) {
-            throw new Error(`Unable to load vehicle inventory: ${fallbackQuery.error.message}`);
-          }
+          if (!primary.error && Array.isArray(primary.data)) {
+            resolvedRows = primary.data;
+          } else {
+            // 2. Fallback when relational FKs or join permissions fail (e.g. PGRST200)
+            console.warn(
+              '[carService] Relational cars query failed; falling back to decoupled table fetch:',
+              primary.error?.message
+            );
+            let fallbackQuery = await supabase
+              .from('cars')
+              .select('*')
+              .order('created_at', { ascending: false });
 
-          resolvedRows = await this.enrichCarsFromSeparateTables(fallbackQuery.data || []);
+            if (fallbackQuery.error?.code === '42703') {
+              fallbackQuery = await supabase.from('cars').select('*');
+            }
+
+            if (fallbackQuery.error) {
+              throw new Error(
+                formatCarQueryError('Unable to load vehicle inventory', fallbackQuery.error)
+              );
+            }
+
+            resolvedRows = await this.enrichCarsFromSeparateTables(fallbackQuery.data || []);
+          }
         }
 
         this.cache = (resolvedRows || []).map(mapSupabaseToCar);
@@ -365,27 +441,41 @@ class CarService {
 
   public async getCarById(id: string): Promise<Car | null> {
     if (!isSupabaseConfigured) {
-      throw new Error('Supabase is not configured.');
+      const apiRow = await this.fetchPublicCarViaApi(id);
+      return apiRow ? mapSupabaseToCar(apiRow) : null;
     }
 
-    const { data, error } = await supabase
+    let primary = await supabase
       .from('cars')
       .select(`
         *,
         car_media (*),
         car_images (*),
-        dealers (*)
+        dealers (${PUBLIC_DEALER_SELECT_FULL})
       `)
       .eq('id', id)
       .maybeSingle();
 
-    if (!error) {
-      return data ? mapSupabaseToCar(data) : null;
+    if (primary.error?.code === '42703') {
+      primary = await supabase
+        .from('cars')
+        .select(`
+          *,
+          car_media (*),
+          car_images (*),
+          dealers (${PUBLIC_DEALER_SELECT_MINIMAL})
+        `)
+        .eq('id', id)
+        .maybeSingle();
+    }
+
+    if (!primary.error) {
+      return primary.data ? mapSupabaseToCar(primary.data) : null;
     }
 
     const fallback = await supabase.from('cars').select('*').eq('id', id).maybeSingle();
     if (fallback.error) {
-      throw new Error(`Failed to load vehicle: ${fallback.error.message}`);
+      throw new Error(formatCarQueryError('Failed to load vehicle', fallback.error));
     }
     if (!fallback.data) return null;
     const [enriched] = await this.enrichCarsFromSeparateTables([fallback.data]);
@@ -394,27 +484,41 @@ class CarService {
 
   public async getCarBySlug(slug: string): Promise<Car | null> {
     if (!isSupabaseConfigured) {
-      throw new Error('Supabase is not configured.');
+      const apiRow = await this.fetchPublicCarViaApi(slug);
+      return apiRow ? mapSupabaseToCar(apiRow) : null;
     }
 
-    const { data, error } = await supabase
+    let primary = await supabase
       .from('cars')
       .select(`
         *,
         car_media (*),
         car_images (*),
-        dealers (*)
+        dealers (${PUBLIC_DEALER_SELECT_FULL})
       `)
       .eq('slug', slug)
       .maybeSingle();
 
-    if (!error) {
-      return data ? mapSupabaseToCar(data) : null;
+    if (primary.error?.code === '42703') {
+      primary = await supabase
+        .from('cars')
+        .select(`
+          *,
+          car_media (*),
+          car_images (*),
+          dealers (${PUBLIC_DEALER_SELECT_MINIMAL})
+        `)
+        .eq('slug', slug)
+        .maybeSingle();
+    }
+
+    if (!primary.error) {
+      return primary.data ? mapSupabaseToCar(primary.data) : null;
     }
 
     const fallback = await supabase.from('cars').select('*').eq('slug', slug).maybeSingle();
     if (fallback.error) {
-      throw new Error(`Failed to load vehicle: ${fallback.error.message}`);
+      throw new Error(formatCarQueryError('Failed to load vehicle', fallback.error));
     }
     if (!fallback.data) return null;
     const [enriched] = await this.enrichCarsFromSeparateTables([fallback.data]);

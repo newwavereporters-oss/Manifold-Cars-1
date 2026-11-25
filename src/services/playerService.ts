@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, supabaseUrl } from '../lib/supabase';
 import { retryWithBackoff, withTimeout } from '../utils/networkReliability';
 import type {
   InteriorTheme,
@@ -51,13 +51,26 @@ export interface BlockedPlayerEntry {
   created_at: string;
 }
 
+export interface WorldDbCheckEntry {
+  exists: boolean;
+  unverifiedAnonRestricted?: boolean;
+  code?: string;
+  error?: string;
+}
+
 export interface WorldDbStatus {
   configured: boolean;
   tablesExist: boolean;
   migrationRequired: boolean;
+  verificationMode?: 'service_role' | 'authenticated_user' | 'anon';
+  supabaseHost?: string | null;
+  clientSupabaseHost?: string | null;
+  hostMismatch?: boolean;
+  checks?: Record<string, WorldDbCheckEntry>;
   networkUnreachable?: boolean;
   migrationFilePath?: string;
   error?: string;
+  httpStatus?: number;
 }
 
 export function isPlayerChatRestricted(
@@ -90,6 +103,31 @@ export function isPlayerChatRestricted(
   return { restricted: false, permanent: false, untilFormatted: '' };
 }
 
+function extractClientSupabaseHost(url?: string | null): string | null {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(trimmed).host;
+  } catch {
+    return null;
+  }
+}
+
+export function formatWorldSupabaseError(err: any, fallback = 'Database request failed'): string {
+  if (!err) return fallback;
+  if (typeof err === 'string') return err;
+  const code = err?.code ? String(err.code).trim() : '';
+  const message = String(err?.message || fallback).trim();
+  const details = err?.details ? String(err.details).trim() : '';
+  const hint = err?.hint ? String(err.hint).trim() : '';
+  const prefix = code ? `[${code}] ` : '';
+  const suffixParts = [
+    details ? `Details: ${details}` : '',
+    hint ? `Hint: ${hint}` : '',
+  ].filter(Boolean);
+  return `${prefix}${message}${suffixParts.length > 0 ? ` (${suffixParts.join(' | ')})` : ''}`;
+}
+
 function mapWorldError(err: any): string {
   const msg = String(err?.message || err || 'Unexpected error');
   const lower = msg.toLowerCase();
@@ -109,34 +147,69 @@ function mapWorldError(err: any): string {
   if (msg.includes('idx_player_profiles_nickname_lower') || lower.includes('nickname')) {
     return 'That public nickname is already taken or invalid. Choose a unique 3–20 character nickname.';
   }
-  if (
-    msg.includes('Could not find the function') ||
-    msg.includes('does not exist') ||
-    lower.includes('database error') ||
-    lower.includes('infinite recursion') ||
-    err?.code === 'PGRST205' ||
-    err?.code === 'PGRST202' ||
-    err?.code === '42P01' ||
-    err?.code === '42703' ||
-    err?.code === '42P17'
-  ) {
-    return 'Unable to complete your MANIFOLD World request right now. Please try again shortly.';
-  }
-  return 'Something went wrong while connecting to MANIFOLD World. Please try again.';
+  return formatWorldSupabaseError(err, 'Something went wrong while connecting to MANIFOLD World.');
 }
 
 export async function checkWorldDbStatus(): Promise<WorldDbStatus> {
+  const clientSupabaseHost = extractClientSupabaseHost(supabaseUrl);
   try {
+    const headers: Record<string, string> = {};
+    if (isSupabaseConfigured) {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data?.session?.access_token;
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+      } catch {
+        // Proceed without token if session lookup fails
+      }
+    }
+
     const res = await fetch('/api/world/db-status', {
-      signal: AbortSignal.timeout(3500),
+      cache: 'no-store',
+      headers,
+      signal: AbortSignal.timeout(5000),
     });
-    if (res.ok) return await res.json();
-  } catch {}
-  return {
-    configured: isSupabaseConfigured,
-    tablesExist: true,
-    migrationRequired: false,
-  };
+    if (res.ok) {
+      const payload = (await res.json()) as WorldDbStatus;
+      const serverHost = payload.supabaseHost ?? null;
+      const hostMismatch = Boolean(
+        clientSupabaseHost && serverHost && clientSupabaseHost !== serverHost
+      );
+      return {
+        ...payload,
+        clientSupabaseHost,
+        hostMismatch,
+      };
+    }
+
+    let serverError = `Database status check failed (HTTP ${res.status})`;
+    try {
+      const errBody = await res.json();
+      if (errBody?.error) serverError = `${serverError}: ${errBody.error}`;
+    } catch {
+      // ignore non-JSON error body
+    }
+
+    return {
+      configured: isSupabaseConfigured,
+      tablesExist: false,
+      migrationRequired: false,
+      clientSupabaseHost,
+      httpStatus: res.status,
+      error: serverError,
+    };
+  } catch (err: any) {
+    return {
+      configured: isSupabaseConfigured,
+      tablesExist: true,
+      migrationRequired: false,
+      networkUnreachable: true,
+      clientSupabaseHost,
+      error: err?.message || 'Unable to reach /api/world/db-status',
+    };
+  }
 }
 
 export function computeLockStatus(
@@ -640,7 +713,14 @@ export async function adminFetchPlayersDirectory(params: {
   success: boolean;
   data?: AdminPlayersDirectoryResponse;
   error?: string;
+  code?: string;
 }> {
+  if (!isSupabaseConfigured) {
+    return {
+      success: false,
+      error: 'Browser Supabase client is not configured (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).',
+    };
+  }
   const { data, error } = await supabase.rpc('admin_get_players_directory', {
     p_search: params.search ?? '',
     p_account_status: params.accountStatus ?? 'all',
@@ -650,7 +730,13 @@ export async function adminFetchPlayersDirectory(params: {
     p_page: params.page ?? 1,
     p_page_size: params.pageSize ?? 20,
   });
-  if (error) return { success: false, error: mapWorldError(error) };
+  if (error) {
+    return {
+      success: false,
+      error: formatWorldSupabaseError(error, 'Failed to query admin_get_players_directory.'),
+      code: error.code,
+    };
+  }
   return { success: true, data: data as AdminPlayersDirectoryResponse };
 }
 
@@ -658,11 +744,21 @@ export async function adminFetchPlayerDetail(playerId: string): Promise<{
   success: boolean;
   data?: AdminPlayerDetailResponse;
   error?: string;
+  code?: string;
 }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Browser Supabase client is not configured.' };
+  }
   const { data, error } = await supabase.rpc('admin_get_player_detail', {
     p_player_id: playerId,
   });
-  if (error) return { success: false, error: mapWorldError(error) };
+  if (error) {
+    return {
+      success: false,
+      error: formatWorldSupabaseError(error, 'Failed to query admin_get_player_detail.'),
+      code: error.code,
+    };
+  }
   return { success: true, data: data as AdminPlayerDetailResponse };
 }
 
@@ -670,9 +766,19 @@ export async function adminFetchModerationOverview(): Promise<{
   success: boolean;
   data?: AdminModerationOverview;
   error?: string;
+  code?: string;
 }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Browser Supabase client is not configured.' };
+  }
   const { data, error } = await supabase.rpc('admin_get_moderation_overview');
-  if (error) return { success: false, error: mapWorldError(error) };
+  if (error) {
+    return {
+      success: false,
+      error: formatWorldSupabaseError(error, 'Failed to query admin_get_moderation_overview.'),
+      code: error.code,
+    };
+  }
   return { success: true, data: data as AdminModerationOverview };
 }
 
@@ -683,10 +789,13 @@ export async function adminExecutePlayerAction(params: {
   restrictMinutes?: number | null;
   reportId?: string | null;
   reportStatus?: 'reviewed' | 'action_taken' | 'dismissed' | null;
-}): Promise<{ success: boolean; error?: string }> {
+}): Promise<{ success: boolean; error?: string; code?: string }> {
   const cleanReason = params.reason.trim();
   if (cleanReason.length < 3) {
     return { success: false, error: 'A clear administrative reason (at least 3 characters) is required.' };
+  }
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Browser Supabase client is not configured.' };
   }
   const { error } = await supabase.rpc('admin_execute_player_action', {
     p_player_id: params.playerId,
@@ -696,7 +805,13 @@ export async function adminExecutePlayerAction(params: {
     p_report_id: params.reportId ?? null,
     p_report_status: params.reportStatus ?? null,
   });
-  if (error) return { success: false, error: mapWorldError(error) };
+  if (error) {
+    return {
+      success: false,
+      error: formatWorldSupabaseError(error, 'Failed to execute admin_execute_player_action.'),
+      code: error.code,
+    };
+  }
   return { success: true };
 }
 
@@ -706,7 +821,10 @@ export async function adminSaveModerationConfig(cfg: {
   warningThreshold: number;
   tempRestrictionMinutes: number;
   suspensionThreshold: number;
-}): Promise<{ success: boolean; error?: string }> {
+}): Promise<{ success: boolean; error?: string; code?: string }> {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: 'Browser Supabase client is not configured.' };
+  }
   const { error } = await supabase.rpc('admin_update_moderation_config', {
     p_discovery_radius: cfg.discoveryRadius,
     p_heartbeat_timeout_minutes: cfg.heartbeatTimeoutMinutes,
@@ -714,6 +832,12 @@ export async function adminSaveModerationConfig(cfg: {
     p_temp_restriction_minutes: cfg.tempRestrictionMinutes,
     p_suspension_threshold: cfg.suspensionThreshold,
   });
-  if (error) return { success: false, error: mapWorldError(error) };
+  if (error) {
+    return {
+      success: false,
+      error: formatWorldSupabaseError(error, 'Failed to update moderation configuration.'),
+      code: error.code,
+    };
+  }
   return { success: true };
 }

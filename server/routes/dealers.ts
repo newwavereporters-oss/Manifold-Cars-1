@@ -1,12 +1,65 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import { getServerEnv } from '../config/env.js';
 import { getSupabaseClient } from '../lib/supabaseServer.js';
 import { sendMigrationSqlFile } from '../lib/migrationSql.js';
 import { standardApiLimiter } from '../middleware/rateLimit.js';
+import { sanitizePublicDealerPayload } from './cars.js';
+import { extractSupabaseHost } from './world.js';
 
 const router = Router();
 
+const PUBLIC_DEALER_COLUMNS_FULL =
+  'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year';
+const PUBLIC_DEALER_COLUMNS_MINIMAL =
+  'id, name, slug, city, state, is_verified, joined_year';
+
+router.get('/public', standardApiLimiter, async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+
+  const env = getServerEnv();
+  const supabaseHost = extractSupabaseHost(env.supabaseUrl);
+  const supabase = getSupabaseClient();
+
+  if (!supabase) {
+    return res.status(503).json({
+      error: 'Supabase is not configured on the API server.',
+      code: 'SUPABASE_NOT_CONFIGURED',
+      supabaseHost,
+    });
+  }
+
+  let query = await supabase.from('dealers').select(PUBLIC_DEALER_COLUMNS_FULL);
+  if (query.error?.code === '42703') {
+    query = await supabase.from('dealers').select(PUBLIC_DEALER_COLUMNS_MINIMAL);
+  }
+
+  if (query.error) {
+    return res.status(502).json({
+      error: query.error.message,
+      code: query.error.code,
+      details: query.error.details,
+      hint: query.error.hint,
+      supabaseHost,
+    });
+  }
+
+  const dealers = (query.data || [])
+    .filter((d: any) => {
+      const st = String(d?.dealer_status || '').trim().toLowerCase();
+      return st !== 'disapproved' && st !== 'suspended';
+    })
+    .map((d: any) => sanitizePublicDealerPayload(d))
+    .filter(Boolean);
+
+  return res.json({ dealers, supabaseHost });
+});
+
 router.get('/db-status', standardApiLimiter, async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+
   const authHeader = req.headers.authorization;
   const supabase = getSupabaseClient(authHeader);
 

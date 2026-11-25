@@ -147,10 +147,9 @@ DROP POLICY IF EXISTS "Dealers update own cars" ON public.cars;
 DROP POLICY IF EXISTS "Dealers delete own cars" ON public.cars;
 
 CREATE POLICY "Dealers view own cars" ON public.cars
-  FOR SELECT
+  FOR SELECT TO authenticated
   USING (
     (public.current_dealer_id() IS NOT NULL AND dealer_id::TEXT = public.current_dealer_id()::TEXT)
-    OR pg_catalog.upper(COALESCE(status::TEXT, '')) = 'PUBLISHED'
     OR public.is_active_admin()
   );
 
