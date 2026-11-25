@@ -26,6 +26,26 @@
 -- Preserves all existing observations and revisions intact.
 -- ------------------------------------------------------------------------------
 ALTER TABLE public.market_price_observations
+  ADD COLUMN IF NOT EXISTS make TEXT,
+  ADD COLUMN IF NOT EXISTS model TEXT,
+  ADD COLUMN IF NOT EXISTS year INTEGER,
+  ADD COLUMN IF NOT EXISTS trim TEXT,
+  ADD COLUMN IF NOT EXISTS price NUMERIC,
+  ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'NGN',
+  ADD COLUMN IF NOT EXISTS mileage INTEGER,
+  ADD COLUMN IF NOT EXISTS mileage_unit TEXT DEFAULT 'km',
+  ADD COLUMN IF NOT EXISTS condition TEXT,
+  ADD COLUMN IF NOT EXISTS location TEXT,
+  ADD COLUMN IF NOT EXISTS transmission TEXT,
+  ADD COLUMN IF NOT EXISTS fuel_type TEXT,
+  ADD COLUMN IF NOT EXISTS engine TEXT,
+  ADD COLUMN IF NOT EXISTS source_url TEXT,
+  ADD COLUMN IF NOT EXISTS publisher TEXT,
+  ADD COLUMN IF NOT EXISTS observed_at DATE DEFAULT CURRENT_DATE,
+  ADD COLUMN IF NOT EXISTS confidence_score NUMERIC DEFAULT 0.85,
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending_review',
+  ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
+  ADD COLUMN IF NOT EXISTS notes TEXT,
   ADD COLUMN IF NOT EXISTS body_type TEXT,
   ADD COLUMN IF NOT EXISTS variant TEXT,
   ADD COLUMN IF NOT EXISTS generation TEXT,
@@ -45,15 +65,66 @@ ALTER TABLE public.market_price_observations
   ADD COLUMN IF NOT EXISTS outlier_reason TEXT,
   ADD COLUMN IF NOT EXISTS agent_run_id UUID;
 
--- Backfill market_category safely from existing condition column where unset
-UPDATE public.market_price_observations
-SET market_category = CASE
-  WHEN LOWER(COALESCE(condition, '')) LIKE '%nigerian%' THEN 'nigerian_used'
-  WHEN LOWER(COALESCE(condition, '')) LIKE '%foreign%' OR LOWER(COALESCE(condition, '')) LIKE '%tokunbo%' THEN 'foreign_used'
-  WHEN LOWER(COALESCE(condition, '')) LIKE '%brand new%' OR LOWER(COALESCE(condition, '')) = 'new' THEN 'brand_new'
-  ELSE 'unknown'
-END
-WHERE market_category IS NULL OR market_category = 'unknown';
+-- Safely align legacy column names (model_year, vehicle_condition, advertised_price) if present
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'market_price_observations' AND column_name = 'model_year'
+  ) THEN
+    EXECUTE 'UPDATE public.market_price_observations SET year = model_year WHERE year IS NULL';
+    EXECUTE 'ALTER TABLE public.market_price_observations ALTER COLUMN model_year DROP NOT NULL';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'market_price_observations' AND column_name = 'advertised_price'
+  ) THEN
+    EXECUTE 'UPDATE public.market_price_observations SET price = advertised_price WHERE price IS NULL';
+    EXECUTE 'ALTER TABLE public.market_price_observations ALTER COLUMN advertised_price DROP NOT NULL';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'market_price_observations' AND column_name = 'vehicle_condition'
+  ) THEN
+    EXECUTE 'UPDATE public.market_price_observations SET condition = vehicle_condition WHERE condition IS NULL';
+    EXECUTE 'ALTER TABLE public.market_price_observations ALTER COLUMN vehicle_condition DROP NOT NULL';
+    EXECUTE $sql$
+      UPDATE public.market_price_observations
+      SET market_category = CASE
+        WHEN LOWER(COALESCE(vehicle_condition, '')) LIKE '%nigerian%'
+          THEN 'nigerian_used'
+        WHEN LOWER(COALESCE(vehicle_condition, '')) LIKE '%foreign%'
+          OR LOWER(COALESCE(vehicle_condition, '')) LIKE '%tokunbo%'
+          THEN 'foreign_used'
+        WHEN LOWER(COALESCE(vehicle_condition, '')) LIKE '%brand new%'
+          OR LOWER(COALESCE(vehicle_condition, '')) = 'new'
+          THEN 'brand_new'
+        ELSE 'unknown'
+      END
+      WHERE market_category IS NULL
+         OR market_category = 'unknown'
+    $sql$;
+  ELSE
+    EXECUTE $sql$
+      UPDATE public.market_price_observations
+      SET market_category = CASE
+        WHEN LOWER(COALESCE(condition, '')) LIKE '%nigerian%'
+          THEN 'nigerian_used'
+        WHEN LOWER(COALESCE(condition, '')) LIKE '%foreign%'
+          OR LOWER(COALESCE(condition, '')) LIKE '%tokunbo%'
+          THEN 'foreign_used'
+        WHEN LOWER(COALESCE(condition, '')) LIKE '%brand new%'
+          OR LOWER(COALESCE(condition, '')) = 'new'
+          THEN 'brand_new'
+        ELSE 'unknown'
+      END
+      WHERE market_category IS NULL
+         OR market_category = 'unknown'
+    $sql$;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_mkt_obs_dedupe_hash
   ON public.market_price_observations (dedupe_hash)
@@ -102,7 +173,7 @@ CREATE TABLE IF NOT EXISTS public.market_price_estimates (
   rejected_observation_count INTEGER NOT NULL DEFAULT 0,
   duplicate_observation_count INTEGER NOT NULL DEFAULT 0,
   internal_listing_count INTEGER NOT NULL DEFAULT 0,
-  confidence_score NUMERIC(4, 2) NOT NULL DEFAULT 0.00,
+  confidence_score NUMERIC(5, 2) NOT NULL DEFAULT 0.00,
   confidence_level TEXT NOT NULL DEFAULT 'insufficient', -- 'high', 'medium', 'low', 'insufficient'
   confidence_breakdown JSONB DEFAULT '{}'::jsonb,
   estimation_methodology TEXT NOT NULL,
@@ -221,7 +292,7 @@ GRANT ALL ON public.pricing_agent_runs TO service_role;
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.pricing_provider_usage (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  run_id UUID REFERENCES public.pricing_agent_runs(id) ON DELETE SET NULL,
+  agent_run_id UUID REFERENCES public.pricing_agent_runs(id) ON DELETE SET NULL,
   provider_key TEXT NOT NULL,
   query_text TEXT,
   results_count INTEGER NOT NULL DEFAULT 0,
@@ -232,6 +303,9 @@ CREATE TABLE IF NOT EXISTS public.pricing_provider_usage (
   error_message TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.pricing_provider_usage
+  ADD COLUMN IF NOT EXISTS agent_run_id UUID REFERENCES public.pricing_agent_runs(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_pricing_provider_usage_created
   ON public.pricing_provider_usage (created_at DESC);
