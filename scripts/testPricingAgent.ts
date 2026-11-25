@@ -28,6 +28,7 @@ import {
   normalizeModelName,
 } from '../server/services/pricingAgent/matcher.js';
 import {
+  executeProviderSearch,
   extractNairaPriceFromText,
   getProvidersStatus,
   parseBraveSearchResponse,
@@ -421,6 +422,183 @@ async function main() {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+
+  // 12. approved_feed schema alignment, empty source handling & query failure propagation
+  await runCase('11. approved_feed uses source_name schema and fails honestly on DB error', async () => {
+    const selectedColumns: string[] = [];
+    const target = {
+      make: 'Toyota',
+      model: 'Camry',
+      year: 2021,
+      trim: null,
+      marketCategory: 'foreign_used' as const,
+      location: 'Lagos',
+      queryText: '2021 Toyota Camry foreign used Lagos',
+      demandScore: 10,
+      reason: 'test',
+    };
+
+    const makeMockSupabase = (sourcesResult: { data: any; error: any }) =>
+      ({
+        from: (table: string) => {
+          const chain: any = {
+            select: (cols: string) => {
+              if (table === 'market_data_sources') selectedColumns.push(cols);
+              return chain;
+            },
+            eq: () => chain,
+            limit: async () => sourcesResult,
+          };
+          return chain;
+        },
+      } as any);
+
+    // Case A: Query error must return ok: false and preserve error message
+    const failRes = await executeProviderSearch({
+      providerKey: 'approved_feed',
+      target,
+      maxResults: 4,
+      supabase: makeMockSupabase({
+        data: null,
+        error: { message: 'permission denied for table market_data_sources' },
+      }),
+    });
+    assert.equal(failRes.ok, false);
+    assert.equal(failRes.results.length, 0);
+    assert.ok(failRes.error?.includes('permission denied for table market_data_sources'));
+    assert.ok(selectedColumns[0]?.includes('source_name'));
+    assert.ok(!/\bname\b/.test(selectedColumns[0] || ''));
+    assert.ok(!/\bdomain\b/.test(selectedColumns[0] || ''));
+
+    // Case B: Empty market_data_sources table returns ok: true with honest notice
+    const emptyRes = await executeProviderSearch({
+      providerKey: 'approved_feed',
+      target,
+      maxResults: 4,
+      supabase: makeMockSupabase({ data: [], error: null }),
+    });
+    assert.equal(emptyRes.ok, true);
+    assert.equal(emptyRes.results.length, 0);
+    assert.ok(emptyRes.notice?.includes('No active crawl-enabled sources configured'));
+  });
+
+  // 13. agentRunner logs success: false and preserves error_message in pricing_provider_usage on query failure
+  await runCase('12. agentRunner records success=false and error_message in pricing_provider_usage on query failure', async () => {
+    const insertedUsageRows: any[] = [];
+    const updatedRuns: any[] = [];
+
+    const mockSupabase: any = {
+      from: (table: string) => {
+        if (table === 'pricing_agent_config') {
+          const chain: any = {
+            select: () => chain,
+            order: () => chain,
+            limit: () => chain,
+            maybeSingle: async () => ({
+              data: {
+                ...DEFAULT_AGENT_CONFIG,
+                provider_priority: ['approved_feed'],
+              },
+              error: null,
+            }),
+          };
+          return chain;
+        }
+        if (table === 'pricing_provider_usage') {
+          return {
+            select: () => ({
+              gte: async () => ({ data: [], error: null }),
+            }),
+            insert: async (row: any) => {
+              insertedUsageRows.push(row);
+              return { error: null };
+            },
+          };
+        }
+        if (table === 'pricing_agent_runs') {
+          return {
+            insert: async () => ({ error: null }),
+            update: (payload: any) => ({
+              eq: async () => {
+                updatedRuns.push(payload);
+                return { error: null };
+              },
+            }),
+          };
+        }
+        if (table === 'market_data_sources') {
+          const chain: any = {
+            select: () => chain,
+            eq: () => chain,
+            limit: async () => ({
+              data: null,
+              error: { message: 'simulated database query failure on market_data_sources' },
+            }),
+          };
+          return chain;
+        }
+        // Baseline observations / cars / estimates tables
+        const genericChain: any = {
+          select: () => genericChain,
+          eq: () => genericChain,
+          ilike: () => genericChain,
+          in: () => genericChain,
+          order: () => genericChain,
+          limit: async () => ({ data: [], error: null }),
+          maybeSingle: async () => ({ data: null, error: null }),
+          insert: () => ({
+            select: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+          update: () => ({
+            eq: async () => ({ error: null }),
+          }),
+        };
+        return genericChain;
+      },
+    };
+
+    const prevUrl = process.env.VITE_SUPABASE_URL;
+    const prevKey = process.env.VITE_SUPABASE_ANON_KEY;
+    process.env.VITE_SUPABASE_URL = prevUrl || 'https://example-test.supabase.co';
+    process.env.VITE_SUPABASE_ANON_KEY = prevKey || 'test-anon-key';
+
+    let runRes;
+    try {
+      runRes = await runPricingAgentResearch({
+        triggerType: 'targeted',
+        explicitTargets: [{ make: 'Toyota', model: 'Camry', year: 2021, marketCategory: 'foreign_used' }],
+        forceRefresh: true,
+        supabaseOverride: mockSupabase,
+      });
+    } finally {
+      if (prevUrl === undefined) delete process.env.VITE_SUPABASE_URL;
+      else process.env.VITE_SUPABASE_URL = prevUrl;
+      if (prevKey === undefined) delete process.env.VITE_SUPABASE_ANON_KEY;
+      else process.env.VITE_SUPABASE_ANON_KEY = prevKey;
+    }
+
+    assert.equal(runRes.status, 'partial');
+    assert.equal(runRes.providerUsage.approved_feed?.errors, 1);
+    assert.ok(runRes.notice?.includes('simulated database query failure on market_data_sources'));
+
+    assert.equal(insertedUsageRows.length, 1);
+    assert.equal(insertedUsageRows[0].provider_key, 'approved_feed');
+    assert.equal(insertedUsageRows[0].success, false);
+    assert.ok(
+      String(insertedUsageRows[0].error_message || '').includes(
+        'simulated database query failure on market_data_sources'
+      )
+    );
+    assert.equal(updatedRuns.length, 1);
+    assert.equal(updatedRuns[0].status, 'partial');
+    assert.ok(
+      String(updatedRuns[0].error_summary || '').includes(
+        'simulated database query failure on market_data_sources'
+      )
+    );
   });
 
   console.log(`\nALL ${passed} PRICING AGENT VERIFICATION SUITES PASSED.`);

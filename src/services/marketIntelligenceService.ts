@@ -210,7 +210,7 @@ class MarketIntelligenceService {
           pendingReview: penRes.count ?? 0,
           failedOrRejected: rejRes.count ?? 0,
           staleObservations: staRes.count ?? 0,
-          activeSources: srcRes.count ?? this.localSources.length,
+          activeSources: srcRes.count ?? 0,
           queuedOrActiveJobs: jobRes.count ?? 0,
           failedJobs: failJobRes.count ?? 0,
           recentObservations: (recRes.data as MarketPriceObservation[]) || this.localObservations.slice(0, 6),
@@ -241,6 +241,43 @@ class MarketIntelligenceService {
     };
   }
 
+  private mapHoursToFrequency(hours: number | null | undefined): MarketDataSource['crawl_frequency'] {
+    if (!hours || hours <= 0) return 'manual';
+    if (hours <= 2) return 'hourly';
+    if (hours <= 24) return 'daily';
+    if (hours <= 168) return 'weekly';
+    return 'monthly';
+  }
+
+  private mapFrequencyToHours(freq?: MarketDataSource['crawl_frequency']): number | null {
+    switch (freq) {
+      case 'hourly':
+        return 1;
+      case 'daily':
+        return 24;
+      case 'weekly':
+        return 168;
+      case 'monthly':
+        return 720;
+      case 'manual':
+      default:
+        return null;
+    }
+  }
+
+  private mapSourceRow(d: any): MarketDataSource {
+    const resolvedName = d.source_name || 'Unnamed Source';
+    return {
+      ...d,
+      name: resolvedName,
+      source_name: resolvedName,
+      crawl_frequency: this.mapHoursToFrequency(d.crawl_frequency_hours),
+      settings: d.fetch_settings || {},
+      last_successful_fetch: d.last_successful_fetch ?? null,
+      last_error: d.last_error ?? null,
+    } as MarketDataSource;
+  }
+
   // 3. Data Sources management
   public async getSources(): Promise<MarketDataSource[]> {
     const status = await this.checkDatabaseStatus();
@@ -248,20 +285,22 @@ class MarketIntelligenceService {
       try {
         const { data, error } = await supabase
           .from('market_data_sources')
-          .select('*')
-          .order('name');
-        if (!error && data && data.length > 0) {
-          return data.map((d: any) => ({
-            ...d,
-            name: d.name || d.source_name || 'Unnamed Source',
-            source_name: d.source_name || d.name || 'Unnamed Source',
-          })) as MarketDataSource[];
+          .select(
+            'id, source_name, source_type, base_url, trust_level, is_active, crawl_enabled, crawl_frequency_hours, notes, fetch_settings, created_by, updated_by, created_at, updated_at'
+          )
+          .order('source_name');
+        if (error) {
+          console.warn('Error querying market_data_sources from Supabase:', error.message);
+          return [];
+        }
+        if (Array.isArray(data)) {
+          return data.map((d: any) => this.mapSourceRow(d));
         }
       } catch (err) {
-        console.warn('Failed to fetch sources from Supabase, using local:', err);
+        console.warn('Failed to fetch sources from Supabase:', err);
       }
     }
-    return this.localSources;
+    return [];
   }
 
   public async createSource(source: Omit<MarketDataSource, 'id' | 'created_at' | 'updated_at'>): Promise<MarketDataSource> {
@@ -279,31 +318,28 @@ class MarketIntelligenceService {
         const { data, error } = await supabase
           .from('market_data_sources')
           .insert({
-            name: source.name,
             source_name: source.source_name || source.name,
             base_url: source.base_url,
             source_type: source.source_type,
             trust_level: source.trust_level,
             is_active: source.is_active,
             crawl_enabled: source.crawl_enabled,
-            crawl_frequency: source.crawl_frequency,
+            crawl_frequency_hours: this.mapFrequencyToHours(source.crawl_frequency),
             notes: source.notes,
+            fetch_settings: source.settings || {},
           })
           .select()
           .single();
 
         if (!error && data) {
-          const formatted = {
-            ...data,
-            name: data.name || data.source_name,
-            source_name: data.source_name || data.name,
-          };
-          this.localSources.push(formatted);
-          this.saveLocalCache();
-          return formatted;
+          return this.mapSourceRow(data);
+        }
+        if (error) {
+          throw new Error(error.message);
         }
       } catch (err) {
         console.warn('Error inserting source into Supabase:', err);
+        throw err;
       }
     }
 
@@ -317,12 +353,20 @@ class MarketIntelligenceService {
     if (status.tablesExist) {
       try {
         const payload: Record<string, any> = {
-          ...updates,
           updated_at: new Date().toISOString(),
         };
-        if (updates.name) {
-          payload.source_name = updates.name;
+        if (updates.source_name || updates.name) payload.source_name = updates.source_name || updates.name;
+        if (updates.base_url !== undefined) payload.base_url = updates.base_url;
+        if (updates.source_type !== undefined) payload.source_type = updates.source_type;
+        if (updates.trust_level !== undefined) payload.trust_level = updates.trust_level;
+        if (updates.is_active !== undefined) payload.is_active = updates.is_active;
+        if (updates.crawl_enabled !== undefined) payload.crawl_enabled = updates.crawl_enabled;
+        if (updates.crawl_frequency !== undefined) {
+          payload.crawl_frequency_hours = this.mapFrequencyToHours(updates.crawl_frequency);
         }
+        if (updates.notes !== undefined) payload.notes = updates.notes;
+        if (updates.settings !== undefined) payload.fetch_settings = updates.settings;
+
         const { data, error } = await supabase
           .from('market_data_sources')
           .update(payload)
@@ -331,17 +375,14 @@ class MarketIntelligenceService {
           .single();
 
         if (!error && data) {
-          const formatted = {
-            ...data,
-            name: data.name || data.source_name,
-            source_name: data.source_name || data.name,
-          };
-          this.localSources = this.localSources.map((s) => (s.id === id ? formatted : s));
-          this.saveLocalCache();
-          return formatted;
+          return this.mapSourceRow(data);
+        }
+        if (error) {
+          throw new Error(error.message);
         }
       } catch (err) {
         console.warn('Error updating source in Supabase:', err);
+        throw err;
       }
     }
 
@@ -357,13 +398,13 @@ class MarketIntelligenceService {
       try {
         const { data, error } = await supabase
           .from('market_data_submissions')
-          .select('*, market_data_sources(name, source_name)')
+          .select('*, market_data_sources(source_name)')
           .order('created_at', { ascending: false });
 
         if (!error && data) {
           return data.map((sub: any) => ({
             ...sub,
-            source_name: sub.market_data_sources?.name || sub.market_data_sources?.source_name || 'Direct Submission',
+            source_name: sub.market_data_sources?.source_name || 'Direct Submission',
           }));
         }
       } catch (err) {
@@ -782,7 +823,7 @@ class MarketIntelligenceService {
       try {
         let query = supabase
           .from('market_price_observations')
-          .select('*, market_data_sources(name, source_name)')
+          .select('*, market_data_sources(source_name)')
           .order('created_at', { ascending: false });
 
         if (filters?.status && filters.status !== 'all') {
@@ -799,7 +840,7 @@ class MarketIntelligenceService {
         if (!error && data) {
           let list: MarketPriceObservation[] = data.map((d: any) => ({
             ...d,
-            source_name: d.market_data_sources?.name || d.market_data_sources?.source_name || d.publisher || 'External Listing',
+            source_name: d.market_data_sources?.source_name || d.publisher || 'External Listing',
           }));
 
           if (filters?.search) {

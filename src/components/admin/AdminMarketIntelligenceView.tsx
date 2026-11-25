@@ -1446,10 +1446,17 @@ export const AdminMarketIntelligenceView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {sources.map((src) => (
+                  {sources.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 px-4 text-center text-gray-500">
+                        No market data sources configured yet. Add an authorized source above when ready.
+                      </td>
+                    </tr>
+                  ) : (
+                    sources.map((src) => (
                     <tr key={src.id} className="hover:bg-gray-50/60 transition">
                       <td className="py-3 px-4">
-                        <div className="font-bold text-gray-900">{src.name}</div>
+                        <div className="font-bold text-gray-900">{src.source_name || src.name}</div>
                         {src.base_url && (
                           <a
                             href={src.base_url}
@@ -1507,7 +1514,7 @@ export const AdminMarketIntelligenceView: React.FC = () => {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  )))}
                 </tbody>
               </table>
             </div>

@@ -357,10 +357,14 @@ export async function runPricingAgentResearch(options: {
   explicitTargets?: ExplicitTargetInput[];
   forceRefresh?: boolean;
   authHeader?: string;
+  supabaseOverride?: SupabaseClient | null;
 }): Promise<PricingAgentRunResult> {
   const startedAt = new Date().toISOString();
   const runId = crypto.randomUUID();
-  const supabase = getSupabaseAdminClient() ?? getSupabaseClient(options.authHeader);
+  const supabase =
+    options.supabaseOverride !== undefined
+      ? options.supabaseOverride
+      : getSupabaseAdminClient() ?? getSupabaseClient(options.authHeader);
 
   const { config } = await loadPricingAgentConfig(supabase);
 
@@ -452,6 +456,7 @@ export async function runPricingAgentResearch(options: {
   const restrictedDomains = new Set<string>();
   const fetchedUrlsInRun = new Set<string>();
   const providerUsage: PricingAgentRunResult['providerUsage'] = {};
+  const providerErrors: string[] = [];
   const sourceOutcomes: SourceFetchOutcome[] = [];
   const estimates: CalculatedMarketEstimate[] = [];
 
@@ -510,7 +515,12 @@ export async function runPricingAgentResearch(options: {
       providerUsage[providerKey].queries++;
       providerUsage[providerKey].results += searchRes.results.length;
       providerUsage[providerKey].costUsd += searchRes.costUsd;
-      if (!searchRes.ok) providerUsage[providerKey].errors++;
+      if (!searchRes.ok) {
+        providerUsage[providerKey].errors++;
+        if (searchRes.error) {
+          providerErrors.push(`${providerKey}: ${searchRes.error}`);
+        }
+      }
 
       if (supabase && runTableAvailable) {
         try {
@@ -520,9 +530,10 @@ export async function runPricingAgentResearch(options: {
             query_text: target.queryText,
             results_count: searchRes.results.length,
             http_status: searchRes.httpStatus || null,
+            success: searchRes.ok,
             latency_ms: searchRes.latencyMs,
             estimated_cost_usd: searchRes.costUsd,
-            error_message: searchRes.error || null,
+            error_message: searchRes.error || searchRes.notice || null,
           });
         } catch {
           // Non-fatal telemetry failure
@@ -792,12 +803,20 @@ export async function runPricingAgentResearch(options: {
   }
 
   const completedAt = new Date().toISOString();
+  const hasProviderErrors = providerErrors.length > 0;
   const finalStatus: PricingAgentRunResult['status'] =
-    activeExternalProviders.length === 0 && estimates.length > 0
+    hasProviderErrors && estimatesUpdated === 0 && observationsCollected === 0
+      ? 'partial'
+      : activeExternalProviders.length === 0 && estimates.length > 0
+      ? 'partial'
+      : hasProviderErrors
       ? 'partial'
       : estimates.length > 0
       ? 'completed'
       : 'failed';
+
+  const errorSummary =
+    providerErrors.length > 0 ? Array.from(new Set(providerErrors)).join(' | ').slice(0, 1000) : null;
 
   let persistedRun = false;
   if (supabase && runTableAvailable) {
@@ -816,6 +835,7 @@ export async function runPricingAgentResearch(options: {
           estimated_cost_usd: Number(estimatedCostUsd.toFixed(4)),
           provider_usage: providerUsage,
           source_outcomes: sourceOutcomes.slice(0, 50),
+          error_summary: errorSummary,
           completed_at: completedAt,
         })
         .eq('id', runId);
@@ -845,7 +865,9 @@ export async function runPricingAgentResearch(options: {
     estimates,
     persistedToDb: persistedRun,
     notice:
-      activeExternalProviders.length === 0
+      errorSummary
+        ? `Provider warning(s): ${errorSummary}`
+        : activeExternalProviders.length === 0
         ? 'No external search API keys (SERPER_API_KEY, GOOGLE_CSE_API_KEY, BRAVE_SEARCH_API_KEY) are configured; estimates reflect internal MANIFOLD listings and previously approved observations.'
         : undefined,
   };

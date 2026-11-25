@@ -224,13 +224,17 @@ export async function executeProviderSearch(params: {
   costUsd: number;
   results: RawSearchResult[];
   error?: string;
+  notice?: string;
 }> {
   const { providerKey, target } = params;
   const maxResults = Math.min(Math.max(params.maxResults ?? 6, 1), 10);
   const startedAt = Date.now();
   const cfg = isProviderConfigured(providerKey);
+  const hasExplicitSupabase =
+    (providerKey === 'approved_feed' || providerKey === 'manifold_inventory') &&
+    Boolean(params.supabase);
 
-  if (!cfg.configured) {
+  if (!cfg.configured && !hasExplicitSupabase) {
     return {
       ok: false,
       providerKey,
@@ -407,23 +411,37 @@ export async function executeProviderSearch(params: {
     try {
       const { data: sources, error } = await params.supabase
         .from('market_data_sources')
-        .select('id, name, domain, base_url, crawl_enabled, is_active')
+        .select(
+          'id, source_name, source_type, base_url, trust_level, is_active, crawl_enabled, crawl_frequency_hours, fetch_settings'
+        )
         .eq('is_active', true)
         .eq('crawl_enabled', true)
         .limit(8);
 
-      if (error || !sources || sources.length === 0) {
+      if (error) {
+        return {
+          ok: false,
+          providerKey,
+          latencyMs: Date.now() - startedAt,
+          costUsd: 0,
+          results: [],
+          error: `market_data_sources query failed: ${error.message}`,
+        };
+      }
+
+      if (!sources || sources.length === 0) {
         return {
           ok: true,
           providerKey,
           latencyMs: Date.now() - startedAt,
           costUsd: 0,
           results: [],
-          error: error ? error.message : 'No crawl-enabled public sources configured in market_data_sources.',
+          notice: 'No active crawl-enabled sources configured in market_data_sources.',
         };
       }
 
       const feedResults: RawSearchResult[] = [];
+      const fetchErrors: string[] = [];
       const targetMakeNorm = normalizeBrandName(target.make);
       const targetModelNorm = normalizeModelName(target.model);
 
@@ -431,20 +449,35 @@ export async function executeProviderSearch(params: {
         const baseUrl = String(src.base_url || '').trim();
         if (!baseUrl.startsWith('http')) continue;
         const page = await fetchListingPageSafe(baseUrl);
-        if (!page.success) continue;
+        if (!page.success) {
+          fetchErrors.push(`${src.source_name || baseUrl}: ${page.error || page.status}`);
+          continue;
+        }
 
         const textLower = `${page.title || ''} ${page.extractedText || ''}`.toLowerCase();
         if (textLower.includes(targetMakeNorm) || textLower.includes(targetModelNorm)) {
+          const resolvedUrl = normalizeListingUrl(page.finalUrl || baseUrl);
           feedResults.push({
             providerKey: 'approved_feed',
-            title: page.title || src.name || baseUrl,
-            url: normalizeListingUrl(page.finalUrl || baseUrl),
+            title: page.title || src.source_name || baseUrl,
+            url: resolvedUrl,
             snippet: (page.extractedText || '').slice(0, 600),
-            sourceDomain: src.domain || extractDomainFromUrl(baseUrl),
+            sourceDomain: extractDomainFromUrl(resolvedUrl),
             publishedDate: page.fetchTimestamp,
             detectedPriceNgn: extractNairaPriceFromText(page.extractedText),
           });
         }
+      }
+
+      if (feedResults.length === 0 && fetchErrors.length > 0 && fetchErrors.length === sources.slice(0, 4).length) {
+        return {
+          ok: false,
+          providerKey,
+          latencyMs: Date.now() - startedAt,
+          costUsd: 0,
+          results: [],
+          error: `All configured approved_feed sources failed fetch: ${fetchErrors.join('; ')}`,
+        };
       }
 
       return {
@@ -453,6 +486,7 @@ export async function executeProviderSearch(params: {
         latencyMs: Date.now() - startedAt,
         costUsd: 0,
         results: feedResults,
+        notice: fetchErrors.length > 0 ? fetchErrors.join('; ') : undefined,
       };
     } catch (err: any) {
       return {
@@ -593,7 +627,9 @@ export async function testProviderConnection(
     resultCount: result.results.length,
     sampleTitle: result.results[0]?.title,
     message: result.ok
-      ? `Connected cleanly (${result.latencyMs}ms · ${result.results.length} result(s)).`
+      ? result.notice
+        ? `Connected (${result.latencyMs}ms): ${result.notice}`
+        : `Connected cleanly (${result.latencyMs}ms · ${result.results.length} result(s)).`
       : `Connection failed: ${result.error || 'Unknown error'}`,
   };
 }
