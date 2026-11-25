@@ -337,10 +337,14 @@ export interface PriceIntelligenceResponse {
   stats: {
     insufficientData: boolean;
     insufficiencyReason: string | null;
+    marketCategory?: 'foreign_used' | 'nigerian_used' | 'brand_new' | 'unknown';
+    marketCategoryLabel?: string;
     sampleCount: number;
     internalAskingCount: number;
     externalObservationCount: number;
     completedSalesCount: number;
+    outliersExcludedCount?: number;
+    duplicatesExcludedCount?: number;
     minPrice: number | null;
     q1Price: number | null;
     medianPrice: number | null;
@@ -353,6 +357,30 @@ export interface PriceIntelligenceResponse {
     askingVsMedianPct: number | null;
     positioning: 'below_market' | 'competitive' | 'above_market' | 'insufficient_data';
     confidence: 'high' | 'moderate' | 'low' | 'insufficient';
+    confidenceScore?: number;
+    confidenceBreakdown?: {
+      sampleCountScore: number;
+      sourceReliabilityScore: number;
+      recencyScore: number;
+      specCompletenessScore: number;
+      priceConsistencyScore: number;
+      duplicatePenalty: number;
+      totalScore: number;
+      level: string;
+      evidenceSummary: string;
+    };
+    priceDistribution?: {
+      outlierMethod: string;
+      outliersExcludedCount: number;
+      histogramBuckets: Array<{ label: string; min: number; max: number; count: number }>;
+    };
+    lastResearchAt?: string | null;
+    priceHistory?: Array<{
+      date: string;
+      medianPrice: number | null;
+      validObservationCount: number;
+      confidenceLevel: string;
+    }>;
     comparables: PriceComparableSample[];
     methodologyNote: string;
   };

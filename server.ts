@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { createApp } from './server/app.js';
+import { startInProcessSchedulerIfEnabled } from './server/services/pricingAgent/scheduler.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -28,6 +29,7 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[MANIFOLD Server] Active on http://0.0.0.0:${PORT}`);
+    startInProcessSchedulerIfEnabled();
   });
 }
 

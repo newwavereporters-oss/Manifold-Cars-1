@@ -168,24 +168,30 @@ export const PriceIntelligenceCard: React.FC<PriceIntelligenceCardProps> = ({
             </div>
           ) : (
             <>
-              {/* Summary Badges & Range Grid */}
+              {/* Summary Metadata & Range Grid */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span
-                      className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
+                      className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded border ${
                         positioningBadge(data.stats.positioning).className
                       }`}
                     >
                       {positioningBadge(data.stats.positioning).label}
                     </span>
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-gray-100 text-gray-700">
-                      Confidence: {data.stats.confidence} ({data.stats.sampleCount} comps)
+                    <span className="text-[11px] font-semibold text-gray-600 tabular-nums">
+                      Confidence: <strong className="text-gray-900 capitalize">{data.stats.confidence}</strong>
+                      {typeof data.stats.confidenceScore === 'number' ? ` (${data.stats.confidenceScore}/100)` : ''} · {data.stats.sampleCount} comps
                     </span>
+                    {data.stats.marketCategoryLabel && (
+                      <span className="text-[11px] font-semibold text-gray-500">
+                        · {data.stats.marketCategoryLabel} · Asking-Price Benchmark
+                      </span>
+                    )}
                   </div>
 
                   {data.stats.askingVsMedianPct !== null && (
-                    <span className="text-xs font-extrabold text-[#071A2B]">
+                    <span className="text-xs font-extrabold text-[#071A2B] tabular-nums">
                       {data.stats.askingVsMedianPct > 0 ? '+' : ''}
                       {data.stats.askingVsMedianPct}% vs median
                     </span>
@@ -228,17 +234,43 @@ export const PriceIntelligenceCard: React.FC<PriceIntelligenceCardProps> = ({
                   </div>
                 </div>
 
-                <div className="text-[11px] text-gray-500 pt-2 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <div className="text-[11px] text-gray-500 pt-2 border-t border-gray-100 flex flex-wrap items-center gap-x-4 gap-y-1 tabular-nums">
                   <span>
-                    <strong className="text-gray-700">{data.stats.internalAskingCount}</strong> MANIFOLD Asking Listings
+                    <strong className="text-gray-700">{data.stats.internalAskingCount}</strong> MANIFOLD Asking
                   </span>
                   <span>
-                    <strong className="text-gray-700">{data.stats.externalObservationCount}</strong> Approved Market Observations
+                    <strong className="text-gray-700">{data.stats.externalObservationCount}</strong> External Observed
                   </span>
                   <span>
-                    <strong className="text-gray-700">{data.stats.completedSalesCount}</strong> Completed Sales Records
+                    <strong className="text-gray-700">{data.stats.completedSalesCount}</strong> Completed Sales
                   </span>
+                  {(data.stats.outliersExcludedCount ?? 0) > 0 && (
+                    <span>
+                      <strong className="text-gray-700">{data.stats.outliersExcludedCount}</strong> Outlier(s) Excluded
+                    </span>
+                  )}
+                  {(data.stats.duplicatesExcludedCount ?? 0) > 0 && (
+                    <span>
+                      <strong className="text-gray-700">{data.stats.duplicatesExcludedCount}</strong> Duplicate(s) Filtered
+                    </span>
+                  )}
+                  {data.stats.lastResearchAt && (
+                    <span className="text-gray-400">
+                      Updated {new Date(data.stats.lastResearchAt).toLocaleDateString()}
+                    </span>
+                  )}
                 </div>
+
+                {data.stats.priceHistory && data.stats.priceHistory.length > 1 && (
+                  <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center gap-3 text-[11px] text-gray-600 tabular-nums">
+                    <span className="font-bold text-gray-700">Recent Trend:</span>
+                    {data.stats.priceHistory.slice(-4).map((pt, idx) => (
+                      <span key={`${pt.date}-${idx}`}>
+                        {pt.date}: <strong>₦{pt.medianPrice ? `${(pt.medianPrice / 1_000_000).toFixed(1)}M` : '—'}</strong>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Grounded AI Commentary */}

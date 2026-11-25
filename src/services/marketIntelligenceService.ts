@@ -1048,3 +1048,148 @@ class MarketIntelligenceService {
 }
 
 export const marketIntelligenceService = new MarketIntelligenceService();
+
+export type PricingAgentProviderKey =
+  | 'manifold_inventory'
+  | 'approved_feed'
+  | 'serper'
+  | 'google_cse'
+  | 'brave_search';
+
+export interface PricingAgentProviderStatus {
+  key: PricingAgentProviderKey;
+  displayName: string;
+  category: 'internal_inventory' | 'approved_feed' | 'search_api';
+  configured: boolean;
+  requiresSubscription: boolean;
+  requiredEnvVars: string[];
+  missingEnvVars: string[];
+  costPerQueryUsd: number;
+  dailyQuotaLimit: number | null;
+  queriesToday: number;
+  statusNote: string;
+}
+
+export interface PricingAgentConfigDto {
+  id: string;
+  schedule_enabled: boolean;
+  is_paused: boolean;
+  default_frequency: 'daily' | 'weekly' | 'manual';
+  high_demand_interval_hours: number;
+  standard_interval_hours: number;
+  insufficient_retry_hours: number;
+  max_vehicles_per_run: number;
+  max_queries_per_run: number;
+  max_fetches_per_query: number;
+  max_daily_provider_queries: number;
+  monthly_provider_budget_usd: number;
+  provider_priority: PricingAgentProviderKey[];
+  last_scheduled_run_at: string | null;
+  next_scheduled_run_at: string | null;
+}
+
+export interface PricingAgentStatusResponse {
+  tablesExist: boolean;
+  migrationRequired: boolean;
+  migrationFilePath: string;
+  configPersisted: boolean;
+  config: PricingAgentConfigDto;
+  cronSecretConfigured: boolean;
+  usage: {
+    queriesTodayTotal: number;
+    queriesTodayByProvider: Partial<Record<PricingAgentProviderKey, number>>;
+    monthSpendUsd: number;
+  };
+  providers: PricingAgentProviderStatus[];
+}
+
+async function getAgentAuthHeaders(extra?: Record<string, string>): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { ...(extra || {}) };
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (token) headers.Authorization = `Bearer ${token}`;
+  } catch {
+    // ignore
+  }
+  return headers;
+}
+
+async function agentFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const headers = await getAgentAuthHeaders(
+    init?.body ? { 'Content-Type': 'application/json' } : undefined
+  );
+  const res = await fetch(url, { ...init, headers: { ...headers, ...(init?.headers || {}) } });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload?.error || `Pricing agent request failed (${res.status})`);
+  }
+  return payload as T;
+}
+
+export const pricingAgentService = {
+  getStatus: () => agentFetchJson<PricingAgentStatusResponse>('/api/market-intelligence/agent/status'),
+
+  getMigrationSql: async (): Promise<string> => {
+    const res = await fetch('/api/market-intelligence/agent/migration-sql');
+    return res.ok ? await res.text() : '';
+  },
+
+  updateConfig: (patch: Partial<PricingAgentConfigDto>) =>
+    agentFetchJson<{ config: PricingAgentConfigDto; persistedToDb: boolean; warning?: string }>(
+      '/api/market-intelligence/agent/config',
+      { method: 'PATCH', body: JSON.stringify(patch) }
+    ),
+
+  testProvider: (providerKey: PricingAgentProviderKey) =>
+    agentFetchJson<{
+      providerKey: PricingAgentProviderKey;
+      configured: boolean;
+      connected: boolean;
+      latencyMs: number;
+      resultCount: number;
+      message: string;
+      sampleTitle?: string;
+    }>('/api/market-intelligence/agent/providers/test', {
+      method: 'POST',
+      body: JSON.stringify({ providerKey }),
+    }),
+
+  runResearch: (payload?: {
+    forceRefresh?: boolean;
+    targets?: Array<{
+      make: string;
+      model: string;
+      year?: number | null;
+      trim?: string | null;
+      marketCategory?: 'foreign_used' | 'nigerian_used' | 'brand_new' | 'unknown';
+      location?: string | null;
+    }>;
+  }) =>
+    agentFetchJson<any>('/api/market-intelligence/agent/run', {
+      method: 'POST',
+      body: JSON.stringify(payload || { forceRefresh: true }),
+    }),
+
+  getRuns: () =>
+    agentFetchJson<{ runs: any[]; providerUsage: any[]; migrationRequired: boolean }>(
+      '/api/market-intelligence/agent/runs'
+    ),
+
+  getEstimates: (params?: {
+    make?: string;
+    model?: string;
+    marketCategory?: string;
+    includeHistory?: boolean;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.make) q.set('make', params.make);
+    if (params?.model) q.set('model', params.model);
+    if (params?.marketCategory) q.set('marketCategory', params.marketCategory);
+    if (params?.includeHistory) q.set('includeHistory', 'true');
+    return agentFetchJson<{ estimates: any[]; history: any[]; migrationRequired: boolean }>(
+      `/api/market-intelligence/agent/estimates${q.toString() ? `?${q.toString()}` : ''}`
+    );
+  },
+};
+

@@ -11,6 +11,11 @@ export interface ServerEnvConfig {
   openAiModel: string;
   openAiTranscriptionModel: string;
   openAiEmbeddingModel: string;
+  serperApiKey: string;
+  googleCseApiKey: string;
+  googleCseId: string;
+  braveSearchApiKey: string;
+  cronSecret: string;
 }
 
 export function getServerEnv(): ServerEnvConfig {
@@ -42,6 +47,12 @@ export function getServerEnv(): ServerEnvConfig {
     process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small'
   ).trim();
 
+  const serperApiKey = (process.env.SERPER_API_KEY || '').trim();
+  const googleCseApiKey = (process.env.GOOGLE_CSE_API_KEY || '').trim();
+  const googleCseId = (process.env.GOOGLE_CSE_ID || '').trim();
+  const braveSearchApiKey = (process.env.BRAVE_SEARCH_API_KEY || '').trim();
+  const cronSecret = (process.env.CRON_SECRET || '').trim();
+
   return {
     supabaseUrl,
     supabaseAnonKey,
@@ -51,5 +62,10 @@ export function getServerEnv(): ServerEnvConfig {
     openAiModel,
     openAiTranscriptionModel,
     openAiEmbeddingModel,
+    serperApiKey,
+    googleCseApiKey,
+    googleCseId,
+    braveSearchApiKey,
+    cronSecret,
   };
 }

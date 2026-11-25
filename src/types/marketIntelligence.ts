@@ -107,6 +107,11 @@ export interface MarketPriceObservation {
   created_at: string;
   updated_at: string;
   // Resolved display metadata
+  market_category?: 'foreign_used' | 'nigerian_used' | 'brand_new' | 'unknown';
+  seller_type?: string;
+  is_duplicate?: boolean;
+  duplicate_reason?: string | null;
+  quality_status?: string;
   source_name?: string;
   storage_tier?: 'persisted_supabase' | 'local_session_cache';
   evidence_text?: string;

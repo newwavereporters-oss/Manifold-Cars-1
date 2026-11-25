@@ -18,8 +18,10 @@ import {
   isGeminiConfigured,
   persistExtractionTrace,
 } from '../services/marketIntelligenceBackend.js';
+import { pricingAgentRouter } from './pricingAgent.js';
 
 const router = Router();
+router.use('/agent', pricingAgentRouter);
 
 // Health Check
 router.get('/health', standardApiLimiter, (_req: Request, res: Response) => {

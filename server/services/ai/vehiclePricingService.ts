@@ -2,6 +2,20 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { runStructuredJsonResponse } from '../../lib/openai.js';
 import { getSupabaseClient } from '../../lib/supabaseServer.js';
+import { calculateMarketPriceEstimate } from '../pricingAgent/calculator.js';
+import { extractDomainFromUrl, normalizeListingUrl } from '../pricingAgent/deduplicator.js';
+import {
+  formatMarketCategoryLabel,
+  normalizeBrandName,
+  normalizeMarketCategory,
+  normalizeModelName,
+} from '../pricingAgent/matcher.js';
+import type {
+  ConfidenceBreakdown,
+  MarketCategory,
+  MatchCandidate,
+  PriceDistributionSummary,
+} from '../pricingAgent/types.js';
 
 export const PriceIntelligenceRequestSchema = z.object({
   carId: z.string().trim().max(120).optional(),
@@ -35,13 +49,24 @@ export interface ComparableSample {
   similarityScore: number;
 }
 
+export interface PriceHistoryPoint {
+  date: string;
+  medianPrice: number | null;
+  validObservationCount: number;
+  confidenceLevel: string;
+}
+
 export interface DeterministicPriceStats {
   insufficientData: boolean;
   insufficiencyReason: string | null;
+  marketCategory: MarketCategory;
+  marketCategoryLabel: string;
   sampleCount: number;
   internalAskingCount: number;
   externalObservationCount: number;
   completedSalesCount: number;
+  outliersExcludedCount: number;
+  duplicatesExcludedCount: number;
   minPrice: number | null;
   q1Price: number | null;
   medianPrice: number | null;
@@ -54,23 +79,13 @@ export interface DeterministicPriceStats {
   askingVsMedianPct: number | null;
   positioning: 'below_market' | 'competitive' | 'above_market' | 'insufficient_data';
   confidence: 'high' | 'moderate' | 'low' | 'insufficient';
+  confidenceScore: number;
+  confidenceBreakdown: ConfidenceBreakdown;
+  priceDistribution: PriceDistributionSummary;
+  lastResearchAt: string | null;
+  priceHistory: PriceHistoryPoint[];
   comparables: ComparableSample[];
   methodologyNote: string;
-}
-
-function percentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0;
-  if (sorted.length === 1) return sorted[0];
-  const idx = (sorted.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo];
-  const weight = idx - lo;
-  return Math.round(sorted[lo] * (1 - weight) + sorted[hi] * weight);
-}
-
-function normalizeModelToken(str: string): string {
-  return str.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 const PRICING_COMMENTARY_SCHEMA = {
@@ -89,106 +104,116 @@ export function computeDeterministicPriceStats(params: {
   input: PriceIntelligenceInput;
   comparables: ComparableSample[];
   completedSalesCount: number;
+  additionalDuplicateCount?: number;
+  lastResearchAt?: string | null;
+  priceHistory?: PriceHistoryPoint[];
 }): DeterministicPriceStats {
   const { input, comparables, completedSalesCount } = params;
-  const validComps = comparables
-    .filter((c) => Number.isFinite(c.price) && c.price >= 500_000)
-    .sort((a, b) => b.similarityScore - a.similarityScore);
+  const subjectCategory = normalizeMarketCategory(input.condition);
 
-  const internalAskingCount = validComps.filter((c) => c.sourceType === 'internal_asking').length;
-  const externalObservationCount = validComps.filter(
-    (c) => c.sourceType === 'external_observation'
-  ).length;
-  const sampleCount = validComps.length;
+  const matchCandidates: MatchCandidate[] = comparables
+    .filter((c) => Number.isFinite(c.price) && c.price >= 300_000)
+    .map((c) => ({
+      id: c.id,
+      make: c.make,
+      model: c.model,
+      year: c.year,
+      trim: c.trim,
+      marketCategory: normalizeMarketCategory(c.condition),
+      condition: c.condition,
+      mileage: c.mileage,
+      location: c.location,
+      price: c.price,
+      currency: 'NGN',
+      sourceWebsite: c.sourceLabel,
+      sourceTrustLevel: c.sourceType === 'internal_asking' ? 'official' : 'verified',
+      observedAt: c.observedDate || new Date().toISOString(),
+      isDuplicate: false,
+      sourceType: c.sourceType,
+    }));
+
+  const calculated = calculateMarketPriceEstimate({
+    subject: {
+      make: input.make,
+      model: input.model,
+      year: input.year ?? null,
+      trim: input.trim ?? null,
+      marketCategory: subjectCategory,
+      mileage: input.mileage ?? null,
+      location: input.location ?? null,
+    },
+    candidates: matchCandidates,
+    additionalDuplicateCount: params.additionalDuplicateCount ?? 0,
+  });
+
   const askingPrice = input.askingPrice && input.askingPrice > 0 ? input.askingPrice : null;
 
-  if (sampleCount < 2) {
-    return {
-      insufficientData: true,
-      insufficiencyReason:
-        sampleCount === 0
-          ? `No verified MANIFOLD listings or approved market observations were found for ${input.year || ''} ${input.make} ${input.model}.`.trim()
-          : `Only 1 verified comparable exists for ${input.year || ''} ${input.make} ${input.model}. At least 2 comparables are required before issuing a market range.`.trim(),
-      sampleCount,
-      internalAskingCount,
-      externalObservationCount,
-      completedSalesCount,
-      minPrice: sampleCount === 1 ? validComps[0].price : null,
-      q1Price: null,
-      medianPrice: sampleCount === 1 ? validComps[0].price : null,
-      meanPrice: sampleCount === 1 ? validComps[0].price : null,
-      q3Price: null,
-      maxPrice: sampleCount === 1 ? validComps[0].price : null,
-      recommendedRangeLow: null,
-      recommendedRangeHigh: null,
-      askingPrice,
-      askingVsMedianPct: null,
-      positioning: 'insufficient_data',
-      confidence: 'insufficient',
-      comparables: validComps.slice(0, 8),
-      methodologyNote:
-        'Computed deterministically from active asking prices and approved external market observations. Completed transaction volume is tracked separately where verified.',
-    };
-  }
-
-  const prices = validComps.map((c) => c.price).sort((a, b) => a - b);
-  const minPrice = prices[0];
-  const maxPrice = prices[prices.length - 1];
-  const q1Price = percentile(prices, 0.25);
-  const medianPrice = percentile(prices, 0.5);
-  const q3Price = percentile(prices, 0.75);
-  const meanPrice = Math.round(prices.reduce((s, p) => s + p, 0) / prices.length);
-
-  // Typical healthy market band around median using IQR clamped to +/- 12%
-  const recommendedRangeLow = Math.max(minPrice, Math.min(q1Price, Math.round(medianPrice * 0.92)));
-  const recommendedRangeHigh = Math.min(maxPrice, Math.max(q3Price, Math.round(medianPrice * 1.08)));
-
   let askingVsMedianPct: number | null = null;
-  let positioning: DeterministicPriceStats['positioning'] = 'competitive';
-  if (askingPrice && medianPrice > 0) {
-    askingVsMedianPct = Number((((askingPrice - medianPrice) / medianPrice) * 100).toFixed(1));
-    if (askingVsMedianPct <= -8) {
-      positioning = 'below_market';
-    } else if (askingVsMedianPct >= 10) {
-      positioning = 'above_market';
-    } else {
-      positioning = 'competitive';
+  let positioning: DeterministicPriceStats['positioning'] = 'insufficient_data';
+  if (!calculated.insufficientData && calculated.medianPrice) {
+    positioning = 'competitive';
+    if (askingPrice && calculated.medianPrice > 0) {
+      askingVsMedianPct = Number(
+        (((askingPrice - calculated.medianPrice) / calculated.medianPrice) * 100).toFixed(1)
+      );
+      if (askingVsMedianPct <= -8) positioning = 'below_market';
+      else if (askingVsMedianPct >= 10) positioning = 'above_market';
+      else positioning = 'competitive';
     }
   }
 
-  const yearMatchedCount = validComps.filter(
-    (c) => !input.year || Math.abs(c.year - input.year) <= 1
-  ).length;
-  const confidence: DeterministicPriceStats['confidence'] =
-    sampleCount >= 6 && yearMatchedCount >= 3
-      ? 'high'
-      : sampleCount >= 3
+  const mappedConfidence: DeterministicPriceStats['confidence'] =
+    calculated.confidenceLevel === 'medium'
       ? 'moderate'
-      : 'low';
+      : calculated.confidenceLevel;
+
+  const comparableSamples: ComparableSample[] = calculated.matchedSamples.slice(0, 8).map((s) => ({
+    id: s.id,
+    label: `${s.year} ${s.make} ${s.model}${s.trim ? ` ${s.trim}` : ''}`,
+    year: s.year,
+    make: s.make,
+    model: s.model,
+    trim: s.trim || null,
+    condition: s.condition || formatMarketCategoryLabel(s.marketCategory),
+    mileage: s.mileage ?? null,
+    location: s.location || 'Nigeria',
+    price: s.price,
+    sourceType: s.sourceType,
+    sourceLabel: s.sourceWebsite || 'Verified Market Observation',
+    observedDate: String(s.observedAt || '').slice(0, 10),
+    similarityScore: s.matchScore,
+  }));
 
   return {
-    insufficientData: false,
-    insufficiencyReason: null,
-    sampleCount,
-    internalAskingCount,
-    externalObservationCount,
+    insufficientData: calculated.insufficientData,
+    insufficiencyReason: calculated.insufficiencyReason,
+    marketCategory: subjectCategory,
+    marketCategoryLabel: formatMarketCategoryLabel(subjectCategory),
+    sampleCount: calculated.validObservationCount,
+    internalAskingCount: calculated.internalListingCount,
+    externalObservationCount: calculated.externalObservationCount,
     completedSalesCount,
-    minPrice,
-    q1Price,
-    medianPrice,
-    meanPrice,
-    q3Price,
-    maxPrice,
-    recommendedRangeLow,
-    recommendedRangeHigh,
+    outliersExcludedCount: calculated.priceDistribution.outliersExcludedCount,
+    duplicatesExcludedCount: calculated.duplicateObservationCount,
+    minPrice: calculated.minPrice,
+    q1Price: calculated.q1Price,
+    medianPrice: calculated.medianPrice,
+    meanPrice: calculated.meanPrice,
+    q3Price: calculated.q3Price,
+    maxPrice: calculated.maxPrice,
+    recommendedRangeLow: calculated.priceRangeLow,
+    recommendedRangeHigh: calculated.priceRangeHigh,
     askingPrice,
     askingVsMedianPct,
     positioning,
-    confidence,
-    comparables: validComps.slice(0, 8),
-    methodologyNote: `Based on ${internalAskingCount} active asking listing(s) on MANIFOLD and ${externalObservationCount} admin-approved external market observation(s)${
-      completedSalesCount > 0 ? ` (${completedSalesCount} recorded completed sale(s) referenced)` : ' (asking-price benchmark; completed sales tracked separately)'
-    }. Dealers retain full pricing autonomy.`,
+    confidence: mappedConfidence,
+    confidenceScore: calculated.confidenceScore,
+    confidenceBreakdown: calculated.confidenceBreakdown,
+    priceDistribution: calculated.priceDistribution,
+    lastResearchAt: params.lastResearchAt ?? calculated.lastResearchAt,
+    priceHistory: params.priceHistory ?? [],
+    comparables: comparableSamples,
+    methodologyNote: `${calculated.estimationMethodology} Dealers retain full pricing autonomy.`,
   };
 }
 
@@ -201,10 +226,15 @@ export async function runVehiclePriceIntelligence(params: {
 }) {
   const supabase = params.supabase ?? getSupabaseClient();
   const { input } = params;
-  const normalizedTargetModel = normalizeModelToken(input.model);
+  const normalizedTargetMake = normalizeBrandName(input.make);
+  const normalizedTargetModel = normalizeModelName(input.model);
+  const subjectCategory = normalizeMarketCategory(input.condition);
 
   const comparables: ComparableSample[] = [];
   let completedSalesCount = 0;
+  let duplicateExcludedCount = 0;
+  let lastResearchAt: string | null = null;
+  let priceHistory: PriceHistoryPoint[] = [];
 
   if (supabase) {
     const [carsRes, obsRes] = await Promise.all([
@@ -213,35 +243,25 @@ export async function runVehiclePriceIntelligence(params: {
         .select('id, make, model, trim, year, condition, mileage, location, state, price, created_at')
         .ilike('make', input.make)
         .in('status', ['PUBLISHED', 'published'])
-        .limit(100),
+        .limit(120),
       supabase
         .from('market_price_observations')
-        .select('id, make, model, trim, year, condition, mileage, location, price, source_name, observed_at, created_at')
+        .select(
+          'id, make, model, trim, year, condition, market_category, mileage, location, price, source_name, source_url, publisher, observed_at, created_at, is_duplicate, quality_status, status'
+        )
         .eq('status', 'approved')
         .ilike('make', input.make)
-        .limit(100),
+        .limit(150),
     ]);
 
     if (!carsRes.error && Array.isArray(carsRes.data)) {
       for (const row of carsRes.data) {
         if (input.carId && row.id === input.carId) continue;
-        const rowModelNorm = normalizeModelToken(String(row.model || ''));
         if (
-          rowModelNorm !== normalizedTargetModel &&
-          !rowModelNorm.includes(normalizedTargetModel) &&
-          !normalizedTargetModel.includes(rowModelNorm)
+          normalizeBrandName(row.make) !== normalizedTargetMake ||
+          normalizeModelName(row.model) !== normalizedTargetModel
         ) {
           continue;
-        }
-        const yearDiff = input.year ? Math.abs(Number(row.year) - input.year) : 0;
-        if (yearDiff > 4) continue;
-
-        let sim = 100 - yearDiff * 15;
-        if (
-          input.condition &&
-          String(row.condition || '').toLowerCase().includes(input.condition.toLowerCase().split(' ')[0])
-        ) {
-          sim += 10;
         }
 
         comparables.push({
@@ -258,32 +278,33 @@ export async function runVehiclePriceIntelligence(params: {
           sourceType: 'internal_asking',
           sourceLabel: 'MANIFOLD Verified Listing (Asking)',
           observedDate: String(row.created_at || '').slice(0, 10),
-          similarityScore: sim,
+          similarityScore: 90,
         });
       }
     }
 
+    const seenUrls = new Set<string>();
     if (!obsRes.error && Array.isArray(obsRes.data)) {
       for (const row of obsRes.data) {
-        const rowModelNorm = normalizeModelToken(String(row.model || ''));
         if (
-          rowModelNorm !== normalizedTargetModel &&
-          !rowModelNorm.includes(normalizedTargetModel) &&
-          !normalizedTargetModel.includes(rowModelNorm)
+          normalizeBrandName(row.make) !== normalizedTargetMake ||
+          normalizeModelName(row.model) !== normalizedTargetModel
         ) {
           continue;
         }
-        const yearDiff = input.year ? Math.abs(Number(row.year) - input.year) : 0;
-        if (yearDiff > 4) continue;
-
-        let sim = 95 - yearDiff * 15;
-        if (
-          input.condition &&
-          String(row.condition || '').toLowerCase().includes(input.condition.toLowerCase().split(' ')[0])
-        ) {
-          sim += 8;
+        if (row.is_duplicate || row.quality_status === 'rejected' || row.quality_status === 'outlier_excluded') {
+          if (row.is_duplicate) duplicateExcludedCount++;
+          continue;
         }
 
+        const normUrl = normalizeListingUrl(row.source_url);
+        if (normUrl && seenUrls.has(normUrl)) {
+          duplicateExcludedCount++;
+          continue;
+        }
+        if (normUrl) seenUrls.add(normUrl);
+
+        const sourceName = row.source_name || row.publisher || extractDomainFromUrl(row.source_url);
         comparables.push({
           id: String(row.id),
           label: `${row.year} ${row.make} ${row.model}${row.trim ? ` ${row.trim}` : ''}`,
@@ -291,19 +312,51 @@ export async function runVehiclePriceIntelligence(params: {
           make: String(row.make),
           model: String(row.model),
           trim: row.trim || null,
-          condition: String(row.condition || 'Unknown'),
+          condition: String(
+            row.condition ||
+              (row.market_category ? formatMarketCategoryLabel(row.market_category) : 'Unknown')
+          ),
           mileage: row.mileage !== null && row.mileage !== undefined ? Number(row.mileage) : null,
           location: String(row.location || 'Nigeria'),
           price: Number(row.price),
           sourceType: 'external_observation',
-          sourceLabel: row.source_name ? `${row.source_name} (Observed Asking)` : 'Verified Market Observation',
+          sourceLabel: sourceName ? `${sourceName} (Observed Asking)` : 'Verified Market Observation',
           observedDate: String(row.observed_at || row.created_at || '').slice(0, 10),
-          similarityScore: sim,
+          similarityScore: 85,
         });
       }
     }
 
-    // Count verified sales non-fatally if admin/dealer permitted
+    // Fetch historical estimate snapshots & latest agent research timestamp when migrated
+    try {
+      let estQuery = supabase
+        .from('market_price_estimates')
+        .select('median_price, valid_observation_count, confidence_level, last_research_at')
+        .ilike('make', input.make)
+        .ilike('model', `%${input.model}%`)
+        .order('last_research_at', { ascending: false })
+        .limit(12);
+
+      if (subjectCategory !== 'unknown') {
+        estQuery = estQuery.eq('market_category', subjectCategory);
+      }
+      const { data: estRows } = await estQuery;
+      if (Array.isArray(estRows) && estRows.length > 0) {
+        lastResearchAt = estRows[0].last_research_at || null;
+        priceHistory = estRows
+          .slice()
+          .reverse()
+          .map((e) => ({
+            date: String(e.last_research_at || '').slice(0, 10),
+            medianPrice: e.median_price ? Number(e.median_price) : null,
+            validObservationCount: Number(e.valid_observation_count || 0),
+            confidenceLevel: String(e.confidence_level || 'insufficient'),
+          }));
+      }
+    } catch {
+      // Table may not exist before migration
+    }
+
     if (params.role === 'admin' || params.role === 'dealer') {
       try {
         const { count } = await supabase
@@ -323,6 +376,9 @@ export async function runVehiclePriceIntelligence(params: {
     input,
     comparables,
     completedSalesCount,
+    additionalDuplicateCount: duplicateExcludedCount,
+    lastResearchAt,
+    priceHistory,
   });
 
   if (stats.insufficientData || !input.includeAiCommentary) {
@@ -338,8 +394,9 @@ Explain the deterministic pricing statistics provided in the JSON payload.
 STRICT RULES:
 1. NEVER invent prices, percentages, or comparables not present in the computed statistics.
 2. Explicitly distinguish asking-price comparables from completed sales (if completedSalesCount is 0, clearly note figures represent market asking benchmarks).
-3. Respect dealer pricing autonomy: offer objective market context rather than commanding a mandatory price.
-4. Keep numbers formatted cleanly in Naira (₦).`;
+3. Emphasize market category isolation (Foreign Used vs Nigerian Used vs Brand New) when interpreting the range.
+4. Respect dealer pricing autonomy: offer objective market context rather than commanding a mandatory price.
+5. Keep numbers formatted cleanly in Naira (₦).`;
 
   const aiResult = await runStructuredJsonResponse<{
     headlineSummary: string;
@@ -354,7 +411,7 @@ STRICT RULES:
         make: input.make,
         model: input.model,
         trim: input.trim,
-        condition: input.condition,
+        marketCategory: stats.marketCategoryLabel,
         mileage: input.mileage,
         location: input.location,
         askingPrice: stats.askingPrice,
@@ -363,15 +420,20 @@ STRICT RULES:
         sampleCount: stats.sampleCount,
         internalAskingCount: stats.internalAskingCount,
         externalObservationCount: stats.externalObservationCount,
+        outliersExcludedCount: stats.outliersExcludedCount,
+        duplicatesExcludedCount: stats.duplicatesExcludedCount,
         completedSalesCount: stats.completedSalesCount,
         minPrice: stats.minPrice,
+        q1Price: stats.q1Price,
         medianPrice: stats.medianPrice,
+        q3Price: stats.q3Price,
         recommendedRangeLow: stats.recommendedRangeLow,
         recommendedRangeHigh: stats.recommendedRangeHigh,
         maxPrice: stats.maxPrice,
         askingVsMedianPct: stats.askingVsMedianPct,
         positioning: stats.positioning,
         confidence: stats.confidence,
+        confidenceScore: stats.confidenceScore,
       },
     }),
     schemaName: 'manifold_price_intelligence_commentary',

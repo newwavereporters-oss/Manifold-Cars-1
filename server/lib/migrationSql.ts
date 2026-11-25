@@ -6,6 +6,7 @@ const DB_MIGRATIONS_DIR = path.resolve(process.cwd(), 'src/db');
 
 const ALLOWED_MIGRATION_FILES = new Set([
   'market-intelligence-migration.sql',
+  'pricing-agent-migration.sql',
   'game-world-social-migration.sql',
   'dealer-approval-migration.sql',
   'ai-platform-migration.sql',

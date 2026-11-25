@@ -24,6 +24,11 @@ function getServerEnv() {
   const openAiModel = (process.env.OPENAI_MODEL || "").trim();
   const openAiTranscriptionModel = (process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe").trim();
   const openAiEmbeddingModel = (process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small").trim();
+  const serperApiKey = (process.env.SERPER_API_KEY || "").trim();
+  const googleCseApiKey = (process.env.GOOGLE_CSE_API_KEY || "").trim();
+  const googleCseId = (process.env.GOOGLE_CSE_ID || "").trim();
+  const braveSearchApiKey = (process.env.BRAVE_SEARCH_API_KEY || "").trim();
+  const cronSecret = (process.env.CRON_SECRET || "").trim();
   return {
     supabaseUrl,
     supabaseAnonKey,
@@ -32,7 +37,12 @@ function getServerEnv() {
     openAiApiKey,
     openAiModel,
     openAiTranscriptionModel,
-    openAiEmbeddingModel
+    openAiEmbeddingModel,
+    serperApiKey,
+    googleCseApiKey,
+    googleCseId,
+    braveSearchApiKey,
+    cronSecret
   };
 }
 var init_env = __esm({
@@ -296,6 +306,7 @@ import path from "path";
 var DB_MIGRATIONS_DIR = path.resolve(process.cwd(), "src/db");
 var ALLOWED_MIGRATION_FILES = /* @__PURE__ */ new Set([
   "market-intelligence-migration.sql",
+  "pricing-agent-migration.sql",
   "game-world-social-migration.sql",
   "dealer-approval-migration.sql",
   "ai-platform-migration.sql",
@@ -491,7 +502,7 @@ var dealersRouter = router;
 // server/routes/marketIntelligence.ts
 init_env();
 init_supabaseServer();
-import { Router as Router2 } from "express";
+import { Router as Router3 } from "express";
 
 // server/middleware/auth.ts
 init_supabaseServer();
@@ -1412,480 +1423,807 @@ async function persistExtractionTrace(authHeader, submissionType, rawInput, fetc
   }
 }
 
-// server/routes/marketIntelligence.ts
-var router2 = Router2();
-router2.get("/health", standardApiLimiter, (_req, res) => {
-  const { supabaseUrl, supabaseAnonKey } = getServerEnv();
-  res.json({
-    status: "ok",
-    geminiConfigured: isGeminiConfigured(),
-    geminiModel: "gemini-2.5-flash",
-    embeddingModel: "gemini-embedding-2-preview",
-    heuristicFallbackEnabled: false,
-    supabaseConfigured: Boolean(supabaseUrl && supabaseAnonKey),
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
-});
-router2.get("/db-migration-status", standardApiLimiter, async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const supabase = getSupabaseClient(authHeader);
-  if (!supabase) {
-    return res.json({
-      configured: false,
-      tablesExist: false,
-      error: "Supabase URL or Key not set in environment."
-    });
-  }
-  const tableChecks = {};
-  const tables = [
-    "knowledge_base",
-    "market_data_sources",
-    "market_data_submissions",
-    "market_crawl_jobs",
-    "market_price_observations",
-    "market_observation_revisions"
-  ];
-  for (const t of tables) {
-    const { error } = await supabase.from(t).select("id").limit(1);
-    if (error) {
-      const msg = error.code === "42501" ? "Permission denied (table requires least-privilege migration grants)" : error.message || `Table not accessible (code: ${error.code})`;
-      tableChecks[t] = { exists: false, code: error.code, error: msg };
-    } else {
-      const { count } = await supabase.from(t).select("id", { count: "exact", head: true });
-      tableChecks[t] = { exists: true, count: count ?? 0 };
-    }
-  }
-  const { data: _rpcData, error: rpcError } = await supabase.rpc("match_knowledge", {
-    query_embedding: Array(768).fill(0),
-    match_threshold: 0.1,
-    match_count: 1
-  });
-  const rpcExists = !rpcError || !rpcError.message.includes("Could not find the function");
-  const allTablesExist = Object.values(tableChecks).every((c) => c.exists);
-  return res.json({
-    configured: true,
-    tablesExist: allTablesExist,
-    migrationRequired: !allTablesExist,
-    tableChecks,
-    rpcMatchKnowledge: {
-      exists: rpcExists,
-      error: rpcError ? rpcError.message : null
-    },
-    migrationFilePath: "src/db/market-intelligence-migration.sql"
-  });
-});
-router2.get("/migration-sql", standardApiLimiter, (_req, res) => {
-  sendMigrationSqlFile("market-intelligence-migration.sql", "-- Migration file not found.", res);
-});
-router2.post(
-  "/fetch-url",
-  requireAuth,
-  requireAdmin,
-  aiIngestionLimiter,
-  validateFetchUrlBody,
-  async (req, res) => {
-    const { url } = req.body;
-    const authHeader = req.headers.authorization;
-    const fetchResult = await fetchListingPageSafe(url);
-    if (!fetchResult.success) {
-      return res.status(200).json({
-        success: false,
-        status: fetchResult.status,
-        httpStatus: fetchResult.httpStatus,
-        submittedUrl: fetchResult.submittedUrl,
-        finalUrl: fetchResult.finalUrl,
-        error: fetchResult.error,
-        items: []
-      });
-    }
-    const extractionResult = await extractVehiclesWithGemini(
-      fetchResult.extractedText || "",
-      fetchResult.finalUrl,
-      fetchResult.title || "",
-      fetchResult.jsonLdItems
-    );
-    const dbTrace = await persistExtractionTrace(
-      authHeader,
-      "url",
-      url,
-      fetchResult,
-      extractionResult.observations,
-      extractionResult.error
-    );
-    return res.json({
-      success: extractionResult.success,
-      status: fetchResult.status,
-      httpStatus: fetchResult.httpStatus,
-      submittedUrl: fetchResult.submittedUrl,
-      finalUrl: fetchResult.finalUrl,
-      fetchTimestamp: fetchResult.fetchTimestamp,
-      contentLength: fetchResult.contentLength,
-      extractionMethod: extractionResult.method,
-      extractionError: extractionResult.error,
-      traceableSubmissionId: dbTrace.submissionId,
-      observationIds: dbTrace.observationIds,
-      supabaseSynced: dbTrace.supabaseSynced,
-      dbNotice: dbTrace.dbError,
-      itemsCount: extractionResult.observations.length,
-      items: extractionResult.observations
-    });
-  }
-);
-router2.post(
-  "/extract-text",
-  requireAuth,
-  requireAdmin,
-  aiIngestionLimiter,
-  validateExtractTextBody,
-  async (req, res) => {
-    const { text, sourceUrl, publisher } = req.body;
-    const authHeader = req.headers.authorization;
-    const extractionResult = await extractVehiclesWithGemini(
-      text,
-      sourceUrl || "manual-paste",
-      publisher || "Pasted Market Listing"
-    );
-    const dbTrace = await persistExtractionTrace(
-      authHeader,
-      "text",
-      text,
-      null,
-      extractionResult.observations,
-      extractionResult.error
-    );
-    return res.json({
-      success: extractionResult.success,
-      extractionMethod: extractionResult.method,
-      extractionError: extractionResult.error,
-      traceableSubmissionId: dbTrace.submissionId,
-      observationIds: dbTrace.observationIds,
-      supabaseSynced: dbTrace.supabaseSynced,
-      dbNotice: dbTrace.dbError,
-      itemsCount: extractionResult.observations.length,
-      items: extractionResult.observations
-    });
-  }
-);
-router2.post(
-  "/embed",
-  requireAuth,
-  requireAdmin,
-  aiIngestionLimiter,
-  validateEmbedBody,
-  async (req, res) => {
-    const { text } = req.body;
-    const genAI = getGenAI();
-    if (!genAI) {
-      return res.status(503).json({
-        error: "Gemini API is not configured. Embeddings require process.env.GEMINI_API_KEY."
-      });
-    }
-    try {
-      const result = await genAI.models.embedContent({
-        model: "gemini-embedding-2-preview",
-        contents: text,
-        config: {
-          outputDimensionality: 768
-        }
-      });
-      const values = result.embeddings?.[0]?.values || [];
-      return res.json({
-        success: true,
-        model: "gemini-embedding-2-preview",
-        dimensions: values.length,
-        embedding: values
-      });
-    } catch (err) {
-      console.error("[MANIFOLD Server] Embedding generation error:", err);
-      return res.status(500).json({
-        success: false,
-        error: err?.message || "Failed to generate embedding with gemini-embedding-2-preview"
-      });
-    }
-  }
-);
-router2.post(
-  "/search-knowledge",
-  standardApiLimiter,
-  validateSearchKnowledgeBody,
-  async (req, res) => {
-    const { query, limit = 5 } = req.body;
-    const authHeader = req.headers.authorization;
-    const supabase = getSupabaseClient(authHeader);
-    if (!supabase) {
-      return res.status(503).json({ error: "Supabase client not configured." });
-    }
-    try {
-      const { data, error } = await supabase.from("knowledge_base").select("id, title, content, category, metadata, source_url").eq("status", "approved").ilike("content", `%${query}%`).limit(limit);
-      if (error) {
-        return res.status(200).json({
-          success: false,
-          gap: "TABLE_MISSING_OR_RESTRICTED",
-          error: error.message,
-          results: []
-        });
-      }
-      return res.json({
-        success: true,
-        query,
-        results: data || []
-      });
-    } catch (err) {
-      return res.status(500).json({ error: err?.message });
-    }
-  }
-);
-var marketIntelligenceRouter = router2;
-
-// server/routes/world.ts
+// server/routes/pricingAgent.ts
+init_env();
+import crypto4 from "node:crypto";
+import { Router as Router2 } from "express";
+import { z } from "zod";
 init_supabaseServer();
-import { Router as Router3 } from "express";
-var router3 = Router3();
-router3.get("/db-status", standardApiLimiter, async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const supabase = getSupabaseClient(authHeader);
-  if (!supabase) {
-    return res.json({
-      configured: false,
-      tablesExist: false,
-      migrationRequired: true,
-      error: "Supabase URL or Key not configured in environment."
+
+// server/services/pricingAgent/agentRunner.ts
+init_supabaseServer();
+import crypto3 from "node:crypto";
+
+// server/services/pricingAgent/matcher.ts
+var BRAND_ALIASES = {
+  merc: "mercedes-benz",
+  mercedes: "mercedes-benz",
+  "mercedes benz": "mercedes-benz",
+  mercedesbenz: "mercedes-benz",
+  mb: "mercedes-benz",
+  vw: "volkswagen",
+  volks: "volkswagen",
+  chevy: "chevrolet",
+  landrover: "land rover",
+  rangerover: "land rover",
+  "range rover": "land rover",
+  lexus: "lexus",
+  toyota: "toyota",
+  honda: "honda",
+  hyundai: "hyundai",
+  kia: "kia",
+  nissan: "nissan",
+  ford: "ford",
+  bmw: "bmw",
+  audi: "audi",
+  acura: "acura",
+  infiniti: "infiniti",
+  peugeot: "peugeot",
+  mazda: "mazda",
+  mitsubishi: "mitsubishi",
+  suzuki: "suzuki",
+  volvo: "volvo",
+  porsche: "porsche",
+  jeep: "jeep",
+  gac: "gac",
+  changan: "changan",
+  jetour: "jetour",
+  innoson: "innoson",
+  ivm: "innoson"
+};
+var LUXURY_OR_PERF_TRIMS = [
+  "amg",
+  "f sport",
+  "fsport",
+  "f-sport",
+  "platinum",
+  "limited",
+  "xle",
+  "xse",
+  "touring",
+  "ex-l",
+  "exl",
+  "luxury",
+  "prestige",
+  "autobiography",
+  "denali",
+  "trd",
+  "v6",
+  "v8",
+  "hybrid",
+  "awd",
+  "4matic",
+  "quattro",
+  "xdrive"
+];
+var MID_TRIMS = ["se", "sport", "ex", "sel", "sr5", "premium", "glx", "gls", "s-line"];
+var BASE_TRIMS = ["le", "lx", "base", "l", "s", "ce", "dx", "standard"];
+function normalizeBrandName(raw) {
+  const cleaned = String(raw || "").toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+  if (BRAND_ALIASES[cleaned]) return BRAND_ALIASES[cleaned];
+  const compact = cleaned.replace(/\s+/g, "");
+  if (BRAND_ALIASES[compact]) return BRAND_ALIASES[compact];
+  return cleaned;
+}
+function normalizeModelName(raw) {
+  return String(raw || "").toLowerCase().replace(/\b(sedan|suv|saloon|coupe|hatchback|pickup|truck|car|vehicle)\b/g, " ").replace(/[^a-z0-9]/g, "").trim();
+}
+function normalizeLocationToken(raw) {
+  const cleaned = String(raw || "").toLowerCase().trim();
+  if (!cleaned) return "";
+  if (cleaned.includes("lagos") || cleaned.includes("lekki") || cleaned.includes("ikeja") || cleaned.includes("victoria island") || cleaned.includes("vi") || cleaned.includes("ajah") || cleaned.includes("ikoyi") || cleaned.includes("surulere")) {
+    return "lagos";
+  }
+  if (cleaned.includes("abuja") || cleaned.includes("fct") || cleaned.includes("wuse") || cleaned.includes("maitama") || cleaned.includes("garki") || cleaned.includes("gwarinpa")) {
+    return "abuja";
+  }
+  if (cleaned.includes("port harcourt") || cleaned.includes("rivers")) {
+    return "rivers";
+  }
+  if (cleaned.includes("ibadan") || cleaned.includes("oyo")) return "oyo";
+  if (cleaned.includes("kano")) return "kano";
+  if (cleaned.includes("enugu")) return "enugu";
+  if (cleaned.includes("ogun") || cleaned.includes("abeokuta")) return "ogun";
+  if (cleaned.includes("benin") || cleaned.includes("edo")) return "edo";
+  return cleaned.replace(/[^a-z]/g, "");
+}
+function normalizeMarketCategory(raw) {
+  const text = String(raw || "").toLowerCase().trim();
+  if (!text) return "unknown";
+  if (text === "foreign_used" || text.includes("foreign used") || text.includes("tokunbo") || text.includes("direct belgium") || text.includes("belgium") || text.includes("usa used") || text.includes("us used") || text.includes("canada used") || text.includes("duty paid")) {
+    return "foreign_used";
+  }
+  if (text === "nigerian_used" || text.includes("nigerian used") || text.includes("nigeria used") || text.includes("naija used") || text.includes("locally used") || text.includes("registered") && !text.includes("unregistered")) {
+    return "nigerian_used";
+  }
+  if (text === "brand_new" || text.includes("brand new") || text === "new" || text.includes("0km") || text.includes("0 km") || text.includes("zero mileage")) {
+    return "brand_new";
+  }
+  return "unknown";
+}
+function formatMarketCategoryLabel(category) {
+  switch (category) {
+    case "foreign_used":
+      return "Foreign Used (Tokunbo)";
+    case "nigerian_used":
+      return "Nigerian Used";
+    case "brand_new":
+      return "Brand New";
+    default:
+      return "Unspecified Condition";
+  }
+}
+function extractTrimTier(trimOrText) {
+  const text = String(trimOrText || "").toLowerCase().trim();
+  if (!text) return "unknown";
+  for (const token of LUXURY_OR_PERF_TRIMS) {
+    if (new RegExp(`\\b${token.replace(/[-]/g, "[-\\s]?")}\\b`, "i").test(text)) {
+      return "luxury";
+    }
+  }
+  for (const token of MID_TRIMS) {
+    if (new RegExp(`\\b${token}\\b`, "i").test(text)) {
+      return "mid";
+    }
+  }
+  for (const token of BASE_TRIMS) {
+    if (new RegExp(`\\b${token}\\b`, "i").test(text)) {
+      return "base";
+    }
+  }
+  return "unknown";
+}
+function computeVehicleMatchScore(subject, candidate) {
+  const disqualificationReasons = [];
+  const matchedAttributes = [];
+  const penalties = [];
+  if (candidate.isDuplicate) {
+    disqualificationReasons.push("Candidate flagged as duplicate listing.");
+  }
+  if (!Number.isFinite(candidate.price) || candidate.price < 3e5) {
+    disqualificationReasons.push("Candidate price missing or below valid Nigerian vehicle threshold.");
+  }
+  const subjectMake = normalizeBrandName(subject.make);
+  const candidateMake = normalizeBrandName(candidate.make);
+  if (!subjectMake || !candidateMake || subjectMake !== candidateMake) {
+    disqualificationReasons.push(
+      `Make mismatch (${candidate.make || "unknown"} !== ${subject.make || "unknown"}).`
+    );
+  } else {
+    matchedAttributes.push("exact_make");
+  }
+  const subjectModel = normalizeModelName(subject.model);
+  const candidateModel = normalizeModelName(candidate.model);
+  if (!subjectModel || !candidateModel) {
+    disqualificationReasons.push("Model identifier missing.");
+  } else if (subjectModel !== candidateModel) {
+    disqualificationReasons.push(
+      `Model mismatch (${candidate.model} !== ${subject.model}).`
+    );
+  } else {
+    matchedAttributes.push("exact_model");
+  }
+  const subjectCategory = subject.marketCategory;
+  const candidateCategory = candidate.marketCategory && candidate.marketCategory !== "unknown" ? candidate.marketCategory : normalizeMarketCategory(candidate.condition);
+  if (subjectCategory !== "unknown") {
+    if (candidateCategory === "unknown") {
+      disqualificationReasons.push(
+        `Candidate condition is unverified; excluded from ${formatMarketCategoryLabel(subjectCategory)} comparison.`
+      );
+    } else if (candidateCategory !== subjectCategory) {
+      disqualificationReasons.push(
+        `Market category mismatch (${candidateCategory} !== ${subjectCategory}).`
+      );
+    } else {
+      matchedAttributes.push(`category:${subjectCategory}`);
+    }
+  }
+  let score = 60;
+  if (subject.year && subject.year >= 1985) {
+    if (!candidate.year || candidate.year < 1985) {
+      disqualificationReasons.push("Candidate model year missing or invalid.");
+    } else {
+      const yearDiff = Math.abs(candidate.year - subject.year);
+      if (yearDiff > 2) {
+        disqualificationReasons.push(
+          `Model year difference (${candidate.year} vs ${subject.year}) exceeds \xB12 year comparable limit.`
+        );
+      } else if (yearDiff === 0) {
+        score += 20;
+        matchedAttributes.push("exact_year");
+      } else if (yearDiff === 1) {
+        score += 10;
+        penalties.push("year_delta_1");
+      } else {
+        score += 2;
+        penalties.push("year_delta_2");
+      }
+    }
+  }
+  const subjectTrim = [subject.trim, subject.variant].filter(Boolean).join(" ").trim();
+  const candidateTrim = [candidate.trim, candidate.variant].filter(Boolean).join(" ").trim();
+  if (subjectTrim && candidateTrim) {
+    const subNorm = subjectTrim.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const candNorm = candidateTrim.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (subNorm === candNorm) {
+      score += 12;
+      matchedAttributes.push("exact_trim");
+    } else {
+      const subTier = extractTrimTier(subjectTrim);
+      const candTier = extractTrimTier(candidateTrim);
+      if (subTier !== "unknown" && candTier !== "unknown" && subTier !== candTier) {
+        score -= 10;
+        penalties.push(`trim_tier_mismatch:${subTier}_vs_${candTier}`);
+      } else {
+        score += 4;
+      }
+    }
+  } else if (subjectTrim || candidateTrim) {
+    score -= 2;
+    penalties.push("partial_trim_metadata");
+  }
+  if (subject.mileage && subject.mileage > 0 && candidate.mileage && candidate.mileage > 0) {
+    const mileageDiff = Math.abs(candidate.mileage - subject.mileage);
+    if (mileageDiff <= 15e3) {
+      score += 6;
+      matchedAttributes.push("close_mileage");
+    } else if (mileageDiff <= 4e4) {
+      score += 2;
+    } else if (mileageDiff > 9e4) {
+      score -= 8;
+      penalties.push("high_mileage_spread");
+    }
+  }
+  const subLoc = normalizeLocationToken(subject.location);
+  const candLoc = normalizeLocationToken(candidate.location);
+  if (subLoc && candLoc) {
+    if (subLoc === candLoc) {
+      score += 5;
+      matchedAttributes.push(`location:${subLoc}`);
+    } else {
+      score -= 2;
+      penalties.push("cross_city_comparable");
+    }
+  }
+  return {
+    isComparable: disqualificationReasons.length === 0,
+    score: Math.max(0, Math.min(100, score)),
+    disqualificationReasons,
+    matchedAttributes,
+    penalties
+  };
+}
+function filterComparableVehicles(subject, candidates) {
+  const comparables = [];
+  const rejected = [];
+  for (const candidate of candidates) {
+    const evaluation = computeVehicleMatchScore(subject, candidate);
+    if (evaluation.isComparable) {
+      comparables.push({
+        ...candidate,
+        matchScore: evaluation.score,
+        evaluation
+      });
+    } else {
+      rejected.push({
+        id: candidate.id,
+        reasons: evaluation.disqualificationReasons
+      });
+    }
+  }
+  comparables.sort((a, b) => b.matchScore - a.matchScore);
+  return { comparables, rejected };
+}
+
+// server/services/pricingAgent/calculator.ts
+function percentile(sorted, p) {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0];
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  const weight = idx - lo;
+  return Math.round(sorted[lo] * (1 - weight) + sorted[hi] * weight);
+}
+function medianOfSorted(sorted) {
+  return percentile(sorted, 0.5);
+}
+function detectStatisticalOutliers(samples) {
+  if (samples.length < 4) {
+    const sorted = samples.map((s) => s.price).sort((a, b) => a - b);
+    const iqr2 = sorted.length >= 2 ? percentile(sorted, 0.75) - percentile(sorted, 0.25) : 0;
+    return {
+      retained: samples,
+      excluded: [],
+      method: "none_small_sample",
+      mad: 0,
+      iqr: iqr2
+    };
+  }
+  const pricesSorted = samples.map((s) => s.price).sort((a, b) => a - b);
+  const med = medianOfSorted(pricesSorted);
+  const q1 = percentile(pricesSorted, 0.25);
+  const q3 = percentile(pricesSorted, 0.75);
+  const iqr = Math.max(0, q3 - q1);
+  const absDeviations = pricesSorted.map((p) => Math.abs(p - med)).sort((a, b) => a - b);
+  const mad = medianOfSorted(absDeviations);
+  const retained = [];
+  const excluded = [];
+  if (mad > 0) {
+    for (const item of samples) {
+      const modifiedZ = Math.abs(0.6745 * (item.price - med) / mad);
+      if (modifiedZ > 3.5) {
+        excluded.push({
+          id: item.id,
+          label: `${item.year || ""} ${item.make || ""} ${item.model || ""}${item.trim ? ` ${item.trim}` : ""}`.trim() || item.id,
+          price: item.price,
+          reason: `Modified Z-score ${modifiedZ.toFixed(2)} exceeds 3.5 threshold relative to median \u20A6${med.toLocaleString()}`
+        });
+      } else {
+        retained.push(item);
+      }
+    }
+    return { retained, excluded, method: "mad_modified_z", mad, iqr };
+  }
+  const effectiveIqr = iqr > 0 ? iqr : Math.round(med * 0.2);
+  const lowerFence = Math.max(0, q1 - 1.5 * effectiveIqr);
+  const upperFence = q3 + 1.5 * effectiveIqr;
+  for (const item of samples) {
+    if (item.price < lowerFence || item.price > upperFence) {
+      excluded.push({
+        id: item.id,
+        label: `${item.year || ""} ${item.make || ""} ${item.model || ""}${item.trim ? ` ${item.trim}` : ""}`.trim() || item.id,
+        price: item.price,
+        reason: `Outside Tukey 1.5\xD7IQR fence (\u20A6${Math.round(lowerFence).toLocaleString()}\u2013\u20A6${Math.round(upperFence).toLocaleString()})`
+      });
+    } else {
+      retained.push(item);
+    }
+  }
+  return { retained, excluded, method: "iqr_tukey", mad, iqr };
+}
+function buildHistogramBuckets(sortedPrices) {
+  if (sortedPrices.length === 0) return [];
+  const min = sortedPrices[0];
+  const max = sortedPrices[sortedPrices.length - 1];
+  if (min === max) {
+    return [
+      {
+        label: `\u20A6${(min / 1e6).toFixed(1)}M`,
+        min,
+        max,
+        count: sortedPrices.length
+      }
+    ];
+  }
+  const bucketCount = Math.min(5, Math.max(3, Math.ceil(Math.sqrt(sortedPrices.length))));
+  const step = Math.ceil((max - min) / bucketCount);
+  const buckets = [];
+  for (let i = 0; i < bucketCount; i++) {
+    const bMin = min + i * step;
+    const bMax = i === bucketCount - 1 ? max : min + (i + 1) * step - 1;
+    const count = sortedPrices.filter((p) => p >= bMin && p <= bMax).length;
+    buckets.push({
+      label: `\u20A6${(bMin / 1e6).toFixed(1)}M\u2013\u20A6${(bMax / 1e6).toFixed(1)}M`,
+      min: bMin,
+      max: bMax,
+      count
     });
   }
-  const worldTables = [
-    "player_profiles",
-    "player_presence",
-    "chat_invitations",
-    "chat_conversations",
-    "chat_messages",
-    "player_blocks",
-    "player_reports",
-    "moderation_incidents",
-    "player_admin_audit_logs",
-    "chat_moderation_config"
-  ];
-  const checks = {};
-  const checkOneTable = async (t) => {
-    try {
-      const cols = t === "player_profiles" ? "created_at, chat_status" : "created_at";
-      const result = await Promise.race([
-        supabase.from(t).select(cols).limit(1),
-        new Promise(
-          (resolve) => setTimeout(
-            () => resolve({ error: { code: "TIMEOUT", message: "Supabase check timed out" } }),
-            2500
-          )
-        )
-      ]);
-      const error = result?.error;
-      if (error && (error.code === "PGRST205" || error.code === "42P01" || error.code === "42703" || error.message?.includes("does not exist"))) {
-        checks[t] = { exists: false, code: error.code, error: error.message };
-      } else if (error && error.code !== "42501" && error.code !== "PGRST116") {
-        checks[t] = { exists: false, code: error.code, error: error.message };
-      } else {
-        checks[t] = { exists: true };
-      }
-    } catch (err) {
-      checks[t] = { exists: false, code: "FETCH_ERROR", error: err?.message || "Fetch failed" };
-    }
-  };
-  await Promise.all(worldTables.map((t) => checkOneTable(t)));
-  const checkRpcExists = async (fnName, args) => {
-    try {
-      const result = await Promise.race([
-        supabase.rpc(fnName, args),
-        new Promise(
-          (resolve) => setTimeout(
-            () => resolve({ error: { code: "TIMEOUT", message: "Supabase check timed out" } }),
-            2500
-          )
-        )
-      ]);
-      const error = result?.error;
-      if (error && (error.code === "PGRST202" || error.code === "42883" || error.message?.includes("Could not find the function") || error.message?.includes("function") && error.message?.includes("does not exist"))) {
-        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
-      } else if (error && (error.code === "TIMEOUT" || error.code === "FETCH_ERROR")) {
-        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
-      } else {
-        checks[`rpc:${fnName}`] = { exists: true };
-      }
-    } catch (err) {
-      checks[`rpc:${fnName}`] = { exists: false, code: "FETCH_ERROR", error: err?.message || "Fetch failed" };
-    }
-  };
-  await Promise.all([
-    checkRpcExists("check_player_registration_available", { p_email: "", p_nickname: "" }),
-    checkRpcExists("admin_get_players_directory", {})
-  ]);
-  const timedOut = Object.values(checks).every((c) => c.code === "TIMEOUT" || c.code === "FETCH_ERROR");
-  const allExist = Object.values(checks).every((c) => c.exists);
-  return res.json({
-    configured: true,
-    tablesExist: timedOut ? true : allExist,
-    migrationRequired: timedOut ? false : !allExist,
-    checks,
-    networkUnreachable: timedOut,
-    migrationFilePath: "src/db/game-world-social-migration.sql"
-  });
-});
-router3.get("/migration-sql", standardApiLimiter, (_req, res) => {
-  sendMigrationSqlFile("game-world-social-migration.sql", "-- Game world migration SQL not found.", res);
-});
-router3.post(
-  "/moderate-chat",
-  requireAuth,
-  chatModerationLimiter,
-  validateModerateChatBody,
-  async (req, res) => {
-    const { content } = req.body;
-    const trimmed = content.trim();
-    if (trimmed.length === 0 || trimmed.length > 500) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "INVALID_LENGTH",
-        reason: "Message must be 1 to 500 characters."
-      });
-    }
-    const lower = trimmed.toLowerCase();
-    const collapsed = lower.replace(/[^a-z0-9@.+]/g, "");
-    const phonePattern = /(\+?234[\s\-.]?[0-9]{2,4}[\s\-.]?[0-9]{3,4}[\s\-.]?[0-9]{3,4}|0[789][01][\s\-.]?[0-9]{3,4}[\s\-.]?[0-9]{4})/;
-    const phoneSpanPattern = /(?:^|[^0-9,])(\+?[0-9](?:[\s\-.()]*[0-9]){7,14})(?:[^0-9]|$)/;
-    const spokenPhonePattern = /(zero|oh)\s*(eight|seven|nine)\s*(zero|one|two|three|four|five|six|seven|eight|nine)/i;
-    const emailPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
-    const obfuscatedEmailPattern = /[a-z0-9._%+-]+\s*(at|\(at\)|\[at\])\s*(gmail|yahoo|outlook|hotmail|icloud|proton)\s*(dot|\.)\s*(com|net|org|ng)/i;
-    const linkPattern = /(https?:\/\/|www\.|wa\.me\/|t\.me\/|bit\.ly\/|instagram\.com|tiktok\.com|snapchat\.com|discord\.gg)/i;
-    const offPlatformAppsPattern = /\b(whatsapp|whatsap|watsapp|whats app|telegram|snapchat|signal app|viber|wechat)\b/i;
-    const socialPlatformInvite = /\b(instagram|insta|tiktok|discord)\b/i.test(lower) && /\b(add|dm|follow|reach|text|chat|message|handle|me|my)\b/i.test(lower);
-    const contactSolicitPattern = /\b(call me|text me|ring me|drop your number|send your number|here is my number|take my number|dm me on|hit me up on|add me on)\b/i;
-    const handleInvitePattern = /(@[a-z0-9_.]{3,})/i.test(lower) && /\b(add|dm|follow|reach|text|chat|message|handle|snap|ig|tg)\b/i.test(lower);
-    const datingPattern = /\b(hookup|hook up|wanna link tonight|link up tonight|date me|be my girlfriend|be my boyfriend|sugar daddy|sugar mommy|looking for a girlfriend|looking for a boyfriend|netflix and chill|come over to my place)\b/i;
-    const sexualPattern = /\b(send nudes|send me nudes|nudes|horny|sexting|erotic|blowjob|handjob|fuck me|suck my|orgasm|porn|onlyfans)\b/i;
-    const harassmentScamPattern = /\b(kill yourself|i will kill you|stab you|shoot you|wire transfer|send me your bank|bank details|bvn|otp code|motherfucker|retard|faggot)\b/i;
-    const ambiguousReviewPattern = /\b(send pics|my digits|drop your @|meet in person alone|bank account)\b/i;
-    if (phonePattern.test(trimmed) || phoneSpanPattern.test(trimmed) || spokenPhonePattern.test(lower)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "PERSONAL_CONTACT_PHONE",
-        reason: "Sharing phone numbers or numeric contact details is not permitted in MANIFOLD community chat."
-      });
-    }
-    if (emailPattern.test(trimmed) || obfuscatedEmailPattern.test(lower)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "PERSONAL_CONTACT_EMAIL",
-        reason: "Sharing email addresses is not permitted in MANIFOLD community chat."
-      });
-    }
-    if (linkPattern.test(trimmed) || /(wame|tme|http|https)[a-z0-9]{3,}/.test(collapsed)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "EXTERNAL_LINK",
-        reason: "Sharing external links or URLs is not permitted."
-      });
-    }
-    if (offPlatformAppsPattern.test(lower) || socialPlatformInvite || contactSolicitPattern.test(lower) || handleInvitePattern) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "OFF_PLATFORM_SOLICITATION",
-        reason: "Sharing social handles or moving conversations off MANIFOLD is not allowed."
-      });
-    }
-    if (datingPattern.test(lower)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "DATING_SOLICITATION",
-        reason: "Dating or personal meetup solicitation is not allowed in MANIFOLD driving chat."
-      });
-    }
-    if (sexualPattern.test(lower)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "SEXUAL_EXPLICIT",
-        reason: "Sexually explicit content is strictly prohibited."
-      });
-    }
-    if (harassmentScamPattern.test(lower)) {
-      return res.json({
-        allowed: false,
-        severity: "block",
-        action: "block",
-        category: "HARASSMENT_OR_SCAM",
-        reason: "Threats, hate speech, harassment, or financial solicitation is prohibited."
-      });
-    }
-    if (ambiguousReviewPattern.test(lower)) {
-      return res.json({
-        allowed: true,
-        severity: "flagged_for_review",
-        action: "flag_review",
-        category: "AMBIGUOUS_REVIEW",
-        reason: "Flagged conservatively for safety review without penalizing the player."
-      });
-    }
-    const genAI = getGenAI();
-    if (genAI) {
-      try {
-        const result = await Promise.race([
-          genAI.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: `Evaluate this in-game car-driving chat message.
-ALLOW normal everyday conversation about cars, driving, Lagos routes, music, sports, entertainment, everyday hobbies, and MANIFOLD marketplace discoveries (including benign slang like "killing it on Third Mainland Bridge", "shoot a clip of that AMG", "my number 1 dream car", "love this song").
-BLOCK ONLY clear, unambiguous violations: (1) phone/email/off-platform handle sharing or external links, (2) dating or sexually explicit solicitation, (3) genuine threats, hate speech, severe abuse, or financial scams.
-If borderline/ambiguous, set action="flag_review" and allowed=true instead of blocking.
-Respond ONLY with JSON {"allowed": boolean, "action": "allow"|"flag_review"|"block", "category": string, "reason": string|null}.
-Message: ${JSON.stringify(trimmed)}`,
-            config: { responseMimeType: "application/json" }
-          }),
-          new Promise((resolve) => setTimeout(() => resolve(null), 2200))
-        ]);
-        if (result && "text" in result && result.text) {
-          const parsed = JSON.parse(result.text.replace(/```json|```/gi, "").trim());
-          if (parsed && parsed.allowed === false && parsed.action === "block") {
-            return res.json({
-              allowed: false,
-              severity: "block",
-              action: "block",
-              category: parsed.category || "CONTEXTUAL_POLICY_VIOLATION",
-              reason: parsed.reason || "This message violates MANIFOLD community chat safety guidelines."
-            });
-          }
-          if (parsed && parsed.action === "flag_review") {
-            return res.json({
-              allowed: true,
-              severity: "flagged_for_review",
-              action: "flag_review",
-              category: parsed.category || "AMBIGUOUS_REVIEW",
-              reason: parsed.reason || "Flagged conservatively for safety review."
-            });
-          }
-        }
-      } catch {
-      }
-    }
-    return res.json({ allowed: true, severity: "clean", action: "allow", category: "CLEAN", reason: null });
+  return buckets;
+}
+function computeConfidenceBreakdown(params) {
+  const { validSamples, coefficientOfVariation, duplicateCount, rejectedCount } = params;
+  const nowMs = params.nowMs ?? Date.now();
+  const n = validSamples.length;
+  if (n < 2) {
+    return {
+      sampleCountScore: n === 1 ? 5 : 0,
+      sourceReliabilityScore: 0,
+      recencyScore: 0,
+      specCompletenessScore: 0,
+      priceConsistencyScore: 0,
+      duplicatePenalty: 0,
+      totalScore: n === 1 ? 15 : 0,
+      level: "insufficient",
+      evidenceSummary: n === 0 ? "Insufficient data: 0 comparable non-duplicate vehicles passed validation." : "Insufficient data: only 1 comparable vehicle available (minimum 2 required)."
+    };
   }
-);
-var worldRouter = router3;
+  let sampleCountScore = 10;
+  if (n >= 10) sampleCountScore = 35;
+  else if (n >= 6) sampleCountScore = 28;
+  else if (n >= 4) sampleCountScore = 22;
+  else if (n >= 3) sampleCountScore = 16;
+  const distinctSources = new Set(
+    validSamples.map((s) => (s.sourceWebsite || s.sourceType || "unknown").toLowerCase())
+  );
+  const trustSum = validSamples.reduce((acc, s) => {
+    if (s.sourceType === "internal_asking" || s.sourceTrustLevel === "official") return acc + 1;
+    if (s.sourceTrustLevel === "verified") return acc + 0.9;
+    if (s.sourceTrustLevel === "partner") return acc + 0.8;
+    return acc + 0.65;
+  }, 0);
+  const avgTrust = trustSum / n;
+  const diversityBonus = Math.min(6, (distinctSources.size - 1) * 2.5);
+  const sourceReliabilityScore = Math.min(20, Math.round(avgTrust * 14 + diversityBonus));
+  const avgAgeDays = validSamples.reduce((acc, s) => {
+    const ts = Date.parse(s.observedAt);
+    const ageDays = Number.isFinite(ts) ? Math.max(0, (nowMs - ts) / 864e5) : 45;
+    return acc + ageDays;
+  }, 0) / n;
+  let recencyScore = 4;
+  if (avgAgeDays <= 7) recencyScore = 15;
+  else if (avgAgeDays <= 30) recencyScore = 12;
+  else if (avgAgeDays <= 60) recencyScore = 9;
+  else if (avgAgeDays <= 120) recencyScore = 6;
+  const avgCompleteness = validSamples.reduce((acc, s) => {
+    let fields = 0;
+    if (s.year && s.year >= 1985) fields++;
+    if (s.mileage !== null && s.mileage !== void 0 && s.mileage > 0) fields++;
+    if (s.trim) fields++;
+    if (s.location) fields++;
+    if (s.marketCategory && s.marketCategory !== "unknown") fields++;
+    return acc + fields / 5;
+  }, 0) / n;
+  const specCompletenessScore = Math.round(avgCompleteness * 15);
+  let priceConsistencyScore = 4;
+  if (coefficientOfVariation <= 0.08) priceConsistencyScore = 15;
+  else if (coefficientOfVariation <= 0.14) priceConsistencyScore = 12;
+  else if (coefficientOfVariation <= 0.22) priceConsistencyScore = 9;
+  else if (coefficientOfVariation <= 0.32) priceConsistencyScore = 6;
+  const totalNoise = duplicateCount + rejectedCount;
+  const duplicatePenalty = totalNoise > n * 2 ? 6 : totalNoise > n ? 3 : 0;
+  const totalScore = Math.max(
+    10,
+    Math.min(
+      100,
+      sampleCountScore + sourceReliabilityScore + recencyScore + specCompletenessScore + priceConsistencyScore - duplicatePenalty
+    )
+  );
+  let level = "low";
+  if (totalScore >= 74 && n >= 5) level = "high";
+  else if (totalScore >= 50 && n >= 3) level = "medium";
+  return {
+    sampleCountScore,
+    sourceReliabilityScore,
+    recencyScore,
+    specCompletenessScore,
+    priceConsistencyScore,
+    duplicatePenalty,
+    totalScore,
+    level,
+    evidenceSummary: `${n} unique comparable(s) across ${distinctSources.size} source(s), CV ${(coefficientOfVariation * 100).toFixed(1)}%, avg age ${Math.round(avgAgeDays)}d.`
+  };
+}
+function calculateMarketPriceEstimate(params) {
+  const nowIso = params.nowIso ?? (/* @__PURE__ */ new Date()).toISOString();
+  const { subject, candidates } = params;
+  const duplicateCandidatesCount = candidates.filter((c) => c.isDuplicate).length + (params.additionalDuplicateCount ?? 0);
+  const { comparables, rejected } = filterComparableVehicles(
+    subject,
+    candidates.filter((c) => !c.isDuplicate)
+  );
+  const rejectedByMatchingCount = rejected.length + (params.additionalRejectedCount ?? 0);
+  const outlierResult = detectStatisticalOutliers(comparables);
+  const validComps = outlierResult.retained;
+  const totalRejectedCount = rejectedByMatchingCount + outlierResult.excluded.length;
+  const locationLabel = normalizeLocationToken(subject.location) ? String(subject.location) : "Nigeria (National)";
+  const yearMin = subject.year ? subject.year - 2 : validComps.length > 0 ? Math.min(...validComps.map((c) => c.year)) : null;
+  const yearMax = subject.year ? subject.year + 2 : validComps.length > 0 ? Math.max(...validComps.map((c) => c.year)) : null;
+  if (validComps.length < 2) {
+    const emptyConfidence = computeConfidenceBreakdown({
+      validSamples: validComps,
+      coefficientOfVariation: 0,
+      duplicateCount: duplicateCandidatesCount,
+      rejectedCount: totalRejectedCount,
+      nowMs: Date.parse(nowIso)
+    });
+    const singlePrice = validComps.length === 1 ? validComps[0].price : null;
+    const categoryLabel = formatMarketCategoryLabel(subject.marketCategory);
+    return {
+      make: subject.make,
+      model: subject.model,
+      targetYear: subject.year ?? null,
+      yearMin,
+      yearMax,
+      trim: subject.trim ?? null,
+      marketCategory: subject.marketCategory,
+      location: locationLabel,
+      currency: "NGN",
+      insufficientData: true,
+      insufficiencyReason: validComps.length === 0 ? `No verified non-duplicate ${categoryLabel} comparables met matching rules for ${subject.year || ""} ${subject.make} ${subject.model}.`.trim() : `Only 1 verified ${categoryLabel} comparable remained after filtering (${duplicateCandidatesCount} duplicate(s), ${totalRejectedCount} rejected/outlier(s)). At least 2 independent comparables are required.`,
+      minPrice: singlePrice,
+      q1Price: null,
+      medianPrice: singlePrice,
+      meanPrice: singlePrice,
+      q3Price: null,
+      maxPrice: singlePrice,
+      priceRangeLow: null,
+      priceRangeHigh: null,
+      marketEstimate: null,
+      validObservationCount: validComps.length,
+      internalListingCount: validComps.filter((c) => c.sourceType === "internal_asking").length,
+      externalObservationCount: validComps.filter((c) => c.sourceType === "external_observation").length,
+      rejectedObservationCount: totalRejectedCount,
+      duplicateObservationCount: duplicateCandidatesCount,
+      confidenceScore: emptyConfidence.totalScore,
+      confidenceLevel: "insufficient",
+      confidenceBreakdown: emptyConfidence,
+      priceDistribution: {
+        iqr: 0,
+        mad: 0,
+        stdDev: 0,
+        coefficientOfVariation: 0,
+        outlierMethod: outlierResult.method,
+        outliersExcludedCount: outlierResult.excluded.length,
+        outliersExcluded: outlierResult.excluded,
+        histogramBuckets: singlePrice ? [{ label: `\u20A6${(singlePrice / 1e6).toFixed(1)}M`, min: singlePrice, max: singlePrice, count: 1 }] : []
+      },
+      estimationMethodology: `Asking-price benchmark restricted strictly to ${categoryLabel} comparables within \xB12 model years. Estimate withheld due to insufficient sample size.`,
+      lastResearchAt: nowIso,
+      matchedSamples: validComps
+    };
+  }
+  const sortedPrices = validComps.map((c) => c.price).sort((a, b) => a - b);
+  const minPrice = sortedPrices[0];
+  const maxPrice = sortedPrices[sortedPrices.length - 1];
+  const q1Price = percentile(sortedPrices, 0.25);
+  const medianPrice = percentile(sortedPrices, 0.5);
+  const q3Price = percentile(sortedPrices, 0.75);
+  const meanPrice = Math.round(
+    sortedPrices.reduce((sum, p) => sum + p, 0) / sortedPrices.length
+  );
+  const variance = sortedPrices.reduce((acc, p) => acc + Math.pow(p - meanPrice, 2), 0) / sortedPrices.length;
+  const stdDev = Math.round(Math.sqrt(variance));
+  const coefficientOfVariation = meanPrice > 0 ? Number((stdDev / meanPrice).toFixed(4)) : 0;
+  const priceRangeLow = Math.max(
+    minPrice,
+    Math.min(q1Price, Math.round(medianPrice * 0.92))
+  );
+  const priceRangeHigh = Math.min(
+    maxPrice,
+    Math.max(q3Price, Math.round(medianPrice * 1.08))
+  );
+  const confidenceBreakdown = computeConfidenceBreakdown({
+    validSamples: validComps,
+    coefficientOfVariation,
+    duplicateCount: duplicateCandidatesCount,
+    rejectedCount: totalRejectedCount,
+    nowMs: Date.parse(nowIso)
+  });
+  const internalListingCount = validComps.filter(
+    (c) => c.sourceType === "internal_asking"
+  ).length;
+  const externalObservationCount = validComps.filter(
+    (c) => c.sourceType === "external_observation"
+  ).length;
+  return {
+    make: subject.make,
+    model: subject.model,
+    targetYear: subject.year ?? null,
+    yearMin,
+    yearMax,
+    trim: subject.trim ?? null,
+    marketCategory: subject.marketCategory,
+    location: locationLabel,
+    currency: "NGN",
+    insufficientData: false,
+    insufficiencyReason: null,
+    minPrice,
+    q1Price,
+    medianPrice,
+    meanPrice,
+    q3Price,
+    maxPrice,
+    priceRangeLow,
+    priceRangeHigh,
+    marketEstimate: medianPrice,
+    validObservationCount: validComps.length,
+    internalListingCount,
+    externalObservationCount,
+    rejectedObservationCount: totalRejectedCount,
+    duplicateObservationCount: duplicateCandidatesCount,
+    confidenceScore: confidenceBreakdown.totalScore,
+    confidenceLevel: confidenceBreakdown.level,
+    confidenceBreakdown,
+    priceDistribution: {
+      iqr: outlierResult.iqr,
+      mad: outlierResult.mad,
+      stdDev,
+      coefficientOfVariation,
+      outlierMethod: outlierResult.method,
+      outliersExcludedCount: outlierResult.excluded.length,
+      outliersExcluded: outlierResult.excluded,
+      histogramBuckets: buildHistogramBuckets(sortedPrices)
+    },
+    estimationMethodology: `Median asking-price benchmark for ${formatMarketCategoryLabel(subject.marketCategory)} computed from ${validComps.length} validated comparables (${internalListingCount} MANIFOLD asking, ${externalObservationCount} external observed; ${duplicateCandidatesCount} duplicate(s) & ${outlierResult.excluded.length} statistical outlier(s) excluded via ${outlierResult.method}).`,
+    lastResearchAt: nowIso,
+    matchedSamples: validComps.slice(0, 12)
+  };
+}
 
-// server/routes/ai.ts
-import { Router as Router4 } from "express";
-import multer from "multer";
-import crypto2 from "crypto";
-import { z as z5 } from "zod";
+// server/services/pricingAgent/deduplicator.ts
+import crypto2 from "node:crypto";
+var TRACKING_QUERY_PARAMS = /* @__PURE__ */ new Set([
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+  "fbclid",
+  "gclid",
+  "igshid",
+  "mc_cid",
+  "mc_eid",
+  "ref",
+  "ref_src",
+  "source",
+  "share",
+  "tracking_id"
+]);
+function normalizeListingUrl(rawUrl) {
+  const trimmed = String(rawUrl || "").trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = new URL(trimmed);
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const keptParams = [];
+    for (const [key, value] of parsed.searchParams.entries()) {
+      const lowerKey = key.toLowerCase();
+      if (!TRACKING_QUERY_PARAMS.has(lowerKey) && !lowerKey.startsWith("utm_")) {
+        keptParams.push([key, value]);
+      }
+    }
+    keptParams.sort(([a], [b]) => a.localeCompare(b));
+    const cleanSearch = keptParams.length > 0 ? `?${keptParams.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&")}` : "";
+    const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+    return `https://${hostname}${pathname}${cleanSearch}`;
+  } catch {
+    return trimmed.toLowerCase().replace(/\/+$/, "");
+  }
+}
+function extractSourceListingId(rawUrl, jsonLdItems) {
+  if (Array.isArray(jsonLdItems)) {
+    for (const item of jsonLdItems) {
+      if (!item || typeof item !== "object") continue;
+      const candidateId = item.sku || item.productID || item.vehicleIdentificationNumber || item.identifier;
+      if (typeof candidateId === "string" && candidateId.trim().length >= 3) {
+        return candidateId.trim().slice(0, 120);
+      }
+    }
+  }
+  const normalized = normalizeListingUrl(rawUrl);
+  if (!normalized) return null;
+  try {
+    const parsed = new URL(normalized);
+    const qId = parsed.searchParams.get("id") || parsed.searchParams.get("listing_id") || parsed.searchParams.get("ad_id");
+    if (qId && qId.trim().length >= 3) return qId.trim();
+    const slugMatch = parsed.pathname.match(/[-/]([a-z0-9]{6,24})(?:\.html?)?$/i);
+    if (slugMatch?.[1]) {
+      return slugMatch[1].toLowerCase();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+function extractDomainFromUrl(rawUrl) {
+  try {
+    return new URL(String(rawUrl || "")).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+function computeDedupeHash(candidate) {
+  const make = normalizeBrandName(candidate.make);
+  const model = normalizeModelName(candidate.model);
+  const year = Number(candidate.year) || 0;
+  const category = normalizeMarketCategory(candidate.marketCategory);
+  const priceBucket = Math.round(Number(candidate.price || 0) / 1e5) * 1e5;
+  const loc = normalizeLocationToken(candidate.location);
+  const mileageBucket = candidate.mileage && candidate.mileage > 0 ? Math.round(candidate.mileage / 2500) * 2500 : "na";
+  const rawKey = `${make}|${model}|${year}|${category}|${priceBucket}|${mileageBucket}|${loc}`;
+  return crypto2.createHash("sha256").update(rawKey).digest("hex").slice(0, 32);
+}
+function tokenizeDescription(text) {
+  const cleaned = String(text || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((token) => token.length >= 3);
+  return new Set(cleaned);
+}
+function jaccardTextSimilarity(a, b) {
+  const setA = tokenizeDescription(a);
+  const setB = tokenizeDescription(b);
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let intersection = 0;
+  for (const token of setA) {
+    if (setB.has(token)) intersection++;
+  }
+  const union = setA.size + setB.size - intersection;
+  return union > 0 ? Number((intersection / union).toFixed(3)) : 0;
+}
+function hasSharedImageUrl(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || b.length === 0) {
+    return false;
+  }
+  const normalizedA = new Set(a.map((u) => normalizeListingUrl(u)).filter(Boolean));
+  for (const url of b) {
+    const norm = normalizeListingUrl(url);
+    if (norm && normalizedA.has(norm)) return true;
+  }
+  return false;
+}
+function detectDuplicateObservation(candidate, existingRecords) {
+  const candidateNormUrl = normalizeListingUrl(candidate.normalizedUrl);
+  const candidateDomain = extractDomainFromUrl(candidateNormUrl);
+  const candidateListingId = candidate.sourceListingId?.trim().toLowerCase() || null;
+  const candidateHash = candidate.dedupeHash || computeDedupeHash(candidate);
+  const candMake = normalizeBrandName(candidate.make);
+  const candModel = normalizeModelName(candidate.model);
+  const candCat = normalizeMarketCategory(candidate.marketCategory);
+  const candLoc = normalizeLocationToken(candidate.location);
+  for (const existing of existingRecords) {
+    const existingId = existing.id || existing.normalizedUrl || existing.dedupeHash || "existing";
+    const existingNormUrl = normalizeListingUrl(existing.normalizedUrl);
+    if (candidateNormUrl && existingNormUrl && candidateNormUrl === existingNormUrl) {
+      return {
+        isDuplicate: true,
+        duplicateOfId: existingId,
+        reason: "identical_normalized_url",
+        similarityScore: 1,
+        dedupeHash: candidateHash
+      };
+    }
+    const existingDomain = extractDomainFromUrl(existingNormUrl);
+    const existingListingId = existing.sourceListingId?.trim().toLowerCase() || null;
+    if (candidateListingId && existingListingId && candidateDomain && existingDomain && candidateDomain === existingDomain && candidateListingId === existingListingId) {
+      return {
+        isDuplicate: true,
+        duplicateOfId: existingId,
+        reason: "matching_source_listing_id",
+        similarityScore: 0.98,
+        dedupeHash: candidateHash
+      };
+    }
+    const existingHash = existing.dedupeHash || computeDedupeHash(existing);
+    if (candidateHash === existingHash) {
+      return {
+        isDuplicate: true,
+        duplicateOfId: existingId,
+        reason: "identical_vehicle_price_fingerprint",
+        similarityScore: 0.95,
+        dedupeHash: candidateHash
+      };
+    }
+    if (candMake === normalizeBrandName(existing.make) && candModel === normalizeModelName(existing.model) && Number(candidate.year) === Number(existing.year) && candCat === normalizeMarketCategory(existing.marketCategory)) {
+      const maxPrice = Math.max(candidate.price, existing.price, 1);
+      const priceDiffPct = Math.abs(candidate.price - existing.price) / maxPrice;
+      const mileageCompatible = candidate.mileage == null || existing.mileage == null || Math.abs(candidate.mileage - existing.mileage) <= 2500;
+      const existingLoc = normalizeLocationToken(existing.location);
+      const locationCompatible = !candLoc || !existingLoc || candLoc === existingLoc;
+      if (priceDiffPct <= 0.03 && mileageCompatible && locationCompatible) {
+        const textSim = jaccardTextSimilarity(candidate.description, existing.description);
+        const sharedImg = hasSharedImageUrl(candidate.imageUrls, existing.imageUrls);
+        if (sharedImg || textSim >= 0.72) {
+          return {
+            isDuplicate: true,
+            duplicateOfId: existingId,
+            reason: sharedImg ? "cross_post_shared_image_and_price" : `cross_post_text_similarity_${Math.round(textSim * 100)}pct`,
+            similarityScore: Math.max(textSim, sharedImg ? 0.9 : 0),
+            dedupeHash: candidateHash
+          };
+        }
+      }
+    }
+  }
+  return {
+    isDuplicate: false,
+    duplicateOfId: null,
+    reason: null,
+    similarityScore: 0,
+    dedupeHash: candidateHash
+  };
+}
 
 // server/lib/openai.ts
 init_env();
@@ -2158,7 +2496,2435 @@ async function transcribeAudioBuffer(params) {
   }
 }
 
+// server/services/pricingAgent/providers.ts
+init_env();
+var PROVIDER_CATALOG = {
+  manifold_inventory: {
+    displayName: "MANIFOLD Internal Inventory & Approved Observations",
+    category: "internal_inventory",
+    requiresSubscription: false,
+    requiredEnvVars: [],
+    costPerQueryUsd: 0,
+    statusNote: "Reads verified MANIFOLD dealer listings and approved market observations directly from Supabase."
+  },
+  approved_feed: {
+    displayName: "Approved Market Data Sources (Permitted Feeds)",
+    category: "approved_feed",
+    requiresSubscription: false,
+    requiredEnvVars: [],
+    costPerQueryUsd: 0,
+    statusNote: "Crawls only explicitly enabled, public, non-protected feeds in public.market_data_sources."
+  },
+  serper: {
+    displayName: "Serper.dev Google Search API (Nigeria)",
+    category: "search_api",
+    requiresSubscription: true,
+    requiredEnvVars: ["SERPER_API_KEY"],
+    costPerQueryUsd: 1e-3,
+    statusNote: "Server-side web search via Serper.dev (gl=ng) returning Nigerian automotive listing pages and snippets."
+  },
+  google_cse: {
+    displayName: "Google Programmable Search Engine (CSE)",
+    category: "search_api",
+    requiresSubscription: true,
+    requiredEnvVars: ["GOOGLE_CSE_API_KEY", "GOOGLE_CSE_ID"],
+    costPerQueryUsd: 5e-3,
+    statusNote: "Official Google Custom Search JSON API scoped to permitted Nigerian automotive domains."
+  },
+  brave_search: {
+    displayName: "Brave Web Search API",
+    category: "search_api",
+    requiresSubscription: true,
+    requiredEnvVars: ["BRAVE_SEARCH_API_KEY"],
+    costPerQueryUsd: 3e-3,
+    statusNote: "Privacy-preserving web search index API with Nigeria country filtering."
+  }
+};
+function isProviderConfigured(providerKey) {
+  const env = getServerEnv();
+  switch (providerKey) {
+    case "manifold_inventory":
+    case "approved_feed":
+      return {
+        configured: Boolean(env.supabaseUrl && env.supabaseAnonKey),
+        missingEnvVars: env.supabaseUrl && env.supabaseAnonKey ? [] : ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY"]
+      };
+    case "serper":
+      return {
+        configured: Boolean(env.serperApiKey),
+        missingEnvVars: env.serperApiKey ? [] : ["SERPER_API_KEY"]
+      };
+    case "google_cse": {
+      const missing = [];
+      if (!env.googleCseApiKey) missing.push("GOOGLE_CSE_API_KEY");
+      if (!env.googleCseId) missing.push("GOOGLE_CSE_ID");
+      return { configured: missing.length === 0, missingEnvVars: missing };
+    }
+    case "brave_search":
+      return {
+        configured: Boolean(env.braveSearchApiKey),
+        missingEnvVars: env.braveSearchApiKey ? [] : ["BRAVE_SEARCH_API_KEY"]
+      };
+  }
+}
+function getProvidersStatus(dailyCountsByProvider = {}, dailyQuotaLimit = null) {
+  const keys = [
+    "manifold_inventory",
+    "approved_feed",
+    "serper",
+    "google_cse",
+    "brave_search"
+  ];
+  return keys.map((key) => {
+    const meta = PROVIDER_CATALOG[key];
+    const cfg = isProviderConfigured(key);
+    return {
+      key,
+      displayName: meta.displayName,
+      category: meta.category,
+      configured: cfg.configured,
+      requiresSubscription: meta.requiresSubscription,
+      requiredEnvVars: meta.requiredEnvVars,
+      missingEnvVars: cfg.missingEnvVars,
+      costPerQueryUsd: meta.costPerQueryUsd,
+      dailyQuotaLimit: meta.category === "search_api" ? dailyQuotaLimit : null,
+      queriesToday: dailyCountsByProvider[key] ?? 0,
+      statusNote: cfg.configured ? meta.statusNote : `Not configured. Set ${cfg.missingEnvVars.join(" & ")} in server environment variables to enable.`
+    };
+  });
+}
+function extractNairaPriceFromText(text) {
+  const raw = String(text || "");
+  if (!raw) return null;
+  const nairaFullMatch = raw.match(/(?:₦|NGN|N)\s*([0-9]{1,3}(?:,[0-9]{3}){2,}|[0-9]{7,10})\b/i);
+  if (nairaFullMatch?.[1]) {
+    const val = parseInt(nairaFullMatch[1].replace(/,/g, ""), 10);
+    if (val >= 4e5 && val <= 9e8) return val;
+  }
+  const millionMatch = raw.match(/(?:₦|NGN)?\s*([0-9]{1,3}(?:\.[0-9]{1,2})?)\s*(?:m|million)\b/i);
+  if (millionMatch?.[1]) {
+    const val = Math.round(parseFloat(millionMatch[1]) * 1e6);
+    if (val >= 4e5 && val <= 9e8) return val;
+  }
+  return null;
+}
+function parseSerperResponse(payload) {
+  const organic = Array.isArray(payload?.organic) ? payload.organic : [];
+  const results = [];
+  for (const item of organic) {
+    const url = String(item?.link || "").trim();
+    if (!url.startsWith("http")) continue;
+    const title = String(item?.title || "").trim();
+    const snippet = String(item?.snippet || "").trim();
+    results.push({
+      providerKey: "serper",
+      title,
+      url,
+      snippet,
+      sourceDomain: extractDomainFromUrl(url),
+      publishedDate: typeof item?.date === "string" ? item.date : null,
+      detectedPriceNgn: extractNairaPriceFromText(`${title} ${snippet}`)
+    });
+  }
+  return results;
+}
+function parseGoogleCseResponse(payload) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const results = [];
+  for (const item of items) {
+    const url = String(item?.link || "").trim();
+    if (!url.startsWith("http")) continue;
+    const title = String(item?.title || "").trim();
+    const snippet = String(item?.snippet || "").trim();
+    results.push({
+      providerKey: "google_cse",
+      title,
+      url,
+      snippet,
+      sourceDomain: extractDomainFromUrl(url),
+      publishedDate: null,
+      detectedPriceNgn: extractNairaPriceFromText(`${title} ${snippet}`)
+    });
+  }
+  return results;
+}
+function parseBraveSearchResponse(payload) {
+  const webResults = Array.isArray(payload?.web?.results) ? payload.web.results : [];
+  const results = [];
+  for (const item of webResults) {
+    const url = String(item?.url || "").trim();
+    if (!url.startsWith("http")) continue;
+    const title = String(item?.title || "").trim();
+    const snippet = String(item?.description || "").trim();
+    results.push({
+      providerKey: "brave_search",
+      title,
+      url,
+      snippet,
+      sourceDomain: extractDomainFromUrl(url),
+      publishedDate: typeof item?.age === "string" ? item.age : null,
+      detectedPriceNgn: extractNairaPriceFromText(`${title} ${snippet}`)
+    });
+  }
+  return results;
+}
+async function executeProviderSearch(params) {
+  const { providerKey, target } = params;
+  const maxResults = Math.min(Math.max(params.maxResults ?? 6, 1), 10);
+  const startedAt = Date.now();
+  const cfg = isProviderConfigured(providerKey);
+  if (!cfg.configured) {
+    return {
+      ok: false,
+      providerKey,
+      latencyMs: Date.now() - startedAt,
+      costUsd: 0,
+      results: [],
+      error: `Provider ${providerKey} not configured (missing: ${cfg.missingEnvVars.join(", ")}).`
+    };
+  }
+  const env = getServerEnv();
+  if (providerKey === "serper") {
+    try {
+      const response = await fetch("https://google.serper.dev/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-KEY": env.serperApiKey
+        },
+        body: JSON.stringify({
+          q: target.queryText,
+          gl: "ng",
+          hl: "en",
+          num: maxResults
+        }),
+        signal: AbortSignal.timeout(12e3)
+      });
+      const latencyMs = Date.now() - startedAt;
+      if (!response.ok) {
+        return {
+          ok: false,
+          providerKey,
+          httpStatus: response.status,
+          latencyMs,
+          costUsd: PROVIDER_CATALOG.serper.costPerQueryUsd,
+          results: [],
+          error: `Serper HTTP ${response.status}`
+        };
+      }
+      const json = await response.json();
+      return {
+        ok: true,
+        providerKey,
+        httpStatus: response.status,
+        latencyMs,
+        costUsd: PROVIDER_CATALOG.serper.costPerQueryUsd,
+        results: parseSerperResponse(json).slice(0, maxResults)
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        providerKey,
+        latencyMs: Date.now() - startedAt,
+        costUsd: 0,
+        results: [],
+        error: err?.message || "Serper search request failed."
+      };
+    }
+  }
+  if (providerKey === "google_cse") {
+    try {
+      const url = new URL("https://www.googleapis.com/customsearch/v1");
+      url.searchParams.set("key", env.googleCseApiKey);
+      url.searchParams.set("cx", env.googleCseId);
+      url.searchParams.set("q", target.queryText);
+      url.searchParams.set("gl", "ng");
+      url.searchParams.set("num", String(maxResults));
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        signal: AbortSignal.timeout(12e3)
+      });
+      const latencyMs = Date.now() - startedAt;
+      if (!response.ok) {
+        return {
+          ok: false,
+          providerKey,
+          httpStatus: response.status,
+          latencyMs,
+          costUsd: PROVIDER_CATALOG.google_cse.costPerQueryUsd,
+          results: [],
+          error: `Google CSE HTTP ${response.status}`
+        };
+      }
+      const json = await response.json();
+      return {
+        ok: true,
+        providerKey,
+        httpStatus: response.status,
+        latencyMs,
+        costUsd: PROVIDER_CATALOG.google_cse.costPerQueryUsd,
+        results: parseGoogleCseResponse(json).slice(0, maxResults)
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        providerKey,
+        latencyMs: Date.now() - startedAt,
+        costUsd: 0,
+        results: [],
+        error: err?.message || "Google CSE search request failed."
+      };
+    }
+  }
+  if (providerKey === "brave_search") {
+    try {
+      const url = new URL("https://api.search.brave.com/res/v1/web/search");
+      url.searchParams.set("q", target.queryText);
+      url.searchParams.set("country", "NG");
+      url.searchParams.set("count", String(maxResults));
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "X-Subscription-Token": env.braveSearchApiKey
+        },
+        signal: AbortSignal.timeout(12e3)
+      });
+      const latencyMs = Date.now() - startedAt;
+      if (!response.ok) {
+        return {
+          ok: false,
+          providerKey,
+          httpStatus: response.status,
+          latencyMs,
+          costUsd: PROVIDER_CATALOG.brave_search.costPerQueryUsd,
+          results: [],
+          error: `Brave Search HTTP ${response.status}`
+        };
+      }
+      const json = await response.json();
+      return {
+        ok: true,
+        providerKey,
+        httpStatus: response.status,
+        latencyMs,
+        costUsd: PROVIDER_CATALOG.brave_search.costPerQueryUsd,
+        results: parseBraveSearchResponse(json).slice(0, maxResults)
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        providerKey,
+        latencyMs: Date.now() - startedAt,
+        costUsd: 0,
+        results: [],
+        error: err?.message || "Brave Search request failed."
+      };
+    }
+  }
+  if (providerKey === "approved_feed") {
+    if (!params.supabase) {
+      return {
+        ok: false,
+        providerKey,
+        latencyMs: Date.now() - startedAt,
+        costUsd: 0,
+        results: [],
+        error: "Supabase client unavailable for approved_feed lookup."
+      };
+    }
+    try {
+      const { data: sources, error } = await params.supabase.from("market_data_sources").select("id, name, domain, base_url, crawl_enabled, is_active").eq("is_active", true).eq("crawl_enabled", true).limit(8);
+      if (error || !sources || sources.length === 0) {
+        return {
+          ok: true,
+          providerKey,
+          latencyMs: Date.now() - startedAt,
+          costUsd: 0,
+          results: [],
+          error: error ? error.message : "No crawl-enabled public sources configured in market_data_sources."
+        };
+      }
+      const feedResults = [];
+      const targetMakeNorm = normalizeBrandName(target.make);
+      const targetModelNorm = normalizeModelName(target.model);
+      for (const src of sources.slice(0, 4)) {
+        const baseUrl = String(src.base_url || "").trim();
+        if (!baseUrl.startsWith("http")) continue;
+        const page = await fetchListingPageSafe(baseUrl);
+        if (!page.success) continue;
+        const textLower = `${page.title || ""} ${page.extractedText || ""}`.toLowerCase();
+        if (textLower.includes(targetMakeNorm) || textLower.includes(targetModelNorm)) {
+          feedResults.push({
+            providerKey: "approved_feed",
+            title: page.title || src.name || baseUrl,
+            url: normalizeListingUrl(page.finalUrl || baseUrl),
+            snippet: (page.extractedText || "").slice(0, 600),
+            sourceDomain: src.domain || extractDomainFromUrl(baseUrl),
+            publishedDate: page.fetchTimestamp,
+            detectedPriceNgn: extractNairaPriceFromText(page.extractedText)
+          });
+        }
+      }
+      return {
+        ok: true,
+        providerKey,
+        latencyMs: Date.now() - startedAt,
+        costUsd: 0,
+        results: feedResults
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        providerKey,
+        latencyMs: Date.now() - startedAt,
+        costUsd: 0,
+        results: [],
+        error: err?.message || "Failed reading approved feeds."
+      };
+    }
+  }
+  if (providerKey === "manifold_inventory") {
+    if (!params.supabase) {
+      return {
+        ok: false,
+        providerKey,
+        latencyMs: Date.now() - startedAt,
+        costUsd: 0,
+        results: [],
+        error: "Supabase client unavailable."
+      };
+    }
+    try {
+      const { data, error } = await params.supabase.from("cars").select("id, make, model, trim, year, condition, price, location, state, created_at").ilike("make", target.make).in("status", ["PUBLISHED", "published"]).limit(20);
+      if (error) {
+        return {
+          ok: false,
+          providerKey,
+          latencyMs: Date.now() - startedAt,
+          costUsd: 0,
+          results: [],
+          error: error.message
+        };
+      }
+      const normTargetModel = normalizeModelName(target.model);
+      const matching = (data || []).filter(
+        (c) => normalizeModelName(c.model) === normTargetModel
+      );
+      return {
+        ok: true,
+        providerKey,
+        latencyMs: Date.now() - startedAt,
+        costUsd: 0,
+        results: matching.slice(0, maxResults).map((row) => ({
+          providerKey: "manifold_inventory",
+          title: `${row.year} ${row.make} ${row.model}${row.trim ? ` ${row.trim}` : ""} (${formatMarketCategoryLabel(target.marketCategory)})`,
+          url: `https://manifold.ng/cars/${row.id}`,
+          snippet: `${row.condition || "Foreign Used"} \xB7 \u20A6${Number(row.price || 0).toLocaleString()} \xB7 ${row.location || row.state || "Nigeria"}`,
+          sourceDomain: "manifold.ng",
+          publishedDate: row.created_at,
+          detectedPriceNgn: Number(row.price || 0) || null
+        }))
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        providerKey,
+        latencyMs: Date.now() - startedAt,
+        costUsd: 0,
+        results: [],
+        error: err?.message || "Failed reading internal inventory."
+      };
+    }
+  }
+  return {
+    ok: false,
+    providerKey,
+    latencyMs: Date.now() - startedAt,
+    costUsd: 0,
+    results: [],
+    error: `Unknown provider ${providerKey}`
+  };
+}
+async function testProviderConnection(providerKey, supabase) {
+  const cfg = isProviderConfigured(providerKey);
+  if (!cfg.configured) {
+    return {
+      providerKey,
+      configured: false,
+      connected: false,
+      latencyMs: 0,
+      resultCount: 0,
+      message: `Not configured: missing ${cfg.missingEnvVars.join(", ")}.`
+    };
+  }
+  const probeTarget = {
+    make: "Toyota",
+    model: "Camry",
+    year: 2021,
+    trim: null,
+    marketCategory: "foreign_used",
+    location: "Lagos",
+    queryText: "2021 Toyota Camry foreign used Lagos price Nigeria",
+    demandScore: 10,
+    reason: "provider_connection_test"
+  };
+  const result = await executeProviderSearch({
+    providerKey,
+    target: probeTarget,
+    maxResults: 2,
+    supabase
+  });
+  return {
+    providerKey,
+    configured: true,
+    connected: result.ok,
+    latencyMs: result.latencyMs,
+    httpStatus: result.httpStatus,
+    resultCount: result.results.length,
+    sampleTitle: result.results[0]?.title,
+    message: result.ok ? `Connected cleanly (${result.latencyMs}ms \xB7 ${result.results.length} result(s)).` : `Connection failed: ${result.error || "Unknown error"}`
+  };
+}
+
+// server/services/pricingAgent/extractor.ts
+function inferSellerType(text, domain) {
+  const combined = `${domain} ${text}`.toLowerCase();
+  if (combined.includes("dealership") || combined.includes("motors") || combined.includes("autos") || combined.includes("auto gallery") || combined.includes("certified dealer")) {
+    return "dealer";
+  }
+  if (combined.includes("direct owner") || combined.includes("private seller") || combined.includes("owner selling")) {
+    return "private";
+  }
+  if (domain) return "marketplace";
+  return "unknown";
+}
+function collectJsonLdImageUrls(jsonLdItems) {
+  if (!Array.isArray(jsonLdItems)) return [];
+  const urls = [];
+  for (const item of jsonLdItems) {
+    if (!item || typeof item !== "object") continue;
+    if (typeof item.image === "string" && item.image.startsWith("http")) {
+      urls.push(item.image);
+    } else if (Array.isArray(item.image)) {
+      for (const img of item.image) {
+        if (typeof img === "string" && img.startsWith("http")) urls.push(img);
+        else if (img?.url && typeof img.url === "string" && img.url.startsWith("http")) {
+          urls.push(img.url);
+        }
+      }
+    }
+  }
+  return Array.from(new Set(urls)).slice(0, 5);
+}
+function extractFromStructuredJsonLd(jsonLdItems, sourceUrl, textEvidence, title) {
+  const results = [];
+  const normUrl = normalizeListingUrl(sourceUrl);
+  const domain = extractDomainFromUrl(normUrl) || "unknown";
+  const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  for (const item of jsonLdItems || []) {
+    if (!item || typeof item !== "object") continue;
+    const itemType = String(item["@type"] || "").toLowerCase();
+    if (!itemType.includes("car") && !itemType.includes("vehicle") && !itemType.includes("product") && !itemType.includes("offer")) {
+      continue;
+    }
+    const offer = Array.isArray(item.offers) ? item.offers[0] : item.offers || item;
+    const rawPrice = Number(
+      String(offer?.price ?? item.price ?? "").replace(/[^0-9.]/g, "")
+    );
+    const currency = String(offer?.priceCurrency || item.priceCurrency || "NGN").toUpperCase();
+    if (!Number.isFinite(rawPrice) || rawPrice < 3e5 || currency !== "NGN") {
+      continue;
+    }
+    const name = String(item.name || title || "").trim();
+    const make = String(item.brand?.name || item.brand || item.manufacturer || "").trim();
+    const model = String(item.model || "").trim();
+    const yearMatch = `${item.vehicleModelDate || item.modelDate || ""} ${name}`.match(
+      /\b(199\d|20[0-2]\d)\b/
+    );
+    const modelYear = yearMatch ? parseInt(yearMatch[1], 10) : 0;
+    if (!make || !model || !modelYear) continue;
+    const rawMileage = item.mileageFromOdometer?.value ?? item.mileageFromOdometer;
+    const mileage = rawMileage !== void 0 && rawMileage !== null && !isNaN(Number(rawMileage)) && Number(rawMileage) > 0 ? Math.round(Number(rawMileage)) : null;
+    const combinedText = `${name} ${item.description || ""} ${textEvidence}`;
+    let marketCategory = normalizeMarketCategory(
+      `${item.itemCondition || ""} ${combinedText}`
+    );
+    if (marketCategory === "unknown" && item.itemCondition?.includes("NewCondition")) {
+      marketCategory = "brand_new";
+    }
+    const conditionLabel = marketCategory === "foreign_used" ? "Foreign Used" : marketCategory === "nigerian_used" ? "Nigerian Used" : marketCategory === "brand_new" ? "Brand New" : "Unknown";
+    const location = String(
+      offer?.areaServed?.name || item.location?.name || item.contentLocation?.name || ""
+    ).trim() || null;
+    const missingFields = [];
+    if (mileage === null) missingFields.push("mileage");
+    if (!location) missingFields.push("location");
+    if (!item.vehicleConfiguration && !item.trim) missingFields.push("trim");
+    const imageUrls = collectJsonLdImageUrls([item]);
+    const sourceListingId = extractSourceListingId(sourceUrl, [item]);
+    const dedupeHash = computeDedupeHash({
+      normalizedUrl: normUrl,
+      sourceListingId,
+      make,
+      model,
+      year: modelYear,
+      marketCategory,
+      price: Math.round(rawPrice),
+      mileage,
+      location,
+      description: item.description || name,
+      imageUrls
+    });
+    results.push({
+      sourceWebsite: domain,
+      sourceUrl,
+      normalizedUrl: normUrl,
+      sourceListingId,
+      make,
+      model,
+      variant: item.vehicleEngine?.name || null,
+      trim: item.vehicleConfiguration || item.trim || null,
+      generation: null,
+      modelYear,
+      askingPrice: Math.round(rawPrice),
+      currency: "NGN",
+      mileage,
+      mileageUnit: "km",
+      condition: conditionLabel,
+      marketCategory,
+      transmission: item.vehicleTransmission || null,
+      fuelType: item.fuelType || null,
+      bodyType: item.bodyType || null,
+      drivetrain: item.driveWheelConfiguration || null,
+      engine: item.vehicleEngine?.engineDisplacement || null,
+      location,
+      sellerType: inferSellerType(combinedText, domain),
+      listingDate: typeof offer?.validFrom === "string" ? offer.validFrom.slice(0, 10) : null,
+      observationDate: today,
+      description: String(item.description || name).slice(0, 600),
+      imageUrls,
+      supportingEvidence: [`JSON-LD: ${name} \u2014 NGN ${Math.round(rawPrice).toLocaleString()}`],
+      missingFields,
+      uncertaintyReasons: [],
+      extractionConfidence: missingFields.length === 0 ? 0.94 : 0.85,
+      extractionMethod: "json_ld_structured",
+      qualityStatus: "valid",
+      rejectionReason: null,
+      dedupeHash
+    });
+  }
+  return results;
+}
+var OPENAI_LISTING_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["vehicles"],
+  properties: {
+    vehicles: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "make",
+          "model",
+          "model_year",
+          "advertised_price",
+          "currency",
+          "condition",
+          "supporting_evidence",
+          "confidence_score"
+        ],
+        properties: {
+          make: { type: "string" },
+          model: { type: "string" },
+          model_year: { type: "integer" },
+          trim: { type: ["string", "null"] },
+          variant: { type: ["string", "null"] },
+          body_type: { type: ["string", "null"] },
+          advertised_price: { type: "number" },
+          currency: { type: "string" },
+          mileage: { type: ["integer", "null"] },
+          condition: {
+            type: "string",
+            enum: ["Foreign Used", "Nigerian Used", "Brand New", "Unknown"]
+          },
+          transmission: { type: ["string", "null"] },
+          fuel_type: { type: ["string", "null"] },
+          location: { type: ["string", "null"] },
+          supporting_evidence: { type: "array", items: { type: "string" } },
+          confidence_score: { type: "number" }
+        }
+      }
+    }
+  }
+};
+async function extractListingDetails(params) {
+  const fetchResult = params.preFetchedResult ?? await fetchListingPageSafe(params.url);
+  if (!fetchResult.success) {
+    return {
+      fetchStatus: fetchResult.status,
+      httpStatus: fetchResult.httpStatus,
+      observations: [],
+      error: fetchResult.error
+    };
+  }
+  const finalUrl = fetchResult.finalUrl || params.url;
+  const normUrl = normalizeListingUrl(finalUrl);
+  const domain = extractDomainFromUrl(normUrl) || "unknown";
+  const title = fetchResult.title || params.titleHint || "";
+  const textBody = [title, fetchResult.metaDescription, fetchResult.extractedText].filter(Boolean).join("\n").trim();
+  const jsonLdRecords = extractFromStructuredJsonLd(
+    fetchResult.jsonLdItems || [],
+    finalUrl,
+    textBody,
+    title
+  );
+  if (jsonLdRecords.length > 0) {
+    return {
+      fetchStatus: fetchResult.status,
+      httpStatus: fetchResult.httpStatus,
+      observations: jsonLdRecords
+    };
+  }
+  let rawValidatedList = [];
+  let methodUsed = "gemini-2.5-flash";
+  if (isGeminiConfigured()) {
+    const gemRes = await extractVehiclesWithGemini(
+      textBody,
+      finalUrl,
+      title,
+      fetchResult.jsonLdItems
+    );
+    if (gemRes.success && gemRes.observations.length > 0) {
+      rawValidatedList = gemRes.observations.map((obs) => ({
+        valid: true,
+        observation: obs,
+        validationErrors: []
+      }));
+      methodUsed = gemRes.method;
+    }
+  } else if (getOpenAiConfigStatus().apiKeyConfigured && getOpenAiConfigStatus().modelConfigured) {
+    try {
+      const oaRes = await runStructuredJsonResponse({
+        instructions: `Extract factual Nigerian automotive asking-price observations from the webpage text.
+Never invent prices, mileage, model years, or locations. Only return NGN prices corroborated in the text.`,
+        input: JSON.stringify({ title, url: finalUrl, text: textBody.slice(0, 12e3) }),
+        schemaName: "pricing_agent_listing_extract",
+        schema: OPENAI_LISTING_SCHEMA,
+        maxOutputTokens: 900
+      });
+      methodUsed = oaRes.model;
+      for (const item of oaRes.data?.vehicles || []) {
+        rawValidatedList.push(
+          validateAndCrossCheckObservation(item, textBody, finalUrl, title)
+        );
+      }
+    } catch {
+    }
+  } else {
+    const detectedPrice = extractNairaPriceFromText(textBody);
+    const yearMatch = `${title} ${textBody.slice(0, 400)}`.match(/\b(199\d|20[0-2]\d)\b/);
+    if (detectedPrice && yearMatch && params.expectedMake && params.expectedModel) {
+      const hasMake = textBody.toLowerCase().includes(params.expectedMake.toLowerCase());
+      const hasModel = textBody.toLowerCase().includes(params.expectedModel.toLowerCase());
+      if (hasMake && hasModel) {
+        const inferredCat = normalizeMarketCategory(textBody);
+        const condLabel = inferredCat === "foreign_used" ? "Foreign Used" : inferredCat === "nigerian_used" ? "Nigerian Used" : inferredCat === "brand_new" ? "Brand New" : "Unknown";
+        rawValidatedList.push(
+          validateAndCrossCheckObservation(
+            {
+              make: params.expectedMake,
+              model: params.expectedModel,
+              model_year: parseInt(yearMatch[1], 10),
+              advertised_price: detectedPrice,
+              currency: "NGN",
+              condition: condLabel,
+              supporting_evidence: [`${title} \u2014 \u20A6${detectedPrice.toLocaleString()}`.trim()],
+              confidence_score: 0.72
+            },
+            textBody,
+            finalUrl,
+            title
+          )
+        );
+        methodUsed = "deterministic_parser";
+      }
+    }
+  }
+  const imageUrls = collectJsonLdImageUrls(fetchResult.jsonLdItems);
+  const observations = [];
+  for (const check of rawValidatedList) {
+    if (!check.valid || !check.observation) continue;
+    const obs = check.observation;
+    if (obs.currency !== "NGN" || obs.advertised_price < 3e5 || obs.model_year === 0) {
+      observations.push({
+        sourceWebsite: domain,
+        sourceUrl: finalUrl,
+        normalizedUrl: normUrl,
+        sourceListingId: extractSourceListingId(finalUrl, fetchResult.jsonLdItems),
+        make: obs.make,
+        model: obs.model,
+        variant: obs.variant ?? null,
+        trim: obs.trim ?? null,
+        generation: obs.generation ?? null,
+        modelYear: obs.model_year,
+        askingPrice: obs.advertised_price,
+        currency: obs.currency,
+        mileage: obs.mileage ?? null,
+        mileageUnit: obs.mileage_unit || "km",
+        condition: obs.condition,
+        marketCategory: normalizeMarketCategory(obs.condition),
+        transmission: obs.transmission ?? null,
+        fuelType: obs.fuel_type ?? null,
+        bodyType: obs.body_type ?? null,
+        drivetrain: obs.drivetrain ?? null,
+        engine: obs.engine ?? null,
+        location: obs.location ?? null,
+        sellerType: inferSellerType(textBody, domain),
+        listingDate: obs.observation_date ?? null,
+        observationDate: obs.observation_date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+        description: textBody.slice(0, 600),
+        imageUrls,
+        supportingEvidence: obs.supporting_evidence,
+        missingFields: obs.missing_fields,
+        uncertaintyReasons: obs.uncertainty_reasons,
+        extractionConfidence: obs.confidence_score,
+        extractionMethod: methodUsed,
+        qualityStatus: "rejected",
+        rejectionReason: obs.currency !== "NGN" ? `Non-NGN currency (${obs.currency}) excluded from direct Naira computation.` : obs.model_year === 0 ? "Missing model year." : "Asking price below valid Nigerian vehicle minimum threshold.",
+        dedupeHash: computeDedupeHash({
+          normalizedUrl: normUrl,
+          make: obs.make,
+          model: obs.model,
+          year: obs.model_year,
+          marketCategory: normalizeMarketCategory(obs.condition),
+          price: obs.advertised_price,
+          mileage: obs.mileage,
+          location: obs.location
+        })
+      });
+      continue;
+    }
+    const marketCategory = normalizeMarketCategory(
+      `${obs.condition} ${obs.import_status || ""} ${textBody.slice(0, 600)}`
+    );
+    const sourceListingId = extractSourceListingId(finalUrl, fetchResult.jsonLdItems);
+    const dedupeHash = computeDedupeHash({
+      normalizedUrl: normUrl,
+      sourceListingId,
+      make: obs.make,
+      model: obs.model,
+      year: obs.model_year,
+      marketCategory,
+      price: obs.advertised_price,
+      mileage: obs.mileage,
+      location: obs.location,
+      description: textBody.slice(0, 600),
+      imageUrls
+    });
+    observations.push({
+      sourceWebsite: domain,
+      sourceUrl: finalUrl,
+      normalizedUrl: normUrl,
+      sourceListingId,
+      make: obs.make,
+      model: obs.model,
+      variant: obs.variant ?? null,
+      trim: obs.trim ?? null,
+      generation: obs.generation ?? null,
+      modelYear: obs.model_year,
+      askingPrice: obs.advertised_price,
+      currency: "NGN",
+      mileage: obs.mileage ?? null,
+      mileageUnit: obs.mileage_unit || "km",
+      condition: marketCategory === "foreign_used" ? "Foreign Used" : marketCategory === "nigerian_used" ? "Nigerian Used" : marketCategory === "brand_new" ? "Brand New" : obs.condition,
+      marketCategory,
+      transmission: obs.transmission ?? null,
+      fuelType: obs.fuel_type ?? null,
+      bodyType: obs.body_type ?? null,
+      drivetrain: obs.drivetrain ?? null,
+      engine: obs.engine ?? null,
+      location: obs.location ?? null,
+      sellerType: inferSellerType(textBody, domain),
+      listingDate: obs.observation_date ?? null,
+      observationDate: obs.observation_date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+      description: textBody.slice(0, 600),
+      imageUrls,
+      supportingEvidence: obs.supporting_evidence,
+      missingFields: obs.missing_fields,
+      uncertaintyReasons: obs.uncertainty_reasons,
+      extractionConfidence: obs.confidence_score,
+      extractionMethod: methodUsed,
+      qualityStatus: obs.review_status === "rejected" ? "rejected" : "valid",
+      rejectionReason: obs.review_status === "rejected" ? obs.uncertainty_reasons.join("; ") : null,
+      dedupeHash
+    });
+  }
+  return {
+    fetchStatus: fetchResult.status,
+    httpStatus: fetchResult.httpStatus,
+    observations
+  };
+}
+
+// server/services/pricingAgent/queryBuilder.ts
+function formatSearchQueryText(target) {
+  const parts = [];
+  if (target.year && target.year >= 1990) parts.push(String(target.year));
+  parts.push(target.make.trim());
+  parts.push(target.model.trim());
+  if (target.trim) parts.push(target.trim.trim());
+  if (target.marketCategory === "foreign_used") parts.push("foreign used tokunbo");
+  else if (target.marketCategory === "nigerian_used") parts.push("nigerian used");
+  else if (target.marketCategory === "brand_new") parts.push("brand new");
+  if (target.location && !target.location.toLowerCase().includes("national")) {
+    parts.push(target.location.trim());
+  } else {
+    parts.push("Nigeria");
+  }
+  parts.push("price NGN");
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+async function buildTargetedQueries(params) {
+  const { supabase, config, explicitTargets, forceRefresh } = params;
+  const maxTargets = Math.max(1, Math.min(config.max_vehicles_per_run || 6, 25));
+  const candidateMap = /* @__PURE__ */ new Map();
+  const registerTarget = (item) => {
+    const makeNorm = normalizeBrandName(item.make);
+    const modelNorm = normalizeModelName(item.model);
+    if (!makeNorm || !modelNorm) return;
+    const category = item.marketCategory && item.marketCategory !== "unknown" ? item.marketCategory : "foreign_used";
+    const year = item.year && item.year >= 1985 ? item.year : null;
+    const key = `${makeNorm}|${modelNorm}|${year ?? "any"}|${category}`;
+    const existing = candidateMap.get(key);
+    if (existing) {
+      existing.demandScore = Math.max(existing.demandScore, item.demandScore) + 1;
+      return;
+    }
+    candidateMap.set(key, {
+      make: item.make.trim(),
+      model: item.model.trim(),
+      year,
+      trim: item.trim?.trim() || null,
+      marketCategory: category,
+      location: item.location?.trim() || "Nigeria",
+      queryText: formatSearchQueryText({
+        make: item.make,
+        model: item.model,
+        year,
+        trim: item.trim,
+        marketCategory: category,
+        location: item.location
+      }),
+      sourceCarId: item.sourceCarId,
+      demandScore: item.demandScore,
+      reason: item.reason
+    });
+  };
+  if (explicitTargets && explicitTargets.length > 0) {
+    for (const target of explicitTargets) {
+      registerTarget({
+        ...target,
+        demandScore: 100,
+        reason: "admin_targeted_research"
+      });
+    }
+  } else if (supabase) {
+    try {
+      const { data: cars } = await supabase.from("cars").select("id, make, model, year, trim, condition, state, location, created_at").in("status", ["PUBLISHED", "published"]).order("created_at", { ascending: false }).limit(40);
+      for (const car of cars || []) {
+        const category = normalizeMarketCategory(car.condition);
+        registerTarget({
+          make: String(car.make || ""),
+          model: String(car.model || ""),
+          year: car.year ? Number(car.year) : null,
+          trim: car.trim ? String(car.trim) : null,
+          marketCategory: category === "unknown" ? "foreign_used" : category,
+          location: car.state || car.location || "Nigeria",
+          sourceCarId: String(car.id),
+          demandScore: 60,
+          reason: "active_inventory_vehicle"
+        });
+      }
+    } catch {
+    }
+    try {
+      const { data: searches } = await supabase.from("ai_search_analytics").select("parsed_filters, created_at").order("created_at", { ascending: false }).limit(50);
+      for (const row of searches || []) {
+        const filters = row.parsed_filters || {};
+        if (filters.make && filters.model) {
+          registerTarget({
+            make: String(filters.make),
+            model: String(filters.model),
+            year: filters.yearMin ? Number(filters.yearMin) : null,
+            marketCategory: normalizeMarketCategory(filters.condition),
+            demandScore: 80,
+            reason: "buyer_search_demand"
+          });
+        }
+      }
+    } catch {
+    }
+  }
+  let candidates = Array.from(candidateMap.values()).sort(
+    (a, b) => b.demandScore - a.demandScore
+  );
+  let skippedFreshCount = 0;
+  if (!forceRefresh && supabase && candidates.length > 0) {
+    try {
+      const { data: existingEstimates } = await supabase.from("market_price_estimates").select("make, model, target_year, market_category, last_research_at, insufficient_data").eq("is_current", true).limit(200);
+      if (existingEstimates && existingEstimates.length > 0) {
+        const nowMs = Date.now();
+        candidates = candidates.filter((target) => {
+          const match = existingEstimates.find(
+            (est) => normalizeBrandName(est.make) === normalizeBrandName(target.make) && normalizeModelName(est.model) === normalizeModelName(target.model) && (est.target_year ?? null) === target.year && est.market_category === target.marketCategory
+          );
+          if (!match || !match.last_research_at) return true;
+          const ageHours = (nowMs - Date.parse(match.last_research_at)) / 36e5;
+          const thresholdHours = match.insufficient_data ? config.insufficient_retry_hours || 12 : target.demandScore >= 75 ? config.high_demand_interval_hours || 24 : config.standard_interval_hours || 72;
+          if (ageHours < thresholdHours) {
+            skippedFreshCount++;
+            return false;
+          }
+          return true;
+        });
+      }
+    } catch {
+    }
+  }
+  return {
+    targets: candidates.slice(0, maxTargets),
+    skippedFreshCount
+  };
+}
+
+// server/services/pricingAgent/agentRunner.ts
+var DEFAULT_AGENT_CONFIG = {
+  id: "default",
+  schedule_enabled: false,
+  is_paused: false,
+  default_frequency: "daily",
+  high_demand_interval_hours: 24,
+  standard_interval_hours: 72,
+  insufficient_retry_hours: 12,
+  max_vehicles_per_run: 5,
+  max_queries_per_run: 10,
+  max_fetches_per_query: 4,
+  max_daily_provider_queries: 50,
+  monthly_provider_budget_usd: 25,
+  provider_priority: ["serper", "google_cse", "brave_search", "approved_feed", "manifold_inventory"],
+  last_scheduled_run_at: null,
+  next_scheduled_run_at: null
+};
+async function loadPricingAgentConfig(supabase) {
+  if (!supabase) return { config: { ...DEFAULT_AGENT_CONFIG }, persisted: false };
+  try {
+    const { data, error } = await supabase.from("pricing_agent_config").select("*").eq("id", "default").maybeSingle();
+    if (error || !data) {
+      return { config: { ...DEFAULT_AGENT_CONFIG }, persisted: false };
+    }
+    return {
+      config: {
+        ...DEFAULT_AGENT_CONFIG,
+        ...data,
+        monthly_provider_budget_usd: Number(data.monthly_provider_budget_usd ?? 25),
+        provider_priority: Array.isArray(data.provider_priority) ? data.provider_priority : DEFAULT_AGENT_CONFIG.provider_priority
+      },
+      persisted: true
+    };
+  } catch {
+    return { config: { ...DEFAULT_AGENT_CONFIG }, persisted: false };
+  }
+}
+async function savePricingAgentConfig(supabase, patch) {
+  const { config: current } = await loadPricingAgentConfig(supabase);
+  const merged = {
+    ...current,
+    ...patch,
+    id: "default",
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (!supabase) {
+    return { config: merged, persisted: false, error: "Supabase client unavailable." };
+  }
+  try {
+    const { data, error } = await supabase.from("pricing_agent_config").upsert(merged, { onConflict: "id" }).select("*").maybeSingle();
+    if (error) {
+      return { config: merged, persisted: false, error: error.message };
+    }
+    return {
+      config: { ...merged, ...data || {} },
+      persisted: true
+    };
+  } catch (err) {
+    return { config: merged, persisted: false, error: err?.message || "Failed saving agent config." };
+  }
+}
+async function getProviderQuotaUsageSummary(supabase) {
+  const empty = {
+    queriesTodayTotal: 0,
+    queriesTodayByProvider: {},
+    monthSpendUsd: 0
+  };
+  if (!supabase) return empty;
+  const now = /* @__PURE__ */ new Date();
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  try {
+    const { data, error } = await supabase.from("pricing_provider_usage").select("provider_key, estimated_cost_usd, created_at").gte("created_at", startOfMonth).limit(2e3);
+    if (error || !data) return empty;
+    let queriesTodayTotal = 0;
+    let monthSpendUsd = 0;
+    const byProvider = {};
+    for (const row of data) {
+      monthSpendUsd += Number(row.estimated_cost_usd || 0);
+      if (row.created_at >= startOfDay) {
+        const key = row.provider_key;
+        if (key !== "manifold_inventory" && key !== "approved_feed") {
+          queriesTodayTotal++;
+        }
+        byProvider[key] = (byProvider[key] || 0) + 1;
+      }
+    }
+    return {
+      queriesTodayTotal,
+      queriesTodayByProvider: byProvider,
+      monthSpendUsd: Number(monthSpendUsd.toFixed(4))
+    };
+  } catch {
+    return empty;
+  }
+}
+async function fetchExistingObservationsAndCars(supabase, make, model) {
+  if (!supabase) return { baselineDedupe: [], candidates: [] };
+  const normMake = normalizeBrandName(make);
+  const normModel = normalizeModelName(model);
+  const baselineDedupe = [];
+  const candidates = [];
+  try {
+    const [carsRes, obsRes] = await Promise.all([
+      supabase.from("cars").select("id, make, model, trim, year, condition, mileage, location, state, price, created_at").ilike("make", make).in("status", ["PUBLISHED", "published"]).limit(100),
+      supabase.from("market_price_observations").select(
+        "id, make, model, trim, variant, generation, year, condition, market_category, mileage, location, price, currency, source_url, normalized_url, source_listing_id, publisher, observed_at, created_at, confidence_score, status, is_duplicate, quality_status, dedupe_hash, description, image_urls"
+      ).ilike("make", make).limit(200)
+    ]);
+    for (const row of carsRes.data || []) {
+      if (normalizeBrandName(row.make) !== normMake || normalizeModelName(row.model) !== normModel) {
+        continue;
+      }
+      candidates.push({
+        id: String(row.id),
+        make: String(row.make),
+        model: String(row.model),
+        year: Number(row.year),
+        trim: row.trim || null,
+        marketCategory: normalizeMarketCategory(row.condition),
+        condition: row.condition || "Foreign Used",
+        mileage: row.mileage != null ? Number(row.mileage) : null,
+        location: row.location || row.state || null,
+        price: Number(row.price),
+        currency: "NGN",
+        sourceWebsite: "manifold.ng",
+        sourceTrustLevel: "official",
+        observedAt: String(row.created_at || (/* @__PURE__ */ new Date()).toISOString()),
+        isDuplicate: false,
+        sourceType: "internal_asking"
+      });
+    }
+    for (const row of obsRes.data || []) {
+      if (normalizeBrandName(row.make) !== normMake || normalizeModelName(row.model) !== normModel) {
+        continue;
+      }
+      const cat = row.market_category && row.market_category !== "unknown" ? row.market_category : normalizeMarketCategory(row.condition);
+      baselineDedupe.push({
+        id: String(row.id),
+        normalizedUrl: row.normalized_url || normalizeListingUrl(row.source_url),
+        sourceListingId: row.source_listing_id || null,
+        make: String(row.make),
+        model: String(row.model),
+        year: Number(row.year),
+        marketCategory: cat,
+        price: Number(row.price),
+        mileage: row.mileage != null ? Number(row.mileage) : null,
+        location: row.location || null,
+        description: row.description || null,
+        imageUrls: Array.isArray(row.image_urls) ? row.image_urls : [],
+        dedupeHash: row.dedupe_hash || null
+      });
+      const isRejectedStatus = row.status === "rejected" || row.quality_status === "rejected" || row.quality_status === "outlier_excluded";
+      if (!isRejectedStatus && !row.is_duplicate) {
+        candidates.push({
+          id: String(row.id),
+          make: String(row.make),
+          model: String(row.model),
+          year: Number(row.year),
+          trim: row.trim || null,
+          variant: row.variant || null,
+          generation: row.generation || null,
+          marketCategory: cat,
+          condition: row.condition || "Unknown",
+          mileage: row.mileage != null ? Number(row.mileage) : null,
+          location: row.location || null,
+          price: Number(row.price),
+          currency: row.currency || "NGN",
+          sourceWebsite: row.publisher || extractDomainFromUrl(row.source_url) || "market_observation",
+          sourceUrl: row.source_url || null,
+          sourceTrustLevel: row.status === "approved" ? "verified" : "partner",
+          observedAt: String(row.observed_at || row.created_at || (/* @__PURE__ */ new Date()).toISOString()),
+          isDuplicate: Boolean(row.is_duplicate),
+          extractionConfidence: Number(row.confidence_score || 0.7),
+          sourceType: "external_observation"
+        });
+      }
+    }
+  } catch {
+  }
+  return { baselineDedupe, candidates };
+}
+async function persistMarketEstimateSnapshot(supabase, estimate, agentRunId) {
+  if (!supabase) return false;
+  try {
+    let updateQuery = supabase.from("market_price_estimates").update({ is_current: false }).eq("is_current", true).ilike("make", estimate.make).ilike("model", estimate.model).eq("market_category", estimate.marketCategory);
+    if (estimate.targetYear !== null) {
+      updateQuery = updateQuery.eq("target_year", estimate.targetYear);
+    } else {
+      updateQuery = updateQuery.is("target_year", null);
+    }
+    await updateQuery;
+    const { error } = await supabase.from("market_price_estimates").insert({
+      make: estimate.make,
+      model: estimate.model,
+      target_year: estimate.targetYear,
+      year_min: estimate.yearMin,
+      year_max: estimate.yearMax,
+      trim: estimate.trim,
+      market_category: estimate.marketCategory,
+      location: estimate.location,
+      currency: estimate.currency,
+      min_price: estimate.minPrice,
+      q1_price: estimate.q1Price,
+      median_price: estimate.medianPrice,
+      mean_price: estimate.meanPrice,
+      q3_price: estimate.q3Price,
+      max_price: estimate.maxPrice,
+      price_range_low: estimate.priceRangeLow,
+      price_range_high: estimate.priceRangeHigh,
+      market_estimate: estimate.marketEstimate,
+      price_distribution: estimate.priceDistribution,
+      valid_observation_count: estimate.validObservationCount,
+      rejected_observation_count: estimate.rejectedObservationCount,
+      duplicate_observation_count: estimate.duplicateObservationCount,
+      internal_listing_count: estimate.internalListingCount,
+      confidence_score: estimate.confidenceScore,
+      confidence_level: estimate.confidenceLevel,
+      confidence_breakdown: estimate.confidenceBreakdown,
+      estimation_methodology: estimate.estimationMethodology,
+      insufficient_data: estimate.insufficientData,
+      insufficiency_reason: estimate.insufficiencyReason,
+      last_research_at: estimate.lastResearchAt,
+      is_current: true,
+      agent_run_id: agentRunId
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+async function runPricingAgentResearch(options) {
+  const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const runId = crypto3.randomUUID();
+  const supabase = getSupabaseAdminClient() ?? getSupabaseClient(options.authHeader);
+  const { config } = await loadPricingAgentConfig(supabase);
+  if (config.is_paused && options.triggerType === "scheduled") {
+    return {
+      runId,
+      triggerType: options.triggerType,
+      status: "paused",
+      startedAt,
+      completedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      queriesExecuted: 0,
+      urlsFetched: 0,
+      observationsCollected: 0,
+      observationsRejected: 0,
+      duplicatesDetected: 0,
+      restrictedSourcesCount: 0,
+      estimatesUpdated: 0,
+      estimatedCostUsd: 0,
+      targetsProcessed: [],
+      providerUsage: {},
+      sourceOutcomes: [],
+      estimates: [],
+      persistedToDb: false,
+      notice: "Scheduled pricing agent runs are paused in configuration."
+    };
+  }
+  const quotaUsage = await getProviderQuotaUsageSummary(supabase);
+  const { targets, skippedFreshCount } = await buildTargetedQueries({
+    supabase,
+    config,
+    explicitTargets: options.explicitTargets,
+    forceRefresh: options.forceRefresh
+  });
+  if (targets.length === 0) {
+    return {
+      runId,
+      triggerType: options.triggerType,
+      status: "skipped_fresh",
+      startedAt,
+      completedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      queriesExecuted: 0,
+      urlsFetched: 0,
+      observationsCollected: 0,
+      observationsRejected: 0,
+      duplicatesDetected: 0,
+      restrictedSourcesCount: 0,
+      estimatesUpdated: 0,
+      estimatedCostUsd: 0,
+      targetsProcessed: [],
+      providerUsage: {},
+      sourceOutcomes: [],
+      estimates: [],
+      persistedToDb: false,
+      notice: skippedFreshCount > 0 ? `All ${skippedFreshCount} candidate vehicle(s) were recently researched within configured freshness windows.` : "No target vehicles available for research."
+    };
+  }
+  let runTableAvailable = false;
+  if (supabase) {
+    try {
+      const { error } = await supabase.from("pricing_agent_runs").insert({
+        id: runId,
+        trigger_type: options.triggerType,
+        triggered_by: options.triggeredBy || null,
+        status: "running",
+        target_vehicles: targets,
+        started_at: startedAt
+      });
+      runTableAvailable = !error;
+    } catch {
+      runTableAvailable = false;
+    }
+  }
+  let queriesExecuted = 0;
+  let urlsFetched = 0;
+  let observationsCollected = 0;
+  let observationsRejected = 0;
+  let duplicatesDetected = 0;
+  let estimatesUpdated = 0;
+  let estimatedCostUsd = 0;
+  const restrictedDomains = /* @__PURE__ */ new Set();
+  const fetchedUrlsInRun = /* @__PURE__ */ new Set();
+  const providerUsage = {};
+  const sourceOutcomes = [];
+  const estimates = [];
+  const activeExternalProviders = (config.provider_priority || []).filter(
+    (p) => p !== "manifold_inventory" && isProviderConfigured(p).configured
+  );
+  for (const target of targets) {
+    const { baselineDedupe, candidates } = await fetchExistingObservationsAndCars(
+      supabase,
+      target.make,
+      target.model
+    );
+    const localDedupePool = [...baselineDedupe];
+    const targetCandidates = [...candidates];
+    let targetRejected = 0;
+    let targetDuplicates = 0;
+    const providersToTry = activeExternalProviders.length > 0 ? activeExternalProviders : ["manifold_inventory"];
+    for (const providerKey of providersToTry) {
+      const isPaidSearchApi = providerKey !== "manifold_inventory" && providerKey !== "approved_feed";
+      if (isPaidSearchApi) {
+        if (queriesExecuted >= (config.max_queries_per_run || 10)) break;
+        if (quotaUsage.queriesTodayTotal + queriesExecuted >= (config.max_daily_provider_queries || 50)) {
+          break;
+        }
+        if (quotaUsage.monthSpendUsd + estimatedCostUsd >= (config.monthly_provider_budget_usd || 25)) {
+          break;
+        }
+      }
+      const searchRes = await executeProviderSearch({
+        providerKey,
+        target,
+        maxResults: config.max_fetches_per_query || 4,
+        supabase
+      });
+      queriesExecuted++;
+      estimatedCostUsd += searchRes.costUsd;
+      if (!providerUsage[providerKey]) {
+        providerUsage[providerKey] = { queries: 0, results: 0, errors: 0, costUsd: 0 };
+      }
+      providerUsage[providerKey].queries++;
+      providerUsage[providerKey].results += searchRes.results.length;
+      providerUsage[providerKey].costUsd += searchRes.costUsd;
+      if (!searchRes.ok) providerUsage[providerKey].errors++;
+      if (supabase && runTableAvailable) {
+        try {
+          await supabase.from("pricing_provider_usage").insert({
+            agent_run_id: runId,
+            provider_key: providerKey,
+            query_text: target.queryText,
+            results_count: searchRes.results.length,
+            http_status: searchRes.httpStatus || null,
+            latency_ms: searchRes.latencyMs,
+            estimated_cost_usd: searchRes.costUsd,
+            error_message: searchRes.error || null
+          });
+        } catch {
+        }
+      }
+      if (providerKey === "manifold_inventory") {
+        continue;
+      }
+      let fetchedForQuery = 0;
+      for (const hit of searchRes.results) {
+        if (fetchedForQuery >= (config.max_fetches_per_query || 4)) break;
+        const normHitUrl = normalizeListingUrl(hit.url);
+        const domain = hit.sourceDomain || extractDomainFromUrl(normHitUrl);
+        if (domain && restrictedDomains.has(domain)) {
+          sourceOutcomes.push({
+            url: hit.url,
+            domain,
+            providerKey,
+            status: "BLOCKED_BY_PROTECTION",
+            extractedCount: 0,
+            validCount: 0,
+            rejectedCount: 0,
+            duplicateCount: 0,
+            error: `Skipped ${domain}: previously blocked automated access in this run.`
+          });
+          continue;
+        }
+        if (fetchedUrlsInRun.has(normHitUrl)) {
+          sourceOutcomes.push({
+            url: hit.url,
+            domain,
+            providerKey,
+            status: "SKIPPED_DUPLICATE_URL",
+            extractedCount: 0,
+            validCount: 0,
+            rejectedCount: 0,
+            duplicateCount: 1
+          });
+          targetDuplicates++;
+          duplicatesDetected++;
+          continue;
+        }
+        fetchedUrlsInRun.add(normHitUrl);
+        fetchedForQuery++;
+        urlsFetched++;
+        const extraction = await extractListingDetails({
+          url: hit.url,
+          titleHint: hit.title,
+          snippetHint: hit.snippet,
+          expectedMake: target.make,
+          expectedModel: target.model,
+          expectedCategory: target.marketCategory
+        });
+        if (extraction.fetchStatus === "BLOCKED_BY_PROTECTION") {
+          if (domain) restrictedDomains.add(domain);
+          sourceOutcomes.push({
+            url: hit.url,
+            domain,
+            providerKey,
+            status: "BLOCKED_BY_PROTECTION",
+            httpStatus: extraction.httpStatus,
+            extractedCount: 0,
+            validCount: 0,
+            rejectedCount: 0,
+            duplicateCount: 0,
+            error: extraction.error
+          });
+          continue;
+        }
+        if (extraction.fetchStatus === "SSRF_BLOCKED" || extraction.fetchStatus === "RENDERING_REQUIRED" || extraction.fetchStatus === "FAILED") {
+          sourceOutcomes.push({
+            url: hit.url,
+            domain,
+            providerKey,
+            status: extraction.fetchStatus,
+            httpStatus: extraction.httpStatus,
+            extractedCount: 0,
+            validCount: 0,
+            rejectedCount: 0,
+            duplicateCount: 0,
+            error: extraction.error
+          });
+          continue;
+        }
+        let outcomeValid = 0;
+        let outcomeRejected = 0;
+        let outcomeDupes = 0;
+        for (const obs of extraction.observations) {
+          const dupCheck = detectDuplicateObservation(
+            {
+              normalizedUrl: obs.normalizedUrl,
+              sourceListingId: obs.sourceListingId,
+              make: obs.make,
+              model: obs.model,
+              year: obs.modelYear,
+              marketCategory: obs.marketCategory,
+              price: obs.askingPrice,
+              mileage: obs.mileage,
+              location: obs.location,
+              description: obs.description,
+              imageUrls: obs.imageUrls,
+              dedupeHash: obs.dedupeHash
+            },
+            localDedupePool
+          );
+          const isValid = obs.qualityStatus === "valid" && !dupCheck.isDuplicate;
+          if (dupCheck.isDuplicate) {
+            outcomeDupes++;
+            targetDuplicates++;
+            duplicatesDetected++;
+          } else if (obs.qualityStatus !== "valid") {
+            outcomeRejected++;
+            targetRejected++;
+            observationsRejected++;
+          } else {
+            outcomeValid++;
+            observationsCollected++;
+          }
+          let persistedId = `obs-${crypto3.randomBytes(5).toString("hex")}`;
+          if (supabase) {
+            try {
+              const { data: insertedObs } = await supabase.from("market_price_observations").insert({
+                make: obs.make,
+                model: obs.model,
+                year: obs.modelYear,
+                trim: obs.trim,
+                variant: obs.variant,
+                generation: obs.generation,
+                body_type: obs.bodyType,
+                drivetrain: obs.drivetrain,
+                price: obs.askingPrice,
+                currency: obs.currency,
+                mileage: obs.mileage,
+                mileage_unit: obs.mileageUnit,
+                condition: obs.condition,
+                market_category: obs.marketCategory,
+                seller_type: obs.sellerType,
+                location: obs.location,
+                transmission: obs.transmission,
+                fuel_type: obs.fuelType,
+                engine: obs.engine,
+                source_url: obs.sourceUrl,
+                normalized_url: obs.normalizedUrl,
+                source_listing_id: obs.sourceListingId,
+                publisher: obs.sourceWebsite,
+                listing_date: obs.listingDate,
+                observed_at: obs.observationDate,
+                description: obs.description,
+                image_urls: obs.imageUrls,
+                confidence_score: obs.extractionConfidence,
+                status: obs.qualityStatus === "rejected" || dupCheck.isDuplicate ? "rejected" : obs.extractionConfidence >= 0.8 ? "approved" : "pending_review",
+                quality_status: obs.qualityStatus,
+                is_duplicate: dupCheck.isDuplicate,
+                duplicate_reason: dupCheck.reason,
+                dedupe_hash: dupCheck.dedupeHash,
+                rejection_reason: obs.rejectionReason || dupCheck.reason,
+                notes: `Agent ${obs.extractionMethod}: ${obs.supportingEvidence.join("; ")}`.slice(0, 500),
+                agent_run_id: runTableAvailable ? runId : null
+              }).select("id").maybeSingle();
+              if (insertedObs?.id) persistedId = insertedObs.id;
+            } catch {
+            }
+          }
+          localDedupePool.push({
+            id: persistedId,
+            normalizedUrl: obs.normalizedUrl,
+            sourceListingId: obs.sourceListingId,
+            make: obs.make,
+            model: obs.model,
+            year: obs.modelYear,
+            marketCategory: obs.marketCategory,
+            price: obs.askingPrice,
+            mileage: obs.mileage,
+            location: obs.location,
+            description: obs.description,
+            imageUrls: obs.imageUrls,
+            dedupeHash: dupCheck.dedupeHash
+          });
+          if (isValid) {
+            targetCandidates.push({
+              id: persistedId,
+              make: obs.make,
+              model: obs.model,
+              year: obs.modelYear,
+              trim: obs.trim,
+              variant: obs.variant,
+              generation: obs.generation,
+              marketCategory: obs.marketCategory,
+              condition: obs.condition,
+              mileage: obs.mileage,
+              location: obs.location,
+              price: obs.askingPrice,
+              currency: "NGN",
+              sourceWebsite: obs.sourceWebsite,
+              sourceUrl: obs.sourceUrl,
+              sourceTrustLevel: obs.extractionConfidence >= 0.85 ? "verified" : "partner",
+              observedAt: obs.observationDate,
+              isDuplicate: false,
+              extractionConfidence: obs.extractionConfidence,
+              sourceType: "external_observation"
+            });
+          }
+        }
+        sourceOutcomes.push({
+          url: hit.url,
+          domain,
+          providerKey,
+          status: extraction.fetchStatus,
+          httpStatus: extraction.httpStatus,
+          extractedCount: extraction.observations.length,
+          validCount: outcomeValid,
+          rejectedCount: outcomeRejected,
+          duplicateCount: outcomeDupes
+        });
+      }
+      if (targetCandidates.length >= 8) break;
+    }
+    const estimate = calculateMarketPriceEstimate({
+      subject: {
+        make: target.make,
+        model: target.model,
+        year: target.year,
+        trim: target.trim,
+        marketCategory: target.marketCategory,
+        location: target.location
+      },
+      candidates: targetCandidates,
+      additionalRejectedCount: targetRejected,
+      additionalDuplicateCount: targetDuplicates
+    });
+    estimates.push(estimate);
+    const savedEst = await persistMarketEstimateSnapshot(supabase, estimate, runId);
+    if (savedEst) estimatesUpdated++;
+  }
+  const completedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const finalStatus = activeExternalProviders.length === 0 && estimates.length > 0 ? "partial" : estimates.length > 0 ? "completed" : "failed";
+  let persistedRun = false;
+  if (supabase && runTableAvailable) {
+    try {
+      const { error } = await supabase.from("pricing_agent_runs").update({
+        status: finalStatus,
+        queries_executed: queriesExecuted,
+        urls_fetched: urlsFetched,
+        observations_collected: observationsCollected,
+        observations_rejected: observationsRejected,
+        duplicates_detected: duplicatesDetected,
+        restricted_sources_count: restrictedDomains.size,
+        estimates_updated: estimatesUpdated,
+        estimated_cost_usd: Number(estimatedCostUsd.toFixed(4)),
+        provider_usage: providerUsage,
+        source_outcomes: sourceOutcomes.slice(0, 50),
+        completed_at: completedAt
+      }).eq("id", runId);
+      persistedRun = !error;
+    } catch {
+      persistedRun = false;
+    }
+  }
+  return {
+    runId,
+    triggerType: options.triggerType,
+    status: finalStatus,
+    startedAt,
+    completedAt,
+    queriesExecuted,
+    urlsFetched,
+    observationsCollected,
+    observationsRejected,
+    duplicatesDetected,
+    restrictedSourcesCount: restrictedDomains.size,
+    estimatesUpdated,
+    estimatedCostUsd: Number(estimatedCostUsd.toFixed(4)),
+    targetsProcessed: targets,
+    providerUsage,
+    sourceOutcomes,
+    estimates,
+    persistedToDb: persistedRun,
+    notice: activeExternalProviders.length === 0 ? "No external search API keys (SERPER_API_KEY, GOOGLE_CSE_API_KEY, BRAVE_SEARCH_API_KEY) are configured; estimates reflect internal MANIFOLD listings and previously approved observations." : void 0
+  };
+}
+
+// server/services/pricingAgent/scheduler.ts
+init_supabaseServer();
+function computeNextScheduledRunAt(frequency, fromDate = /* @__PURE__ */ new Date()) {
+  if (frequency === "manual") return null;
+  const next = new Date(fromDate.getTime());
+  if (frequency === "weekly") {
+    next.setUTCDate(next.getUTCDate() + 7);
+  } else {
+    next.setUTCHours(next.getUTCHours() + 24);
+  }
+  return next.toISOString();
+}
+async function runDueScheduledResearch(options) {
+  const supabase = getSupabaseAdminClient();
+  const { config } = await loadPricingAgentConfig(supabase);
+  if (!options?.force) {
+    if (!config.schedule_enabled) {
+      return { executed: false, reason: "Schedule is currently disabled in pricing_agent_config." };
+    }
+    if (config.is_paused) {
+      return { executed: false, reason: "Pricing agent schedule is paused." };
+    }
+    if (config.default_frequency === "manual") {
+      return { executed: false, reason: "Agent frequency is set to manual." };
+    }
+    if (config.next_scheduled_run_at) {
+      const nextMs = Date.parse(config.next_scheduled_run_at);
+      if (Number.isFinite(nextMs) && Date.now() < nextMs) {
+        return {
+          executed: false,
+          reason: `Next scheduled run is due at ${config.next_scheduled_run_at}.`
+        };
+      }
+    }
+  }
+  const runResult = await runPricingAgentResearch({
+    triggerType: "scheduled",
+    triggeredBy: "cron_scheduler",
+    forceRefresh: Boolean(options?.force)
+  });
+  const now = /* @__PURE__ */ new Date();
+  await savePricingAgentConfig(supabase, {
+    last_scheduled_run_at: now.toISOString(),
+    next_scheduled_run_at: computeNextScheduledRunAt(config.default_frequency, now)
+  });
+  return {
+    executed: true,
+    runResult
+  };
+}
+
+// server/routes/pricingAgent.ts
+var router2 = Router2();
+var PROVIDER_KEYS = [
+  "manifold_inventory",
+  "approved_feed",
+  "serper",
+  "google_cse",
+  "brave_search"
+];
+var ConfigPatchSchema = z.object({
+  schedule_enabled: z.boolean().optional(),
+  is_paused: z.boolean().optional(),
+  default_frequency: z.enum(["daily", "weekly", "manual"]).optional(),
+  high_demand_interval_hours: z.number().int().min(1).max(720).optional(),
+  standard_interval_hours: z.number().int().min(6).max(720).optional(),
+  insufficient_retry_hours: z.number().int().min(1).max(336).optional(),
+  max_vehicles_per_run: z.number().int().min(1).max(25).optional(),
+  max_queries_per_run: z.number().int().min(1).max(50).optional(),
+  max_fetches_per_query: z.number().int().min(1).max(10).optional(),
+  max_daily_provider_queries: z.number().int().min(1).max(1e3).optional(),
+  monthly_provider_budget_usd: z.number().min(0).max(5e3).optional(),
+  provider_priority: z.array(z.enum(PROVIDER_KEYS)).min(1).max(5).optional()
+});
+var RunRequestSchema = z.object({
+  forceRefresh: z.boolean().optional().default(true),
+  targets: z.array(
+    z.object({
+      make: z.string().trim().min(1).max(80),
+      model: z.string().trim().min(1).max(80),
+      year: z.number().int().min(1985).max(2028).nullable().optional(),
+      trim: z.string().trim().max(80).nullable().optional(),
+      marketCategory: z.enum(["foreign_used", "nigerian_used", "brand_new", "unknown"]).optional(),
+      location: z.string().trim().max(120).nullable().optional()
+    })
+  ).max(10).optional()
+});
+var TestProviderSchema = z.object({
+  providerKey: z.enum(PROVIDER_KEYS)
+});
+function verifyCronSecret(authHeader) {
+  const { cronSecret } = getServerEnv();
+  if (!cronSecret || !authHeader) return false;
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return false;
+  const expectedBuf = Buffer.from(cronSecret, "utf8");
+  const providedBuf = Buffer.from(token, "utf8");
+  if (expectedBuf.length !== providedBuf.length) return false;
+  return crypto4.timingSafeEqual(expectedBuf, providedBuf);
+}
+router2.get("/migration-sql", standardApiLimiter, (_req, res) => {
+  sendMigrationSqlFile("pricing-agent-migration.sql", "-- Pricing agent migration SQL missing.", res);
+});
+router2.get(
+  "/status",
+  requireAuth,
+  requireAdmin,
+  standardApiLimiter,
+  async (req, res) => {
+    const supabase = getSupabaseAdminClient() ?? req.auth?.supabase ?? getSupabaseClient(req.headers.authorization);
+    const tables = [
+      "market_price_estimates",
+      "pricing_agent_config",
+      "pricing_agent_runs",
+      "pricing_provider_usage"
+    ];
+    const tableChecks = {};
+    if (supabase) {
+      for (const t of tables) {
+        const { error } = await supabase.from(t).select("id").limit(1);
+        if (error) {
+          tableChecks[t] = { exists: false, error: error.message };
+        } else {
+          const { count } = await supabase.from(t).select("id", { count: "exact", head: true });
+          tableChecks[t] = { exists: true, count: count ?? 0 };
+        }
+      }
+    }
+    const tablesExist = Boolean(supabase) && Object.values(tableChecks).every((c) => c.exists);
+    const { config, persisted } = await loadPricingAgentConfig(supabase);
+    const usage = await getProviderQuotaUsageSummary(supabase);
+    const providers = getProvidersStatus(
+      usage.queriesTodayByProvider,
+      config.max_daily_provider_queries
+    );
+    const { cronSecret } = getServerEnv();
+    return res.json({
+      tablesExist,
+      migrationRequired: !tablesExist,
+      migrationFilePath: "src/db/pricing-agent-migration.sql",
+      tableChecks,
+      configPersisted: persisted,
+      config,
+      cronSecretConfigured: Boolean(cronSecret),
+      usage,
+      providers
+    });
+  }
+);
+router2.patch(
+  "/config",
+  requireAuth,
+  requireAdmin,
+  standardApiLimiter,
+  async (req, res) => {
+    const parsed = ConfigPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: parsed.error.issues[0]?.message || "Invalid pricing agent configuration payload."
+      });
+    }
+    const supabase = getSupabaseAdminClient() ?? req.auth?.supabase ?? getSupabaseClient(req.headers.authorization);
+    const { config: existing } = await loadPricingAgentConfig(supabase);
+    const patch = { ...parsed.data };
+    const nextFreq = parsed.data.default_frequency ?? existing.default_frequency;
+    const nextEnabled = parsed.data.schedule_enabled ?? existing.schedule_enabled;
+    if (nextEnabled && nextFreq !== "manual") {
+      patch.next_scheduled_run_at = computeNextScheduledRunAt(nextFreq);
+    } else if (!nextEnabled || nextFreq === "manual") {
+      patch.next_scheduled_run_at = null;
+    }
+    const saved = await savePricingAgentConfig(supabase, patch);
+    return res.json({
+      config: saved.config,
+      persistedToDb: saved.persisted,
+      warning: saved.error
+    });
+  }
+);
+router2.post(
+  "/providers/test",
+  requireAuth,
+  requireAdmin,
+  aiIngestionLimiter,
+  async (req, res) => {
+    const parsed = TestProviderSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid providerKey." });
+    }
+    const supabase = getSupabaseAdminClient() ?? req.auth?.supabase ?? getSupabaseClient(req.headers.authorization);
+    const result = await testProviderConnection(parsed.data.providerKey, supabase);
+    return res.json(result);
+  }
+);
+router2.post(
+  "/run",
+  requireAuth,
+  requireAdmin,
+  aiIngestionLimiter,
+  async (req, res) => {
+    const parsed = RunRequestSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: parsed.error.issues[0]?.message || "Invalid pricing agent run payload."
+      });
+    }
+    const triggerType = parsed.data.targets && parsed.data.targets.length > 0 ? "targeted" : "manual";
+    const result = await runPricingAgentResearch({
+      triggerType,
+      triggeredBy: req.auth?.user?.id || "admin",
+      explicitTargets: parsed.data.targets,
+      forceRefresh: parsed.data.forceRefresh,
+      authHeader: req.headers.authorization
+    });
+    return res.json(result);
+  }
+);
+router2.get(
+  "/runs",
+  requireAuth,
+  requireAdmin,
+  standardApiLimiter,
+  async (req, res) => {
+    const supabase = getSupabaseAdminClient() ?? req.auth?.supabase ?? getSupabaseClient(req.headers.authorization);
+    if (!supabase) {
+      return res.json({ runs: [], providerUsage: [], migrationRequired: true });
+    }
+    const [runsRes, usageRes] = await Promise.all([
+      supabase.from("pricing_agent_runs").select("*").order("started_at", { ascending: false }).limit(20),
+      supabase.from("pricing_provider_usage").select("*").order("created_at", { ascending: false }).limit(40)
+    ]);
+    return res.json({
+      migrationRequired: Boolean(runsRes.error),
+      runs: runsRes.data || [],
+      providerUsage: usageRes.data || []
+    });
+  }
+);
+router2.get(
+  "/estimates",
+  optionalAuth,
+  standardApiLimiter,
+  async (req, res) => {
+    const supabase = getSupabaseAdminClient() ?? req.auth?.supabase ?? getSupabaseClient(req.headers.authorization);
+    if (!supabase) {
+      return res.json({ estimates: [], history: [], migrationRequired: true });
+    }
+    const make = typeof req.query.make === "string" ? req.query.make.trim() : "";
+    const model = typeof req.query.model === "string" ? req.query.model.trim() : "";
+    const category = typeof req.query.marketCategory === "string" ? req.query.marketCategory.trim() : "";
+    const includeHistory = req.query.includeHistory === "true";
+    let currentQuery = supabase.from("market_price_estimates").select("*").eq("is_current", true).order("last_research_at", { ascending: false }).limit(50);
+    if (make) currentQuery = currentQuery.ilike("make", make);
+    if (model) currentQuery = currentQuery.ilike("model", `%${model}%`);
+    if (category) currentQuery = currentQuery.eq("market_category", category);
+    const { data, error } = await currentQuery;
+    if (error) {
+      return res.json({
+        estimates: [],
+        history: [],
+        migrationRequired: true,
+        error: error.message
+      });
+    }
+    let history = [];
+    if (includeHistory && make && model) {
+      let histQuery = supabase.from("market_price_estimates").select(
+        "id, make, model, target_year, market_category, median_price, price_range_low, price_range_high, valid_observation_count, confidence_score, confidence_level, last_research_at, is_current"
+      ).ilike("make", make).ilike("model", `%${model}%`).order("last_research_at", { ascending: false }).limit(25);
+      if (category) histQuery = histQuery.eq("market_category", category);
+      const histRes = await histQuery;
+      history = histRes.data || [];
+    }
+    return res.json({
+      estimates: data || [],
+      history,
+      migrationRequired: false
+    });
+  }
+);
+router2.all("/cron", aiIngestionLimiter, async (req, res) => {
+  const authHeader = req.headers.authorization;
+  let authorized = verifyCronSecret(authHeader);
+  if (!authorized && authHeader) {
+    const userCheck = await verifySupabaseUser(authHeader);
+    if (userCheck.ok) {
+      const adminCheck = await verifyActiveAdmin(userCheck.supabase, userCheck.user);
+      if (adminCheck.isAdmin) authorized = true;
+    }
+  }
+  if (!authorized) {
+    return res.status(401).json({
+      error: "Unauthorized scheduled job trigger. Valid CRON_SECRET or active administrator session required."
+    });
+  }
+  const force = req.query.force === "true" || req.body?.force === true;
+  const result = await runDueScheduledResearch({ force });
+  return res.json(result);
+});
+var pricingAgentRouter = router2;
+
+// server/routes/marketIntelligence.ts
+var router3 = Router3();
+router3.use("/agent", pricingAgentRouter);
+router3.get("/health", standardApiLimiter, (_req, res) => {
+  const { supabaseUrl, supabaseAnonKey } = getServerEnv();
+  res.json({
+    status: "ok",
+    geminiConfigured: isGeminiConfigured(),
+    geminiModel: "gemini-2.5-flash",
+    embeddingModel: "gemini-embedding-2-preview",
+    heuristicFallbackEnabled: false,
+    supabaseConfigured: Boolean(supabaseUrl && supabaseAnonKey),
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+});
+router3.get("/db-migration-status", standardApiLimiter, async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const supabase = getSupabaseClient(authHeader);
+  if (!supabase) {
+    return res.json({
+      configured: false,
+      tablesExist: false,
+      error: "Supabase URL or Key not set in environment."
+    });
+  }
+  const tableChecks = {};
+  const tables = [
+    "knowledge_base",
+    "market_data_sources",
+    "market_data_submissions",
+    "market_crawl_jobs",
+    "market_price_observations",
+    "market_observation_revisions"
+  ];
+  for (const t of tables) {
+    const { error } = await supabase.from(t).select("id").limit(1);
+    if (error) {
+      const msg = error.code === "42501" ? "Permission denied (table requires least-privilege migration grants)" : error.message || `Table not accessible (code: ${error.code})`;
+      tableChecks[t] = { exists: false, code: error.code, error: msg };
+    } else {
+      const { count } = await supabase.from(t).select("id", { count: "exact", head: true });
+      tableChecks[t] = { exists: true, count: count ?? 0 };
+    }
+  }
+  const { data: _rpcData, error: rpcError } = await supabase.rpc("match_knowledge", {
+    query_embedding: Array(768).fill(0),
+    match_threshold: 0.1,
+    match_count: 1
+  });
+  const rpcExists = !rpcError || !rpcError.message.includes("Could not find the function");
+  const allTablesExist = Object.values(tableChecks).every((c) => c.exists);
+  return res.json({
+    configured: true,
+    tablesExist: allTablesExist,
+    migrationRequired: !allTablesExist,
+    tableChecks,
+    rpcMatchKnowledge: {
+      exists: rpcExists,
+      error: rpcError ? rpcError.message : null
+    },
+    migrationFilePath: "src/db/market-intelligence-migration.sql"
+  });
+});
+router3.get("/migration-sql", standardApiLimiter, (_req, res) => {
+  sendMigrationSqlFile("market-intelligence-migration.sql", "-- Migration file not found.", res);
+});
+router3.post(
+  "/fetch-url",
+  requireAuth,
+  requireAdmin,
+  aiIngestionLimiter,
+  validateFetchUrlBody,
+  async (req, res) => {
+    const { url } = req.body;
+    const authHeader = req.headers.authorization;
+    const fetchResult = await fetchListingPageSafe(url);
+    if (!fetchResult.success) {
+      return res.status(200).json({
+        success: false,
+        status: fetchResult.status,
+        httpStatus: fetchResult.httpStatus,
+        submittedUrl: fetchResult.submittedUrl,
+        finalUrl: fetchResult.finalUrl,
+        error: fetchResult.error,
+        items: []
+      });
+    }
+    const extractionResult = await extractVehiclesWithGemini(
+      fetchResult.extractedText || "",
+      fetchResult.finalUrl,
+      fetchResult.title || "",
+      fetchResult.jsonLdItems
+    );
+    const dbTrace = await persistExtractionTrace(
+      authHeader,
+      "url",
+      url,
+      fetchResult,
+      extractionResult.observations,
+      extractionResult.error
+    );
+    return res.json({
+      success: extractionResult.success,
+      status: fetchResult.status,
+      httpStatus: fetchResult.httpStatus,
+      submittedUrl: fetchResult.submittedUrl,
+      finalUrl: fetchResult.finalUrl,
+      fetchTimestamp: fetchResult.fetchTimestamp,
+      contentLength: fetchResult.contentLength,
+      extractionMethod: extractionResult.method,
+      extractionError: extractionResult.error,
+      traceableSubmissionId: dbTrace.submissionId,
+      observationIds: dbTrace.observationIds,
+      supabaseSynced: dbTrace.supabaseSynced,
+      dbNotice: dbTrace.dbError,
+      itemsCount: extractionResult.observations.length,
+      items: extractionResult.observations
+    });
+  }
+);
+router3.post(
+  "/extract-text",
+  requireAuth,
+  requireAdmin,
+  aiIngestionLimiter,
+  validateExtractTextBody,
+  async (req, res) => {
+    const { text, sourceUrl, publisher } = req.body;
+    const authHeader = req.headers.authorization;
+    const extractionResult = await extractVehiclesWithGemini(
+      text,
+      sourceUrl || "manual-paste",
+      publisher || "Pasted Market Listing"
+    );
+    const dbTrace = await persistExtractionTrace(
+      authHeader,
+      "text",
+      text,
+      null,
+      extractionResult.observations,
+      extractionResult.error
+    );
+    return res.json({
+      success: extractionResult.success,
+      extractionMethod: extractionResult.method,
+      extractionError: extractionResult.error,
+      traceableSubmissionId: dbTrace.submissionId,
+      observationIds: dbTrace.observationIds,
+      supabaseSynced: dbTrace.supabaseSynced,
+      dbNotice: dbTrace.dbError,
+      itemsCount: extractionResult.observations.length,
+      items: extractionResult.observations
+    });
+  }
+);
+router3.post(
+  "/embed",
+  requireAuth,
+  requireAdmin,
+  aiIngestionLimiter,
+  validateEmbedBody,
+  async (req, res) => {
+    const { text } = req.body;
+    const genAI = getGenAI();
+    if (!genAI) {
+      return res.status(503).json({
+        error: "Gemini API is not configured. Embeddings require process.env.GEMINI_API_KEY."
+      });
+    }
+    try {
+      const result = await genAI.models.embedContent({
+        model: "gemini-embedding-2-preview",
+        contents: text,
+        config: {
+          outputDimensionality: 768
+        }
+      });
+      const values = result.embeddings?.[0]?.values || [];
+      return res.json({
+        success: true,
+        model: "gemini-embedding-2-preview",
+        dimensions: values.length,
+        embedding: values
+      });
+    } catch (err) {
+      console.error("[MANIFOLD Server] Embedding generation error:", err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || "Failed to generate embedding with gemini-embedding-2-preview"
+      });
+    }
+  }
+);
+router3.post(
+  "/search-knowledge",
+  standardApiLimiter,
+  validateSearchKnowledgeBody,
+  async (req, res) => {
+    const { query, limit = 5 } = req.body;
+    const authHeader = req.headers.authorization;
+    const supabase = getSupabaseClient(authHeader);
+    if (!supabase) {
+      return res.status(503).json({ error: "Supabase client not configured." });
+    }
+    try {
+      const { data, error } = await supabase.from("knowledge_base").select("id, title, content, category, metadata, source_url").eq("status", "approved").ilike("content", `%${query}%`).limit(limit);
+      if (error) {
+        return res.status(200).json({
+          success: false,
+          gap: "TABLE_MISSING_OR_RESTRICTED",
+          error: error.message,
+          results: []
+        });
+      }
+      return res.json({
+        success: true,
+        query,
+        results: data || []
+      });
+    } catch (err) {
+      return res.status(500).json({ error: err?.message });
+    }
+  }
+);
+var marketIntelligenceRouter = router3;
+
+// server/routes/world.ts
+init_supabaseServer();
+import { Router as Router4 } from "express";
+var router4 = Router4();
+router4.get("/db-status", standardApiLimiter, async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const supabase = getSupabaseClient(authHeader);
+  if (!supabase) {
+    return res.json({
+      configured: false,
+      tablesExist: false,
+      migrationRequired: true,
+      error: "Supabase URL or Key not configured in environment."
+    });
+  }
+  const worldTables = [
+    "player_profiles",
+    "player_presence",
+    "chat_invitations",
+    "chat_conversations",
+    "chat_messages",
+    "player_blocks",
+    "player_reports",
+    "moderation_incidents",
+    "player_admin_audit_logs",
+    "chat_moderation_config"
+  ];
+  const checks = {};
+  const checkOneTable = async (t) => {
+    try {
+      const cols = t === "player_profiles" ? "created_at, chat_status" : "created_at";
+      const result = await Promise.race([
+        supabase.from(t).select(cols).limit(1),
+        new Promise(
+          (resolve) => setTimeout(
+            () => resolve({ error: { code: "TIMEOUT", message: "Supabase check timed out" } }),
+            2500
+          )
+        )
+      ]);
+      const error = result?.error;
+      if (error && (error.code === "PGRST205" || error.code === "42P01" || error.code === "42703" || error.message?.includes("does not exist"))) {
+        checks[t] = { exists: false, code: error.code, error: error.message };
+      } else if (error && error.code !== "42501" && error.code !== "PGRST116") {
+        checks[t] = { exists: false, code: error.code, error: error.message };
+      } else {
+        checks[t] = { exists: true };
+      }
+    } catch (err) {
+      checks[t] = { exists: false, code: "FETCH_ERROR", error: err?.message || "Fetch failed" };
+    }
+  };
+  await Promise.all(worldTables.map((t) => checkOneTable(t)));
+  const checkRpcExists = async (fnName, args) => {
+    try {
+      const result = await Promise.race([
+        supabase.rpc(fnName, args),
+        new Promise(
+          (resolve) => setTimeout(
+            () => resolve({ error: { code: "TIMEOUT", message: "Supabase check timed out" } }),
+            2500
+          )
+        )
+      ]);
+      const error = result?.error;
+      if (error && (error.code === "PGRST202" || error.code === "42883" || error.message?.includes("Could not find the function") || error.message?.includes("function") && error.message?.includes("does not exist"))) {
+        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
+      } else if (error && (error.code === "TIMEOUT" || error.code === "FETCH_ERROR")) {
+        checks[`rpc:${fnName}`] = { exists: false, code: error.code, error: error.message };
+      } else {
+        checks[`rpc:${fnName}`] = { exists: true };
+      }
+    } catch (err) {
+      checks[`rpc:${fnName}`] = { exists: false, code: "FETCH_ERROR", error: err?.message || "Fetch failed" };
+    }
+  };
+  await Promise.all([
+    checkRpcExists("check_player_registration_available", { p_email: "", p_nickname: "" }),
+    checkRpcExists("admin_get_players_directory", {})
+  ]);
+  const timedOut = Object.values(checks).every((c) => c.code === "TIMEOUT" || c.code === "FETCH_ERROR");
+  const allExist = Object.values(checks).every((c) => c.exists);
+  return res.json({
+    configured: true,
+    tablesExist: timedOut ? true : allExist,
+    migrationRequired: timedOut ? false : !allExist,
+    checks,
+    networkUnreachable: timedOut,
+    migrationFilePath: "src/db/game-world-social-migration.sql"
+  });
+});
+router4.get("/migration-sql", standardApiLimiter, (_req, res) => {
+  sendMigrationSqlFile("game-world-social-migration.sql", "-- Game world migration SQL not found.", res);
+});
+router4.post(
+  "/moderate-chat",
+  requireAuth,
+  chatModerationLimiter,
+  validateModerateChatBody,
+  async (req, res) => {
+    const { content } = req.body;
+    const trimmed = content.trim();
+    if (trimmed.length === 0 || trimmed.length > 500) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "INVALID_LENGTH",
+        reason: "Message must be 1 to 500 characters."
+      });
+    }
+    const lower = trimmed.toLowerCase();
+    const collapsed = lower.replace(/[^a-z0-9@.+]/g, "");
+    const phonePattern = /(\+?234[\s\-.]?[0-9]{2,4}[\s\-.]?[0-9]{3,4}[\s\-.]?[0-9]{3,4}|0[789][01][\s\-.]?[0-9]{3,4}[\s\-.]?[0-9]{4})/;
+    const phoneSpanPattern = /(?:^|[^0-9,])(\+?[0-9](?:[\s\-.()]*[0-9]){7,14})(?:[^0-9]|$)/;
+    const spokenPhonePattern = /(zero|oh)\s*(eight|seven|nine)\s*(zero|one|two|three|four|five|six|seven|eight|nine)/i;
+    const emailPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+    const obfuscatedEmailPattern = /[a-z0-9._%+-]+\s*(at|\(at\)|\[at\])\s*(gmail|yahoo|outlook|hotmail|icloud|proton)\s*(dot|\.)\s*(com|net|org|ng)/i;
+    const linkPattern = /(https?:\/\/|www\.|wa\.me\/|t\.me\/|bit\.ly\/|instagram\.com|tiktok\.com|snapchat\.com|discord\.gg)/i;
+    const offPlatformAppsPattern = /\b(whatsapp|whatsap|watsapp|whats app|telegram|snapchat|signal app|viber|wechat)\b/i;
+    const socialPlatformInvite = /\b(instagram|insta|tiktok|discord)\b/i.test(lower) && /\b(add|dm|follow|reach|text|chat|message|handle|me|my)\b/i.test(lower);
+    const contactSolicitPattern = /\b(call me|text me|ring me|drop your number|send your number|here is my number|take my number|dm me on|hit me up on|add me on)\b/i;
+    const handleInvitePattern = /(@[a-z0-9_.]{3,})/i.test(lower) && /\b(add|dm|follow|reach|text|chat|message|handle|snap|ig|tg)\b/i.test(lower);
+    const datingPattern = /\b(hookup|hook up|wanna link tonight|link up tonight|date me|be my girlfriend|be my boyfriend|sugar daddy|sugar mommy|looking for a girlfriend|looking for a boyfriend|netflix and chill|come over to my place)\b/i;
+    const sexualPattern = /\b(send nudes|send me nudes|nudes|horny|sexting|erotic|blowjob|handjob|fuck me|suck my|orgasm|porn|onlyfans)\b/i;
+    const harassmentScamPattern = /\b(kill yourself|i will kill you|stab you|shoot you|wire transfer|send me your bank|bank details|bvn|otp code|motherfucker|retard|faggot)\b/i;
+    const ambiguousReviewPattern = /\b(send pics|my digits|drop your @|meet in person alone|bank account)\b/i;
+    if (phonePattern.test(trimmed) || phoneSpanPattern.test(trimmed) || spokenPhonePattern.test(lower)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "PERSONAL_CONTACT_PHONE",
+        reason: "Sharing phone numbers or numeric contact details is not permitted in MANIFOLD community chat."
+      });
+    }
+    if (emailPattern.test(trimmed) || obfuscatedEmailPattern.test(lower)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "PERSONAL_CONTACT_EMAIL",
+        reason: "Sharing email addresses is not permitted in MANIFOLD community chat."
+      });
+    }
+    if (linkPattern.test(trimmed) || /(wame|tme|http|https)[a-z0-9]{3,}/.test(collapsed)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "EXTERNAL_LINK",
+        reason: "Sharing external links or URLs is not permitted."
+      });
+    }
+    if (offPlatformAppsPattern.test(lower) || socialPlatformInvite || contactSolicitPattern.test(lower) || handleInvitePattern) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "OFF_PLATFORM_SOLICITATION",
+        reason: "Sharing social handles or moving conversations off MANIFOLD is not allowed."
+      });
+    }
+    if (datingPattern.test(lower)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "DATING_SOLICITATION",
+        reason: "Dating or personal meetup solicitation is not allowed in MANIFOLD driving chat."
+      });
+    }
+    if (sexualPattern.test(lower)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "SEXUAL_EXPLICIT",
+        reason: "Sexually explicit content is strictly prohibited."
+      });
+    }
+    if (harassmentScamPattern.test(lower)) {
+      return res.json({
+        allowed: false,
+        severity: "block",
+        action: "block",
+        category: "HARASSMENT_OR_SCAM",
+        reason: "Threats, hate speech, harassment, or financial solicitation is prohibited."
+      });
+    }
+    if (ambiguousReviewPattern.test(lower)) {
+      return res.json({
+        allowed: true,
+        severity: "flagged_for_review",
+        action: "flag_review",
+        category: "AMBIGUOUS_REVIEW",
+        reason: "Flagged conservatively for safety review without penalizing the player."
+      });
+    }
+    const genAI = getGenAI();
+    if (genAI) {
+      try {
+        const result = await Promise.race([
+          genAI.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `Evaluate this in-game car-driving chat message.
+ALLOW normal everyday conversation about cars, driving, Lagos routes, music, sports, entertainment, everyday hobbies, and MANIFOLD marketplace discoveries (including benign slang like "killing it on Third Mainland Bridge", "shoot a clip of that AMG", "my number 1 dream car", "love this song").
+BLOCK ONLY clear, unambiguous violations: (1) phone/email/off-platform handle sharing or external links, (2) dating or sexually explicit solicitation, (3) genuine threats, hate speech, severe abuse, or financial scams.
+If borderline/ambiguous, set action="flag_review" and allowed=true instead of blocking.
+Respond ONLY with JSON {"allowed": boolean, "action": "allow"|"flag_review"|"block", "category": string, "reason": string|null}.
+Message: ${JSON.stringify(trimmed)}`,
+            config: { responseMimeType: "application/json" }
+          }),
+          new Promise((resolve) => setTimeout(() => resolve(null), 2200))
+        ]);
+        if (result && "text" in result && result.text) {
+          const parsed = JSON.parse(result.text.replace(/```json|```/gi, "").trim());
+          if (parsed && parsed.allowed === false && parsed.action === "block") {
+            return res.json({
+              allowed: false,
+              severity: "block",
+              action: "block",
+              category: parsed.category || "CONTEXTUAL_POLICY_VIOLATION",
+              reason: parsed.reason || "This message violates MANIFOLD community chat safety guidelines."
+            });
+          }
+          if (parsed && parsed.action === "flag_review") {
+            return res.json({
+              allowed: true,
+              severity: "flagged_for_review",
+              action: "flag_review",
+              category: parsed.category || "AMBIGUOUS_REVIEW",
+              reason: parsed.reason || "Flagged conservatively for safety review."
+            });
+          }
+        }
+      } catch {
+      }
+    }
+    return res.json({ allowed: true, severity: "clean", action: "allow", category: "CLEAN", reason: null });
+  }
+);
+var worldRouter = router4;
+
 // server/routes/ai.ts
+import { Router as Router5 } from "express";
+import multer from "multer";
+import crypto5 from "crypto";
+import { z as z6 } from "zod";
 init_supabaseServer();
 
 // server/services/ai/aiUsageService.ts
@@ -2539,32 +5305,32 @@ async function getAdminAiOverview(supabaseClient) {
 }
 
 // server/services/ai/listingDescriptionService.ts
-import { z } from "zod";
-var ListingCopyInputSchema = z.object({
-  carId: z.string().trim().max(120).optional(),
-  make: z.string().trim().min(1, "Vehicle Make is required.").max(80),
-  model: z.string().trim().min(1, "Vehicle Model is required.").max(80),
-  trim: z.string().trim().max(80).optional(),
-  year: z.number().int().min(1985).max(2028).optional(),
-  bodyType: z.string().trim().max(60).optional(),
-  condition: z.string().trim().max(60).optional(),
-  mileage: z.number().nonnegative().max(2e6).optional(),
-  transmission: z.string().trim().max(40).optional(),
-  fuelType: z.string().trim().max(40).optional(),
-  driveType: z.string().trim().max(40).optional(),
-  engine: z.string().trim().max(80).optional(),
-  horsepower: z.number().positive().max(3e3).optional().nullable(),
-  exteriorColor: z.string().trim().max(60).optional(),
-  interiorColor: z.string().trim().max(60).optional(),
-  seats: z.number().int().min(1).max(20).optional(),
-  doors: z.number().int().min(1).max(8).optional(),
-  price: z.number().nonnegative().max(1e10).optional(),
-  previousPrice: z.number().nonnegative().max(1e10).optional().nullable(),
-  location: z.string().trim().max(120).optional(),
-  state: z.string().trim().max(80).optional(),
-  features: z.array(z.string().trim().max(100)).max(25).optional(),
+import { z as z2 } from "zod";
+var ListingCopyInputSchema = z2.object({
+  carId: z2.string().trim().max(120).optional(),
+  make: z2.string().trim().min(1, "Vehicle Make is required.").max(80),
+  model: z2.string().trim().min(1, "Vehicle Model is required.").max(80),
+  trim: z2.string().trim().max(80).optional(),
+  year: z2.number().int().min(1985).max(2028).optional(),
+  bodyType: z2.string().trim().max(60).optional(),
+  condition: z2.string().trim().max(60).optional(),
+  mileage: z2.number().nonnegative().max(2e6).optional(),
+  transmission: z2.string().trim().max(40).optional(),
+  fuelType: z2.string().trim().max(40).optional(),
+  driveType: z2.string().trim().max(40).optional(),
+  engine: z2.string().trim().max(80).optional(),
+  horsepower: z2.number().positive().max(3e3).optional().nullable(),
+  exteriorColor: z2.string().trim().max(60).optional(),
+  interiorColor: z2.string().trim().max(60).optional(),
+  seats: z2.number().int().min(1).max(20).optional(),
+  doors: z2.number().int().min(1).max(8).optional(),
+  price: z2.number().nonnegative().max(1e10).optional(),
+  previousPrice: z2.number().nonnegative().max(1e10).optional().nullable(),
+  location: z2.string().trim().max(120).optional(),
+  state: z2.string().trim().max(80).optional(),
+  features: z2.array(z2.string().trim().max(100)).max(25).optional(),
   // Generation & Rewrite Controls
-  action: z.enum([
+  action: z2.enum([
     "generate",
     "regenerate",
     "more_persuasive",
@@ -2572,31 +5338,31 @@ var ListingCopyInputSchema = z.object({
     "more_detailed",
     "improve_grammar"
   ]).default("generate"),
-  currentDescription: z.string().trim().max(5e3).optional(),
-  tone: z.enum([
+  currentDescription: z2.string().trim().max(5e3).optional(),
+  tone: z2.enum([
     "executive_concierge",
     "trust_transparent",
     "performance_enthusiast",
     "family_practical",
     "value_focused"
   ]).default("executive_concierge"),
-  targetBuyer: z.enum([
+  targetBuyer: z2.enum([
     "lagos_abuja_executive",
     "family_buyer",
     "first_time_tokunbo_buyer",
     "corporate_fleet",
     "enthusiast"
   ]).default("lagos_abuja_executive"),
-  length: z.enum(["concise", "standard", "comprehensive"]).default("standard"),
-  approach: z.enum(["facts_and_value", "story_and_lifestyle", "inspection_led"]).default("inspection_led"),
-  sellingAngle: z.enum([
+  length: z2.enum(["concise", "standard", "comprehensive"]).default("standard"),
+  approach: z2.enum(["facts_and_value", "story_and_lifestyle", "inspection_led"]).default("inspection_led"),
+  sellingAngle: z2.enum([
     "verified_condition",
     "value_and_pricing",
     "comfort_and_spec",
     "reliability_and_low_running_cost"
   ]).default("verified_condition"),
-  callToAction: z.enum(["book_inspection", "request_video_walkaround", "concierge_enquiry"]).default("concierge_enquiry"),
-  customInstructions: z.string().trim().max(400).optional()
+  callToAction: z2.enum(["book_inspection", "request_video_walkaround", "concierge_enquiry"]).default("concierge_enquiry"),
+  customInstructions: z2.string().trim().max(400).optional()
 });
 var LISTING_OUTPUT_SCHEMA = {
   type: "object",
@@ -2717,28 +5483,28 @@ CRITICAL NON-FABRICATION RULES:
 }
 
 // server/services/ai/vehicleSearchService.ts
-import { z as z2 } from "zod";
+import { z as z3 } from "zod";
 init_supabaseServer();
-var VehicleSearchRequestSchema = z2.object({
-  query: z2.string().trim().min(2, "Please enter a vehicle search query.").max(400),
-  inputMode: z2.enum(["text", "voice"]).default("text"),
-  limit: z2.number().int().min(1).max(36).default(24)
+var VehicleSearchRequestSchema = z3.object({
+  query: z3.string().trim().min(2, "Please enter a vehicle search query.").max(400),
+  inputMode: z3.enum(["text", "voice"]).default("text"),
+  limit: z3.number().int().min(1).max(36).default(24)
 });
-var ParsedVehicleSearchIntentSchema = z2.object({
-  make: z2.string().nullable(),
-  model: z2.string().nullable(),
-  bodyType: z2.string().nullable(),
-  condition: z2.enum(["Foreign Used", "Brand New", "Nigerian Used"]).nullable(),
-  location: z2.string().nullable(),
-  minPriceNgn: z2.number().nonnegative().nullable(),
-  maxPriceNgn: z2.number().nonnegative().nullable(),
-  yearMin: z2.number().int().min(1985).max(2028).nullable(),
-  yearMax: z2.number().int().min(1985).max(2028).nullable(),
-  transmission: z2.enum(["Automatic", "Manual"]).nullable(),
-  fuelType: z2.enum(["Petrol", "Diesel", "Hybrid", "Electric"]).nullable(),
-  keywords: z2.array(z2.string()).max(8),
-  intentSummary: z2.string(),
-  nigerianTermsMatched: z2.array(z2.string()).max(6)
+var ParsedVehicleSearchIntentSchema = z3.object({
+  make: z3.string().nullable(),
+  model: z3.string().nullable(),
+  bodyType: z3.string().nullable(),
+  condition: z3.enum(["Foreign Used", "Brand New", "Nigerian Used"]).nullable(),
+  location: z3.string().nullable(),
+  minPriceNgn: z3.number().nonnegative().nullable(),
+  maxPriceNgn: z3.number().nonnegative().nullable(),
+  yearMin: z3.number().int().min(1985).max(2028).nullable(),
+  yearMax: z3.number().int().min(1985).max(2028).nullable(),
+  transmission: z3.enum(["Automatic", "Manual"]).nullable(),
+  fuelType: z3.enum(["Petrol", "Diesel", "Hybrid", "Electric"]).nullable(),
+  keywords: z3.array(z3.string()).max(8),
+  intentSummary: z3.string(),
+  nigerianTermsMatched: z3.array(z3.string()).max(6)
 });
 var SEARCH_INTENT_JSON_SCHEMA = {
   type: "object",
@@ -3222,33 +5988,20 @@ async function processVoiceSearchAudio(params) {
 }
 
 // server/services/ai/vehiclePricingService.ts
-import { z as z3 } from "zod";
+import { z as z4 } from "zod";
 init_supabaseServer();
-var PriceIntelligenceRequestSchema = z3.object({
-  carId: z3.string().trim().max(120).optional(),
-  make: z3.string().trim().min(1, "Make is required for price intelligence.").max(80),
-  model: z3.string().trim().min(1, "Model is required for price intelligence.").max(80),
-  year: z3.number().int().min(1985).max(2028).optional(),
-  trim: z3.string().trim().max(80).optional(),
-  condition: z3.string().trim().max(60).optional(),
-  mileage: z3.number().nonnegative().max(2e6).optional(),
-  location: z3.string().trim().max(120).optional(),
-  askingPrice: z3.number().nonnegative().max(1e10).optional(),
-  includeAiCommentary: z3.boolean().default(true)
+var PriceIntelligenceRequestSchema = z4.object({
+  carId: z4.string().trim().max(120).optional(),
+  make: z4.string().trim().min(1, "Make is required for price intelligence.").max(80),
+  model: z4.string().trim().min(1, "Model is required for price intelligence.").max(80),
+  year: z4.number().int().min(1985).max(2028).optional(),
+  trim: z4.string().trim().max(80).optional(),
+  condition: z4.string().trim().max(60).optional(),
+  mileage: z4.number().nonnegative().max(2e6).optional(),
+  location: z4.string().trim().max(120).optional(),
+  askingPrice: z4.number().nonnegative().max(1e10).optional(),
+  includeAiCommentary: z4.boolean().default(true)
 });
-function percentile(sorted, p) {
-  if (sorted.length === 0) return 0;
-  if (sorted.length === 1) return sorted[0];
-  const idx = (sorted.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo];
-  const weight = idx - lo;
-  return Math.round(sorted[lo] * (1 - weight) + sorted[hi] * weight);
-}
-function normalizeModelToken(str) {
-  return str.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
 var PRICING_COMMENTARY_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -3262,108 +6015,124 @@ var PRICING_COMMENTARY_SCHEMA = {
 };
 function computeDeterministicPriceStats(params) {
   const { input, comparables, completedSalesCount } = params;
-  const validComps = comparables.filter((c) => Number.isFinite(c.price) && c.price >= 5e5).sort((a, b) => b.similarityScore - a.similarityScore);
-  const internalAskingCount = validComps.filter((c) => c.sourceType === "internal_asking").length;
-  const externalObservationCount = validComps.filter(
-    (c) => c.sourceType === "external_observation"
-  ).length;
-  const sampleCount = validComps.length;
+  const subjectCategory = normalizeMarketCategory(input.condition);
+  const matchCandidates = comparables.filter((c) => Number.isFinite(c.price) && c.price >= 3e5).map((c) => ({
+    id: c.id,
+    make: c.make,
+    model: c.model,
+    year: c.year,
+    trim: c.trim,
+    marketCategory: normalizeMarketCategory(c.condition),
+    condition: c.condition,
+    mileage: c.mileage,
+    location: c.location,
+    price: c.price,
+    currency: "NGN",
+    sourceWebsite: c.sourceLabel,
+    sourceTrustLevel: c.sourceType === "internal_asking" ? "official" : "verified",
+    observedAt: c.observedDate || (/* @__PURE__ */ new Date()).toISOString(),
+    isDuplicate: false,
+    sourceType: c.sourceType
+  }));
+  const calculated = calculateMarketPriceEstimate({
+    subject: {
+      make: input.make,
+      model: input.model,
+      year: input.year ?? null,
+      trim: input.trim ?? null,
+      marketCategory: subjectCategory,
+      mileage: input.mileage ?? null,
+      location: input.location ?? null
+    },
+    candidates: matchCandidates,
+    additionalDuplicateCount: params.additionalDuplicateCount ?? 0
+  });
   const askingPrice = input.askingPrice && input.askingPrice > 0 ? input.askingPrice : null;
-  if (sampleCount < 2) {
-    return {
-      insufficientData: true,
-      insufficiencyReason: sampleCount === 0 ? `No verified MANIFOLD listings or approved market observations were found for ${input.year || ""} ${input.make} ${input.model}.`.trim() : `Only 1 verified comparable exists for ${input.year || ""} ${input.make} ${input.model}. At least 2 comparables are required before issuing a market range.`.trim(),
-      sampleCount,
-      internalAskingCount,
-      externalObservationCount,
-      completedSalesCount,
-      minPrice: sampleCount === 1 ? validComps[0].price : null,
-      q1Price: null,
-      medianPrice: sampleCount === 1 ? validComps[0].price : null,
-      meanPrice: sampleCount === 1 ? validComps[0].price : null,
-      q3Price: null,
-      maxPrice: sampleCount === 1 ? validComps[0].price : null,
-      recommendedRangeLow: null,
-      recommendedRangeHigh: null,
-      askingPrice,
-      askingVsMedianPct: null,
-      positioning: "insufficient_data",
-      confidence: "insufficient",
-      comparables: validComps.slice(0, 8),
-      methodologyNote: "Computed deterministically from active asking prices and approved external market observations. Completed transaction volume is tracked separately where verified."
-    };
-  }
-  const prices = validComps.map((c) => c.price).sort((a, b) => a - b);
-  const minPrice = prices[0];
-  const maxPrice = prices[prices.length - 1];
-  const q1Price = percentile(prices, 0.25);
-  const medianPrice = percentile(prices, 0.5);
-  const q3Price = percentile(prices, 0.75);
-  const meanPrice = Math.round(prices.reduce((s, p) => s + p, 0) / prices.length);
-  const recommendedRangeLow = Math.max(minPrice, Math.min(q1Price, Math.round(medianPrice * 0.92)));
-  const recommendedRangeHigh = Math.min(maxPrice, Math.max(q3Price, Math.round(medianPrice * 1.08)));
   let askingVsMedianPct = null;
-  let positioning = "competitive";
-  if (askingPrice && medianPrice > 0) {
-    askingVsMedianPct = Number(((askingPrice - medianPrice) / medianPrice * 100).toFixed(1));
-    if (askingVsMedianPct <= -8) {
-      positioning = "below_market";
-    } else if (askingVsMedianPct >= 10) {
-      positioning = "above_market";
-    } else {
-      positioning = "competitive";
+  let positioning = "insufficient_data";
+  if (!calculated.insufficientData && calculated.medianPrice) {
+    positioning = "competitive";
+    if (askingPrice && calculated.medianPrice > 0) {
+      askingVsMedianPct = Number(
+        ((askingPrice - calculated.medianPrice) / calculated.medianPrice * 100).toFixed(1)
+      );
+      if (askingVsMedianPct <= -8) positioning = "below_market";
+      else if (askingVsMedianPct >= 10) positioning = "above_market";
+      else positioning = "competitive";
     }
   }
-  const yearMatchedCount = validComps.filter(
-    (c) => !input.year || Math.abs(c.year - input.year) <= 1
-  ).length;
-  const confidence = sampleCount >= 6 && yearMatchedCount >= 3 ? "high" : sampleCount >= 3 ? "moderate" : "low";
+  const mappedConfidence = calculated.confidenceLevel === "medium" ? "moderate" : calculated.confidenceLevel;
+  const comparableSamples = calculated.matchedSamples.slice(0, 8).map((s) => ({
+    id: s.id,
+    label: `${s.year} ${s.make} ${s.model}${s.trim ? ` ${s.trim}` : ""}`,
+    year: s.year,
+    make: s.make,
+    model: s.model,
+    trim: s.trim || null,
+    condition: s.condition || formatMarketCategoryLabel(s.marketCategory),
+    mileage: s.mileage ?? null,
+    location: s.location || "Nigeria",
+    price: s.price,
+    sourceType: s.sourceType,
+    sourceLabel: s.sourceWebsite || "Verified Market Observation",
+    observedDate: String(s.observedAt || "").slice(0, 10),
+    similarityScore: s.matchScore
+  }));
   return {
-    insufficientData: false,
-    insufficiencyReason: null,
-    sampleCount,
-    internalAskingCount,
-    externalObservationCount,
+    insufficientData: calculated.insufficientData,
+    insufficiencyReason: calculated.insufficiencyReason,
+    marketCategory: subjectCategory,
+    marketCategoryLabel: formatMarketCategoryLabel(subjectCategory),
+    sampleCount: calculated.validObservationCount,
+    internalAskingCount: calculated.internalListingCount,
+    externalObservationCount: calculated.externalObservationCount,
     completedSalesCount,
-    minPrice,
-    q1Price,
-    medianPrice,
-    meanPrice,
-    q3Price,
-    maxPrice,
-    recommendedRangeLow,
-    recommendedRangeHigh,
+    outliersExcludedCount: calculated.priceDistribution.outliersExcludedCount,
+    duplicatesExcludedCount: calculated.duplicateObservationCount,
+    minPrice: calculated.minPrice,
+    q1Price: calculated.q1Price,
+    medianPrice: calculated.medianPrice,
+    meanPrice: calculated.meanPrice,
+    q3Price: calculated.q3Price,
+    maxPrice: calculated.maxPrice,
+    recommendedRangeLow: calculated.priceRangeLow,
+    recommendedRangeHigh: calculated.priceRangeHigh,
     askingPrice,
     askingVsMedianPct,
     positioning,
-    confidence,
-    comparables: validComps.slice(0, 8),
-    methodologyNote: `Based on ${internalAskingCount} active asking listing(s) on MANIFOLD and ${externalObservationCount} admin-approved external market observation(s)${completedSalesCount > 0 ? ` (${completedSalesCount} recorded completed sale(s) referenced)` : " (asking-price benchmark; completed sales tracked separately)"}. Dealers retain full pricing autonomy.`
+    confidence: mappedConfidence,
+    confidenceScore: calculated.confidenceScore,
+    confidenceBreakdown: calculated.confidenceBreakdown,
+    priceDistribution: calculated.priceDistribution,
+    lastResearchAt: params.lastResearchAt ?? calculated.lastResearchAt,
+    priceHistory: params.priceHistory ?? [],
+    comparables: comparableSamples,
+    methodologyNote: `${calculated.estimationMethodology} Dealers retain full pricing autonomy.`
   };
 }
 async function runVehiclePriceIntelligence(params) {
   const supabase = params.supabase ?? getSupabaseClient();
   const { input } = params;
-  const normalizedTargetModel = normalizeModelToken(input.model);
+  const normalizedTargetMake = normalizeBrandName(input.make);
+  const normalizedTargetModel = normalizeModelName(input.model);
+  const subjectCategory = normalizeMarketCategory(input.condition);
   const comparables = [];
   let completedSalesCount = 0;
+  let duplicateExcludedCount = 0;
+  let lastResearchAt = null;
+  let priceHistory = [];
   if (supabase) {
     const [carsRes, obsRes] = await Promise.all([
-      supabase.from("cars").select("id, make, model, trim, year, condition, mileage, location, state, price, created_at").ilike("make", input.make).in("status", ["PUBLISHED", "published"]).limit(100),
-      supabase.from("market_price_observations").select("id, make, model, trim, year, condition, mileage, location, price, source_name, observed_at, created_at").eq("status", "approved").ilike("make", input.make).limit(100)
+      supabase.from("cars").select("id, make, model, trim, year, condition, mileage, location, state, price, created_at").ilike("make", input.make).in("status", ["PUBLISHED", "published"]).limit(120),
+      supabase.from("market_price_observations").select(
+        "id, make, model, trim, year, condition, market_category, mileage, location, price, source_name, source_url, publisher, observed_at, created_at, is_duplicate, quality_status, status"
+      ).eq("status", "approved").ilike("make", input.make).limit(150)
     ]);
     if (!carsRes.error && Array.isArray(carsRes.data)) {
       for (const row of carsRes.data) {
         if (input.carId && row.id === input.carId) continue;
-        const rowModelNorm = normalizeModelToken(String(row.model || ""));
-        if (rowModelNorm !== normalizedTargetModel && !rowModelNorm.includes(normalizedTargetModel) && !normalizedTargetModel.includes(rowModelNorm)) {
+        if (normalizeBrandName(row.make) !== normalizedTargetMake || normalizeModelName(row.model) !== normalizedTargetModel) {
           continue;
-        }
-        const yearDiff = input.year ? Math.abs(Number(row.year) - input.year) : 0;
-        if (yearDiff > 4) continue;
-        let sim = 100 - yearDiff * 15;
-        if (input.condition && String(row.condition || "").toLowerCase().includes(input.condition.toLowerCase().split(" ")[0])) {
-          sim += 10;
         }
         comparables.push({
           id: String(row.id),
@@ -3379,22 +6148,27 @@ async function runVehiclePriceIntelligence(params) {
           sourceType: "internal_asking",
           sourceLabel: "MANIFOLD Verified Listing (Asking)",
           observedDate: String(row.created_at || "").slice(0, 10),
-          similarityScore: sim
+          similarityScore: 90
         });
       }
     }
+    const seenUrls = /* @__PURE__ */ new Set();
     if (!obsRes.error && Array.isArray(obsRes.data)) {
       for (const row of obsRes.data) {
-        const rowModelNorm = normalizeModelToken(String(row.model || ""));
-        if (rowModelNorm !== normalizedTargetModel && !rowModelNorm.includes(normalizedTargetModel) && !normalizedTargetModel.includes(rowModelNorm)) {
+        if (normalizeBrandName(row.make) !== normalizedTargetMake || normalizeModelName(row.model) !== normalizedTargetModel) {
           continue;
         }
-        const yearDiff = input.year ? Math.abs(Number(row.year) - input.year) : 0;
-        if (yearDiff > 4) continue;
-        let sim = 95 - yearDiff * 15;
-        if (input.condition && String(row.condition || "").toLowerCase().includes(input.condition.toLowerCase().split(" ")[0])) {
-          sim += 8;
+        if (row.is_duplicate || row.quality_status === "rejected" || row.quality_status === "outlier_excluded") {
+          if (row.is_duplicate) duplicateExcludedCount++;
+          continue;
         }
+        const normUrl = normalizeListingUrl(row.source_url);
+        if (normUrl && seenUrls.has(normUrl)) {
+          duplicateExcludedCount++;
+          continue;
+        }
+        if (normUrl) seenUrls.add(normUrl);
+        const sourceName = row.source_name || row.publisher || extractDomainFromUrl(row.source_url);
         comparables.push({
           id: String(row.id),
           label: `${row.year} ${row.make} ${row.model}${row.trim ? ` ${row.trim}` : ""}`,
@@ -3402,16 +6176,35 @@ async function runVehiclePriceIntelligence(params) {
           make: String(row.make),
           model: String(row.model),
           trim: row.trim || null,
-          condition: String(row.condition || "Unknown"),
+          condition: String(
+            row.condition || (row.market_category ? formatMarketCategoryLabel(row.market_category) : "Unknown")
+          ),
           mileage: row.mileage !== null && row.mileage !== void 0 ? Number(row.mileage) : null,
           location: String(row.location || "Nigeria"),
           price: Number(row.price),
           sourceType: "external_observation",
-          sourceLabel: row.source_name ? `${row.source_name} (Observed Asking)` : "Verified Market Observation",
+          sourceLabel: sourceName ? `${sourceName} (Observed Asking)` : "Verified Market Observation",
           observedDate: String(row.observed_at || row.created_at || "").slice(0, 10),
-          similarityScore: sim
+          similarityScore: 85
         });
       }
+    }
+    try {
+      let estQuery = supabase.from("market_price_estimates").select("median_price, valid_observation_count, confidence_level, last_research_at").ilike("make", input.make).ilike("model", `%${input.model}%`).order("last_research_at", { ascending: false }).limit(12);
+      if (subjectCategory !== "unknown") {
+        estQuery = estQuery.eq("market_category", subjectCategory);
+      }
+      const { data: estRows } = await estQuery;
+      if (Array.isArray(estRows) && estRows.length > 0) {
+        lastResearchAt = estRows[0].last_research_at || null;
+        priceHistory = estRows.slice().reverse().map((e) => ({
+          date: String(e.last_research_at || "").slice(0, 10),
+          medianPrice: e.median_price ? Number(e.median_price) : null,
+          validObservationCount: Number(e.valid_observation_count || 0),
+          confidenceLevel: String(e.confidence_level || "insufficient")
+        }));
+      }
+    } catch {
     }
     if (params.role === "admin" || params.role === "dealer") {
       try {
@@ -3425,7 +6218,10 @@ async function runVehiclePriceIntelligence(params) {
   const stats = computeDeterministicPriceStats({
     input,
     comparables,
-    completedSalesCount
+    completedSalesCount,
+    additionalDuplicateCount: duplicateExcludedCount,
+    lastResearchAt,
+    priceHistory
   });
   if (stats.insufficientData || !input.includeAiCommentary) {
     return {
@@ -3439,8 +6235,9 @@ Explain the deterministic pricing statistics provided in the JSON payload.
 STRICT RULES:
 1. NEVER invent prices, percentages, or comparables not present in the computed statistics.
 2. Explicitly distinguish asking-price comparables from completed sales (if completedSalesCount is 0, clearly note figures represent market asking benchmarks).
-3. Respect dealer pricing autonomy: offer objective market context rather than commanding a mandatory price.
-4. Keep numbers formatted cleanly in Naira (\u20A6).`;
+3. Emphasize market category isolation (Foreign Used vs Nigerian Used vs Brand New) when interpreting the range.
+4. Respect dealer pricing autonomy: offer objective market context rather than commanding a mandatory price.
+5. Keep numbers formatted cleanly in Naira (\u20A6).`;
   const aiResult = await runStructuredJsonResponse({
     instructions,
     input: JSON.stringify({
@@ -3449,7 +6246,7 @@ STRICT RULES:
         make: input.make,
         model: input.model,
         trim: input.trim,
-        condition: input.condition,
+        marketCategory: stats.marketCategoryLabel,
         mileage: input.mileage,
         location: input.location,
         askingPrice: stats.askingPrice
@@ -3458,15 +6255,20 @@ STRICT RULES:
         sampleCount: stats.sampleCount,
         internalAskingCount: stats.internalAskingCount,
         externalObservationCount: stats.externalObservationCount,
+        outliersExcludedCount: stats.outliersExcludedCount,
+        duplicatesExcludedCount: stats.duplicatesExcludedCount,
         completedSalesCount: stats.completedSalesCount,
         minPrice: stats.minPrice,
+        q1Price: stats.q1Price,
         medianPrice: stats.medianPrice,
+        q3Price: stats.q3Price,
         recommendedRangeLow: stats.recommendedRangeLow,
         recommendedRangeHigh: stats.recommendedRangeHigh,
         maxPrice: stats.maxPrice,
         askingVsMedianPct: stats.askingVsMedianPct,
         positioning: stats.positioning,
-        confidence: stats.confidence
+        confidence: stats.confidence,
+        confidenceScore: stats.confidenceScore
       }
     }),
     schemaName: "manifold_price_intelligence_commentary",
@@ -3645,17 +6447,17 @@ NEVER invent statistics or external prices not listed in the payload.`;
 }
 
 // server/services/ai/automotiveAssistantService.ts
-import { z as z4 } from "zod";
+import { z as z5 } from "zod";
 init_supabaseServer();
-var AssistantChatRequestSchema = z4.object({
-  messages: z4.array(
-    z4.object({
-      role: z4.enum(["user", "assistant"]),
-      content: z4.string().trim().min(1).max(1500)
+var AssistantChatRequestSchema = z5.object({
+  messages: z5.array(
+    z5.object({
+      role: z5.enum(["user", "assistant"]),
+      content: z5.string().trim().min(1).max(1500)
     })
   ).min(1).max(12),
-  focusedCarSlug: z4.string().trim().max(160).optional(),
-  surface: z4.enum(["marketplace", "car_detail", "dealer_portal"]).default("marketplace")
+  focusedCarSlug: z5.string().trim().max(160).optional(),
+  surface: z5.enum(["marketplace", "car_detail", "dealer_portal"]).default("marketplace")
 });
 var ASSISTANT_RESPONSE_SCHEMA = {
   type: "object",
@@ -3781,7 +6583,7 @@ GROUNDING RULES:
 }
 
 // server/routes/ai.ts
-var aiRouter = Router4();
+var aiRouter = Router5();
 var uploadAudio = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -3790,7 +6592,7 @@ var uploadAudio = multer({
   }
 });
 function makeRequestId() {
-  return `ai_${crypto2.randomUUID().slice(0, 12)}`;
+  return `ai_${crypto5.randomUUID().slice(0, 12)}`;
 }
 aiRouter.get(
   "/health",
@@ -3929,8 +6731,8 @@ aiRouter.get(
     }
   }
 );
-var UpdateAiSettingSchema = z5.object({
-  moduleKey: z5.enum([
+var UpdateAiSettingSchema = z6.object({
+  moduleKey: z6.enum([
     "listing_copy",
     "vehicle_search",
     "voice_transcribe",
@@ -3938,11 +6740,11 @@ var UpdateAiSettingSchema = z5.object({
     "market_insights",
     "assistant"
   ]),
-  enabled: z5.boolean().optional(),
-  modelOverride: z5.string().trim().max(80).nullable().optional(),
-  maxRequestsPerMin: z5.number().int().min(1).max(300).optional(),
-  maxOutputTokens: z5.number().int().min(128).max(2e3).optional(),
-  monthlyBudgetUsd: z5.number().min(0).max(1e5).optional()
+  enabled: z6.boolean().optional(),
+  modelOverride: z6.string().trim().max(80).nullable().optional(),
+  maxRequestsPerMin: z6.number().int().min(1).max(300).optional(),
+  maxOutputTokens: z6.number().int().min(128).max(2e3).optional(),
+  monthlyBudgetUsd: z6.number().min(0).max(1e5).optional()
 });
 aiRouter.patch(
   "/admin/settings",
@@ -4131,10 +6933,10 @@ aiRouter.post(
     }
   }
 );
-var SearchEventSchema = z5.object({
-  analyticsId: z5.string().uuid(),
-  clickedCarId: z5.string().trim().max(120).optional(),
-  enquiryConverted: z5.boolean().optional()
+var SearchEventSchema = z6.object({
+  analyticsId: z6.string().uuid(),
+  clickedCarId: z6.string().trim().max(120).optional(),
+  enquiryConverted: z6.boolean().optional()
 });
 aiRouter.post(
   "/search/event",
@@ -4344,9 +7146,9 @@ aiRouter.post(
     }
   }
 );
-var MarketInsightsBodySchema = z5.object({
-  includeAiSummary: z5.boolean().default(true),
-  focusTopic: z5.string().trim().max(240).optional()
+var MarketInsightsBodySchema = z6.object({
+  includeAiSummary: z6.boolean().default(true),
+  focusTopic: z6.string().trim().max(240).optional()
 });
 aiRouter.post(
   "/market-insights",

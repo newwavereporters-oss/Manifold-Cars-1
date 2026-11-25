@@ -40,10 +40,12 @@ import {
   CheckSquare,
   Square,
   BookOpen,
+  Bot,
 } from 'lucide-react';
+import { PricingAgentPanel } from './PricingAgentPanel';
 
 export const AdminMarketIntelligenceView: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'submit' | 'sources' | 'review'>('overview');
+  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'submit' | 'sources' | 'review' | 'agent'>('overview');
   const [submitMethod, setSubmitMethod] = useState<'url' | 'text' | 'file'>('url');
   
   // Data state
@@ -655,7 +657,7 @@ export const AdminMarketIntelligenceView: React.FC = () => {
 
           <button
             onClick={() => setActiveSubTab('sources')}
-            className={`px-4 py-2 rounded-xl transition flex items-center gap-2 cursor-pointer ${
+            className={`px-4 py-2 rounded-xl transition flex items-center gap-2 cursor-pointer whitespace-nowrap ${
               activeSubTab === 'sources'
                 ? 'bg-white/15 text-white'
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
@@ -663,6 +665,18 @@ export const AdminMarketIntelligenceView: React.FC = () => {
           >
             <Globe className="w-4 h-4" />
             <span>Data Sources ({sources.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('agent')}
+            className={`px-4 py-2 rounded-xl transition flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              activeSubTab === 'agent'
+                ? 'bg-white/15 text-white'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Bot className="w-4 h-4 text-[#EF233C]" />
+            <span>Pricing Agent</span>
           </button>
         </div>
       </div>
@@ -1724,6 +1738,18 @@ export const AdminMarketIntelligenceView: React.FC = () => {
                                   <span>Knowledge Synced</span>
                                 </span>
                               )}
+
+                              {obs.is_duplicate && (
+                                <span className="text-[9px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 block w-fit">
+                                  Duplicate Filtered
+                                </span>
+                              )}
+
+                              {obs.quality_status === 'outlier_excluded' && (
+                                <span className="text-[9px] font-bold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 block w-fit">
+                                  Statistical Outlier
+                                </span>
+                              )}
                             </div>
                           </td>
 
@@ -1782,6 +1808,11 @@ export const AdminMarketIntelligenceView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* VIEW E: AI AUTOMOTIVE PRICING AGENT */}
+      {activeSubTab === 'agent' && (
+        <PricingAgentPanel onDataUpdated={loadAllData} />
       )}
 
       {/* EDIT OBSERVATION MODAL */}
