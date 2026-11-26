@@ -57,8 +57,10 @@ __export(supabaseServer_exports, {
   extractBearerToken: () => extractBearerToken,
   getSupabaseAdminClient: () => getSupabaseAdminClient,
   getSupabaseClient: () => getSupabaseClient,
+  resolveAuthenticatedRole: () => resolveAuthenticatedRole,
   verifyActiveAdmin: () => verifyActiveAdmin,
   verifyDealerAccount: () => verifyDealerAccount,
+  verifyPlayerProfile: () => verifyPlayerProfile,
   verifySupabaseUser: () => verifySupabaseUser
 });
 import { createClient } from "@supabase/supabase-js";
@@ -279,6 +281,58 @@ async function verifyDealerAccount(supabase, user) {
     };
   }
 }
+async function verifyPlayerProfile(supabase, user) {
+  const lookupClient = getSupabaseAdminClient() ?? supabase;
+  try {
+    const { data, error } = await lookupClient.from("player_profiles").select("id, nickname, account_status").eq("user_id", user.id).maybeSingle();
+    if (error || !data || !data.id) {
+      return { isPlayer: false };
+    }
+    return {
+      isPlayer: true,
+      playerId: String(data.id),
+      nickname: typeof data.nickname === "string" ? data.nickname : void 0,
+      accountStatus: typeof data.account_status === "string" ? data.account_status : "active"
+    };
+  } catch {
+    return { isPlayer: false };
+  }
+}
+async function resolveAuthenticatedRole(supabase, user) {
+  const [adminCheck, playerCheck, dealerCheck] = await Promise.all([
+    verifyActiveAdmin(supabase, user),
+    verifyPlayerProfile(supabase, user),
+    verifyDealerAccount(supabase, user)
+  ]);
+  if (adminCheck.isAdmin) {
+    return {
+      role: "admin",
+      adminRole: adminCheck.role
+    };
+  }
+  if (playerCheck.isPlayer) {
+    return {
+      role: "player",
+      playerId: playerCheck.playerId,
+      playerNickname: playerCheck.nickname,
+      playerAccountStatus: playerCheck.accountStatus
+    };
+  }
+  if (dealerCheck.hasAccount && dealerCheck.dealerId) {
+    return {
+      role: "dealer",
+      dealerId: dealerCheck.dealerId,
+      dealerBusinessName: dealerCheck.businessName,
+      dealerAccountStatus: dealerCheck.accountStatus,
+      dealerApproved: dealerCheck.isApproved
+    };
+  }
+  const rawMetaRole = String(user.user_metadata?.role || "").trim().toLowerCase();
+  if (rawMetaRole === "dealer") {
+    return { role: "dealer_onboarding" };
+  }
+  return { role: "buyer" };
+}
 var ALLOWED_ADMIN_ROLES;
 var init_supabaseServer = __esm({
   "server/lib/supabaseServer.ts"() {
@@ -296,40 +350,196 @@ var init_supabaseServer = __esm({
 init_env();
 import express from "express";
 
-// server/routes/dealers.ts
-init_env();
-init_supabaseServer();
-import { Router as Router3 } from "express";
+// server/routes/auth.ts
+import { Router } from "express";
 
-// server/lib/migrationSql.ts
-import fs from "fs";
-import path from "path";
-var DB_MIGRATIONS_DIR = path.resolve(process.cwd(), "src/db");
-var ALLOWED_MIGRATION_FILES = /* @__PURE__ */ new Set([
-  "market-intelligence-migration.sql",
-  "pricing-agent-migration.sql",
-  "game-world-social-migration.sql",
-  "dealer-approval-migration.sql",
-  "ai-platform-migration.sql",
-  "admin-auth-fix.sql"
-]);
-function sendMigrationSqlFile(filename, notFoundComment, res) {
-  if (!ALLOWED_MIGRATION_FILES.has(filename)) {
-    res.status(404).send(notFoundComment);
+// server/middleware/auth.ts
+init_supabaseServer();
+async function optionalAuth(req, _res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    req.auth = {
+      supabase: getSupabaseClient(),
+      role: "anonymous"
+    };
+    next();
     return;
   }
-  const resolved = path.resolve(DB_MIGRATIONS_DIR, filename);
-  if (!resolved.startsWith(DB_MIGRATIONS_DIR + path.sep)) {
-    res.status(403).send("-- Invalid migration file path.");
+  const verified = await verifySupabaseUser(authHeader);
+  if (!verified.ok) {
+    req.auth = {
+      supabase: getSupabaseClient(),
+      role: "anonymous"
+    };
+    next();
     return;
   }
-  if (fs.existsSync(resolved)) {
-    const sql = fs.readFileSync(resolved, "utf-8");
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.send(sql);
+  const resolved = await resolveAuthenticatedRole(verified.supabase, verified.user);
+  req.auth = {
+    user: verified.user,
+    token: verified.token,
+    authHeader: verified.authHeader,
+    supabase: verified.supabase,
+    ...resolved
+  };
+  next();
+}
+async function requireAuth(req, res, next) {
+  const result = await verifySupabaseUser(req.headers.authorization);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
     return;
   }
-  res.status(404).send(notFoundComment);
+  const resolved = await resolveAuthenticatedRole(result.supabase, result.user);
+  req.auth = {
+    user: result.user,
+    token: result.token,
+    authHeader: result.authHeader,
+    supabase: result.supabase,
+    ...resolved
+  };
+  next();
+}
+async function requireAdmin(req, res, next) {
+  if (!req.auth?.user || !req.auth.supabase) {
+    const result = await verifySupabaseUser(req.headers.authorization);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    const resolved = await resolveAuthenticatedRole(result.supabase, result.user);
+    req.auth = {
+      user: result.user,
+      token: result.token,
+      authHeader: result.authHeader,
+      supabase: result.supabase,
+      ...resolved
+    };
+  }
+  const adminCheck = await verifyActiveAdmin(req.auth.supabase, req.auth.user);
+  if (!adminCheck.isAdmin) {
+    const isPlayer = req.auth.role === "player";
+    res.status(403).json({
+      error: isPlayer ? "Game Player accounts are not authorized to access MANIFOLD Admin endpoints." : "Administrator privileges required to access this endpoint.",
+      code: isPlayer ? "PLAYER_ROLE_FORBIDDEN" : "ADMIN_ROLE_REQUIRED"
+    });
+    return;
+  }
+  req.auth.role = "admin";
+  req.auth.adminRole = adminCheck.role;
+  next();
+}
+async function requireDealer(req, res, next) {
+  const result = await verifySupabaseUser(req.headers.authorization);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  const [adminCheck, playerCheck, dealerCheck] = await Promise.all([
+    verifyActiveAdmin(result.supabase, result.user),
+    verifyPlayerProfile(result.supabase, result.user),
+    verifyDealerAccount(result.supabase, result.user)
+  ]);
+  if (playerCheck.isPlayer) {
+    res.status(403).json({
+      error: "Game Player accounts cannot access MANIFOLD Dealer endpoints.",
+      code: "PLAYER_ROLE_FORBIDDEN"
+    });
+    return;
+  }
+  if (adminCheck.isAdmin && !dealerCheck.hasAccount) {
+    res.status(403).json({
+      error: "Dealer account authorization required.",
+      code: "DEALER_ROLE_REQUIRED"
+    });
+    return;
+  }
+  if (!dealerCheck.hasAccount || !dealerCheck.dealerId) {
+    res.status(403).json({
+      error: dealerCheck.reason || "Registered MANIFOLD dealership authorization required.",
+      code: "DEALER_ROLE_REQUIRED"
+    });
+    return;
+  }
+  if (dealerCheck.accountStatus === "suspended") {
+    res.status(403).json({
+      error: dealerCheck.reason || "Your dealership account is suspended.",
+      code: "DEALER_ACCOUNT_SUSPENDED"
+    });
+    return;
+  }
+  req.auth = {
+    user: result.user,
+    token: result.token,
+    authHeader: result.authHeader,
+    supabase: result.supabase,
+    role: "dealer",
+    dealerId: dealerCheck.dealerId,
+    dealerBusinessName: dealerCheck.businessName,
+    dealerAccountStatus: dealerCheck.accountStatus,
+    dealerApproved: dealerCheck.isApproved
+  };
+  next();
+}
+async function requireApprovedDealer(req, res, next) {
+  const result = await verifySupabaseUser(req.headers.authorization);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  const [playerCheck, dealerCheck] = await Promise.all([
+    verifyPlayerProfile(result.supabase, result.user),
+    verifyDealerAccount(result.supabase, result.user)
+  ]);
+  if (playerCheck.isPlayer) {
+    res.status(403).json({
+      error: "Game Player accounts cannot access MANIFOLD Dealer endpoints.",
+      code: "PLAYER_ROLE_FORBIDDEN"
+    });
+    return;
+  }
+  if (!dealerCheck.hasAccount || !dealerCheck.isApproved || !dealerCheck.dealerId) {
+    res.status(403).json({
+      error: dealerCheck.reason || "Approved dealership authorization required.",
+      code: "DEALER_APPROVAL_REQUIRED"
+    });
+    return;
+  }
+  req.auth = {
+    user: result.user,
+    token: result.token,
+    authHeader: result.authHeader,
+    supabase: result.supabase,
+    role: "dealer",
+    dealerId: dealerCheck.dealerId,
+    dealerBusinessName: dealerCheck.businessName,
+    dealerAccountStatus: dealerCheck.accountStatus,
+    dealerApproved: true
+  };
+  next();
+}
+async function requirePlayer(req, res, next) {
+  const result = await verifySupabaseUser(req.headers.authorization);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  const resolved = await resolveAuthenticatedRole(result.supabase, result.user);
+  if (resolved.role !== "player" || !resolved.playerId) {
+    res.status(403).json({
+      error: "Active MANIFOLD Game Player account required.",
+      code: "PLAYER_ROLE_REQUIRED"
+    });
+    return;
+  }
+  req.auth = {
+    user: result.user,
+    token: result.token,
+    authHeader: result.authHeader,
+    supabase: result.supabase,
+    ...resolved
+  };
+  next();
 }
 
 // server/middleware/rateLimit.ts
@@ -440,141 +650,105 @@ var aiAssistantLimiter = createRateLimiter({
   message: "Automotive assistant rate limit reached. Please pause briefly."
 });
 
+// server/routes/auth.ts
+var router = Router();
+router.get("/me", standardApiLimiter, requireAuth, (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  return res.json({
+    authenticated: true,
+    userId: req.auth?.user?.id || null,
+    email: req.auth?.user?.email || null,
+    role: req.auth?.role || "buyer",
+    adminRole: req.auth?.adminRole || null,
+    dealerId: req.auth?.dealerId || null,
+    dealerBusinessName: req.auth?.dealerBusinessName || null,
+    dealerAccountStatus: req.auth?.dealerAccountStatus || null,
+    dealerApproved: Boolean(req.auth?.dealerApproved),
+    playerId: req.auth?.playerId || null,
+    playerNickname: req.auth?.playerNickname || null,
+    playerAccountStatus: req.auth?.playerAccountStatus || null
+  });
+});
+router.get("/admin-check", standardApiLimiter, requireAdmin, (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  return res.json({
+    authorized: true,
+    role: "admin",
+    adminRole: req.auth?.adminRole || "admin",
+    userId: req.auth?.user?.id || null
+  });
+});
+router.get("/dealer-check", standardApiLimiter, requireDealer, (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  return res.json({
+    authorized: true,
+    role: "dealer",
+    dealerId: req.auth?.dealerId || null,
+    dealerBusinessName: req.auth?.dealerBusinessName || null,
+    dealerAccountStatus: req.auth?.dealerAccountStatus || null,
+    dealerApproved: Boolean(req.auth?.dealerApproved),
+    userId: req.auth?.user?.id || null
+  });
+});
+router.get("/player-check", standardApiLimiter, requirePlayer, (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  return res.json({
+    authorized: true,
+    role: "player",
+    playerId: req.auth?.playerId || null,
+    playerNickname: req.auth?.playerNickname || null,
+    playerAccountStatus: req.auth?.playerAccountStatus || null,
+    userId: req.auth?.user?.id || null
+  });
+});
+var authRouter = router;
+
+// server/routes/dealers.ts
+init_env();
+init_supabaseServer();
+import { Router as Router4 } from "express";
+
+// server/lib/migrationSql.ts
+import fs from "fs";
+import path from "path";
+var DB_MIGRATIONS_DIR = path.resolve(process.cwd(), "src/db");
+var ALLOWED_MIGRATION_FILES = /* @__PURE__ */ new Set([
+  "market-intelligence-migration.sql",
+  "pricing-agent-migration.sql",
+  "game-world-social-migration.sql",
+  "dealer-approval-migration.sql",
+  "ai-platform-migration.sql",
+  "admin-auth-fix.sql"
+]);
+function sendMigrationSqlFile(filename, notFoundComment, res) {
+  if (!ALLOWED_MIGRATION_FILES.has(filename)) {
+    res.status(404).send(notFoundComment);
+    return;
+  }
+  const resolved = path.resolve(DB_MIGRATIONS_DIR, filename);
+  if (!resolved.startsWith(DB_MIGRATIONS_DIR + path.sep)) {
+    res.status(403).send("-- Invalid migration file path.");
+    return;
+  }
+  if (fs.existsSync(resolved)) {
+    const sql = fs.readFileSync(resolved, "utf-8");
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.send(sql);
+    return;
+  }
+  res.status(404).send(notFoundComment);
+}
+
 // server/routes/cars.ts
 init_env();
 init_supabaseServer();
-import { Router as Router2 } from "express";
+import { Router as Router3 } from "express";
 
 // server/routes/world.ts
 init_env();
 init_supabaseServer();
-import { Router } from "express";
-
-// server/middleware/auth.ts
-init_supabaseServer();
-async function optionalAuth(req, _res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    req.auth = {
-      supabase: getSupabaseClient(),
-      role: "anonymous"
-    };
-    next();
-    return;
-  }
-  const verified = await verifySupabaseUser(authHeader);
-  if (!verified.ok) {
-    req.auth = {
-      supabase: getSupabaseClient(),
-      role: "anonymous"
-    };
-    next();
-    return;
-  }
-  const adminCheck = await verifyActiveAdmin(verified.supabase, verified.user);
-  if (adminCheck.isAdmin) {
-    req.auth = {
-      user: verified.user,
-      token: verified.token,
-      authHeader: verified.authHeader,
-      supabase: verified.supabase,
-      role: "admin",
-      adminRole: adminCheck.role
-    };
-    next();
-    return;
-  }
-  const dealerCheck = await verifyDealerAccount(verified.supabase, verified.user);
-  if (dealerCheck.hasAccount && dealerCheck.dealerId) {
-    req.auth = {
-      user: verified.user,
-      token: verified.token,
-      authHeader: verified.authHeader,
-      supabase: verified.supabase,
-      role: "dealer",
-      dealerId: dealerCheck.dealerId,
-      dealerBusinessName: dealerCheck.businessName,
-      dealerApproved: dealerCheck.isApproved
-    };
-    next();
-    return;
-  }
-  req.auth = {
-    user: verified.user,
-    token: verified.token,
-    authHeader: verified.authHeader,
-    supabase: verified.supabase,
-    role: "buyer"
-  };
-  next();
-}
-async function requireAuth(req, res, next) {
-  const result = await verifySupabaseUser(req.headers.authorization);
-  if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
-    return;
-  }
-  req.auth = {
-    user: result.user,
-    token: result.token,
-    authHeader: result.authHeader,
-    supabase: result.supabase,
-    role: "buyer"
-  };
-  next();
-}
-async function requireAdmin(req, res, next) {
-  if (!req.auth?.user || !req.auth.supabase) {
-    const result = await verifySupabaseUser(req.headers.authorization);
-    if (!result.ok) {
-      res.status(result.status).json({ error: result.error });
-      return;
-    }
-    req.auth = {
-      user: result.user,
-      token: result.token,
-      authHeader: result.authHeader,
-      supabase: result.supabase,
-      role: "buyer"
-    };
-  }
-  const adminCheck = await verifyActiveAdmin(req.auth.supabase, req.auth.user);
-  if (!adminCheck.isAdmin) {
-    res.status(403).json({
-      error: "Administrator privileges required to access this endpoint."
-    });
-    return;
-  }
-  req.auth.role = "admin";
-  req.auth.adminRole = adminCheck.role;
-  next();
-}
-async function requireApprovedDealer(req, res, next) {
-  const result = await verifySupabaseUser(req.headers.authorization);
-  if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
-    return;
-  }
-  const dealerCheck = await verifyDealerAccount(result.supabase, result.user);
-  if (!dealerCheck.hasAccount || !dealerCheck.isApproved || !dealerCheck.dealerId) {
-    res.status(403).json({
-      error: dealerCheck.reason || "Approved dealership authorization required.",
-      code: "DEALER_APPROVAL_REQUIRED"
-    });
-    return;
-  }
-  req.auth = {
-    user: result.user,
-    token: result.token,
-    authHeader: result.authHeader,
-    supabase: result.supabase,
-    role: "dealer",
-    dealerId: dealerCheck.dealerId,
-    dealerBusinessName: dealerCheck.businessName,
-    dealerApproved: true
-  };
-  next();
-}
+import { Router as Router2 } from "express";
 
 // server/middleware/validate.ts
 function isPlainObject(value) {
@@ -1370,7 +1544,7 @@ async function persistExtractionTrace(authHeader, submissionType, rawInput, fetc
 }
 
 // server/routes/world.ts
-var router = Router();
+var router2 = Router2();
 var WORLD_REQUIRED_TABLES = [
   "player_profiles",
   "player_presence",
@@ -1534,7 +1708,7 @@ async function evaluateWorldDbStatus(params) {
     migrationFilePath: "src/db/game-world-social-migration.sql"
   };
 }
-router.get("/db-status", standardApiLimiter, async (req, res) => {
+router2.get("/db-status", standardApiLimiter, async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   const env = getServerEnv();
@@ -1551,12 +1725,12 @@ router.get("/db-status", standardApiLimiter, async (req, res) => {
   });
   return res.json(status);
 });
-router.get("/migration-sql", standardApiLimiter, (_req, res) => {
+router2.get("/migration-sql", standardApiLimiter, (_req, res) => {
   sendMigrationSqlFile("game-world-social-migration.sql", "-- Game world migration SQL not found.", res);
 });
-router.post(
+router2.post(
   "/moderate-chat",
-  requireAuth,
+  requirePlayer,
   chatModerationLimiter,
   validateModerateChatBody,
   async (req, res) => {
@@ -1702,10 +1876,10 @@ Message: ${JSON.stringify(trimmed)}`,
     return res.json({ allowed: true, severity: "clean", action: "allow", category: "CLEAN", reason: null });
   }
 );
-var worldRouter = router;
+var worldRouter = router2;
 
 // server/routes/cars.ts
-var router2 = Router2();
+var router3 = Router3();
 var PUBLIC_DEALER_SELECT_FULL = "id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year";
 var PUBLIC_DEALER_SELECT_MINIMAL = "id, name, slug, city, state, is_verified, joined_year";
 function sanitizePublicDealerPayload(raw) {
@@ -1825,7 +1999,7 @@ async function fetchPublicCarsFromSupabase(client) {
   }));
   return { ok: true, cars: sanitized };
 }
-router2.get("/", standardApiLimiter, async (_req, res) => {
+router3.get("/", standardApiLimiter, async (_req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   const env = getServerEnv();
@@ -1850,7 +2024,7 @@ router2.get("/", standardApiLimiter, async (_req, res) => {
     supabaseHost
   });
 });
-router2.get("/:slugOrId", standardApiLimiter, async (req, res) => {
+router3.get("/:slugOrId", standardApiLimiter, async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   const env = getServerEnv();
@@ -1882,13 +2056,13 @@ router2.get("/:slugOrId", standardApiLimiter, async (req, res) => {
   }
   return res.json({ car: match, supabaseHost });
 });
-var carsRouter = router2;
+var carsRouter = router3;
 
 // server/routes/dealers.ts
-var router3 = Router3();
+var router4 = Router4();
 var PUBLIC_DEALER_COLUMNS_FULL = "id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year";
 var PUBLIC_DEALER_COLUMNS_MINIMAL = "id, name, slug, city, state, is_verified, joined_year";
-router3.get("/public", standardApiLimiter, async (_req, res) => {
+router4.get("/public", standardApiLimiter, async (_req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   const env = getServerEnv();
@@ -1920,7 +2094,7 @@ router3.get("/public", standardApiLimiter, async (_req, res) => {
   }).map((d) => sanitizePublicDealerPayload(d)).filter(Boolean);
   return res.json({ dealers, supabaseHost });
 });
-router3.get("/db-status", standardApiLimiter, async (req, res) => {
+router4.get("/db-status", requireAdmin, standardApiLimiter, async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   const authHeader = req.headers.authorization;
@@ -1975,20 +2149,20 @@ router3.get("/db-status", standardApiLimiter, async (req, res) => {
     migrationFilePath: "src/db/dealer-approval-migration.sql"
   });
 });
-router3.get("/migration-sql", standardApiLimiter, (_req, res) => {
+router4.get("/migration-sql", standardApiLimiter, (_req, res) => {
   sendMigrationSqlFile("dealer-approval-migration.sql", "-- Dealer approval migration SQL not found.", res);
 });
-var dealersRouter = router3;
+var dealersRouter = router4;
 
 // server/routes/marketIntelligence.ts
 init_env();
 init_supabaseServer();
-import { Router as Router5 } from "express";
+import { Router as Router6 } from "express";
 
 // server/routes/pricingAgent.ts
 init_env();
 import crypto4 from "node:crypto";
-import { Router as Router4 } from "express";
+import { Router as Router5 } from "express";
 import { z } from "zod";
 init_supabaseServer();
 
@@ -4802,7 +4976,7 @@ async function runDueScheduledResearch(options) {
 }
 
 // server/routes/pricingAgent.ts
-var router4 = Router4();
+var router5 = Router5();
 var PROVIDER_KEYS = [
   "manifold_inventory",
   "approved_feed",
@@ -4850,10 +5024,10 @@ function verifyCronSecret(authHeader) {
   if (expectedBuf.length !== providedBuf.length) return false;
   return crypto4.timingSafeEqual(expectedBuf, providedBuf);
 }
-router4.get("/migration-sql", standardApiLimiter, (_req, res) => {
+router5.get("/migration-sql", standardApiLimiter, (_req, res) => {
   sendMigrationSqlFile("pricing-agent-migration.sql", "-- Pricing agent migration SQL missing.", res);
 });
-router4.get(
+router5.get(
   "/status",
   requireAuth,
   requireAdmin,
@@ -4899,7 +5073,7 @@ router4.get(
     });
   }
 );
-router4.patch(
+router5.patch(
   "/config",
   requireAuth,
   requireAdmin,
@@ -4929,7 +5103,7 @@ router4.patch(
     });
   }
 );
-router4.post(
+router5.post(
   "/providers/test",
   requireAuth,
   requireAdmin,
@@ -4944,7 +5118,7 @@ router4.post(
     return res.json(result);
   }
 );
-router4.post(
+router5.post(
   "/run",
   requireAuth,
   requireAdmin,
@@ -4967,7 +5141,7 @@ router4.post(
     return res.json(result);
   }
 );
-router4.get(
+router5.get(
   "/runs",
   requireAuth,
   requireAdmin,
@@ -4988,7 +5162,7 @@ router4.get(
     });
   }
 );
-router4.get(
+router5.get(
   "/estimates",
   optionalAuth,
   standardApiLimiter,
@@ -5030,7 +5204,7 @@ router4.get(
     });
   }
 );
-router4.all("/cron", aiIngestionLimiter, async (req, res) => {
+router5.all("/cron", aiIngestionLimiter, async (req, res) => {
   const authHeader = req.headers.authorization;
   let authorized = verifyCronSecret(authHeader);
   if (!authorized && authHeader) {
@@ -5049,12 +5223,12 @@ router4.all("/cron", aiIngestionLimiter, async (req, res) => {
   const result = await runDueScheduledResearch({ force });
   return res.json(result);
 });
-var pricingAgentRouter = router4;
+var pricingAgentRouter = router5;
 
 // server/routes/marketIntelligence.ts
-var router5 = Router5();
-router5.use("/agent", pricingAgentRouter);
-router5.get("/health", standardApiLimiter, (_req, res) => {
+var router6 = Router6();
+router6.use("/agent", pricingAgentRouter);
+router6.get("/health", standardApiLimiter, (_req, res) => {
   const { supabaseUrl, supabaseAnonKey } = getServerEnv();
   res.json({
     status: "ok",
@@ -5066,7 +5240,7 @@ router5.get("/health", standardApiLimiter, (_req, res) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 });
-router5.get("/db-migration-status", standardApiLimiter, async (req, res) => {
+router6.get("/db-migration-status", requireAdmin, standardApiLimiter, async (req, res) => {
   const authHeader = req.headers.authorization;
   const supabase = getSupabaseClient(authHeader);
   if (!supabase) {
@@ -5114,10 +5288,10 @@ router5.get("/db-migration-status", standardApiLimiter, async (req, res) => {
     migrationFilePath: "src/db/market-intelligence-migration.sql"
   });
 });
-router5.get("/migration-sql", standardApiLimiter, (_req, res) => {
+router6.get("/migration-sql", standardApiLimiter, (_req, res) => {
   sendMigrationSqlFile("market-intelligence-migration.sql", "-- Migration file not found.", res);
 });
-router5.post(
+router6.post(
   "/fetch-url",
   requireAuth,
   requireAdmin,
@@ -5171,7 +5345,7 @@ router5.post(
     });
   }
 );
-router5.post(
+router6.post(
   "/extract-text",
   requireAuth,
   requireAdmin,
@@ -5206,7 +5380,7 @@ router5.post(
     });
   }
 );
-router5.post(
+router6.post(
   "/embed",
   requireAuth,
   requireAdmin,
@@ -5244,7 +5418,7 @@ router5.post(
     }
   }
 );
-router5.post(
+router6.post(
   "/search-knowledge",
   standardApiLimiter,
   validateSearchKnowledgeBody,
@@ -5275,10 +5449,10 @@ router5.post(
     }
   }
 );
-var marketIntelligenceRouter = router5;
+var marketIntelligenceRouter = router6;
 
 // server/routes/ai.ts
-import { Router as Router6 } from "express";
+import { Router as Router7 } from "express";
 import multer from "multer";
 import crypto5 from "crypto";
 import { z as z6 } from "zod";
@@ -6940,7 +7114,7 @@ GROUNDING RULES:
 }
 
 // server/routes/ai.ts
-var aiRouter = Router6();
+var aiRouter = Router7();
 var uploadAudio = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -6950,6 +7124,12 @@ var uploadAudio = multer({
 });
 function makeRequestId() {
   return `ai_${crypto5.randomUUID().slice(0, 12)}`;
+}
+function toAiServiceRole(role) {
+  if (role === "admin" || role === "dealer" || role === "buyer" || role === "anonymous") {
+    return role;
+  }
+  return "buyer";
 }
 aiRouter.get(
   "/health",
@@ -7233,11 +7413,12 @@ aiRouter.post(
       return;
     }
     try {
+      const effectiveRole = toAiServiceRole(req.auth?.role);
       const result = await runVehicleIntelligenceSearch({
         query: parsed.data.query,
         inputMode: parsed.data.inputMode,
         limit: parsed.data.limit,
-        userRole: req.auth?.role || "anonymous",
+        userRole: effectiveRole,
         supabase: req.auth?.supabase,
         modelOverride: setting.model_override,
         maxOutputTokens: setting.max_output_tokens
@@ -7246,7 +7427,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || "anonymous",
+          user_role: effectiveRole,
           dealer_id: req.auth?.dealerId || null,
           feature_module: "vehicle_search",
           model: result.usage.model,
@@ -7273,7 +7454,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || "anonymous",
+          user_role: toAiServiceRole(req.auth?.role),
           feature_module: "vehicle_search",
           model: setting.model_override || getOpenAiConfigStatus().configuredModel || "unconfigured",
           input_tokens: 0,
@@ -7374,7 +7555,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || "anonymous",
+          user_role: toAiServiceRole(req.auth?.role),
           dealer_id: req.auth?.dealerId || null,
           feature_module: "voice_transcribe",
           model: result.model,
@@ -7399,7 +7580,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || "anonymous",
+          user_role: toAiServiceRole(req.auth?.role),
           feature_module: "voice_transcribe",
           model: setting.model_override || getOpenAiConfigStatus().transcriptionModel || "unconfigured",
           input_tokens: 0,
@@ -7431,9 +7612,10 @@ aiRouter.post(
     }
     const wantAiCommentary = parsed.data.includeAiCommentary && setting.enabled;
     try {
+      const effectiveRole = toAiServiceRole(req.auth?.role);
       const result = await runVehiclePriceIntelligence({
         input: { ...parsed.data, includeAiCommentary: wantAiCommentary },
-        role: req.auth?.role || "anonymous",
+        role: effectiveRole,
         supabase: req.auth?.supabase,
         modelOverride: setting.model_override,
         maxOutputTokens: setting.max_output_tokens
@@ -7443,7 +7625,7 @@ aiRouter.post(
           {
             request_id: requestId,
             user_id: req.auth?.user?.id || null,
-            user_role: req.auth?.role || "anonymous",
+            user_role: effectiveRole,
             dealer_id: req.auth?.dealerId || null,
             feature_module: "price_intelligence",
             model: result.usage.model,
@@ -7468,11 +7650,12 @@ aiRouter.post(
       });
     } catch (err) {
       const safe = sanitizeOpenAiError(err);
+      const effectiveRole = toAiServiceRole(req.auth?.role);
       await recordAiUsage(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || "anonymous",
+          user_role: effectiveRole,
           feature_module: "price_intelligence",
           model: setting.model_override || getOpenAiConfigStatus().configuredModel || "unconfigured",
           input_tokens: 0,
@@ -7488,7 +7671,7 @@ aiRouter.post(
       try {
         const deterministicOnly = await runVehiclePriceIntelligence({
           input: { ...parsed.data, includeAiCommentary: false },
-          role: req.auth?.role || "anonymous",
+          role: effectiveRole,
           supabase: req.auth?.supabase
         });
         res.json({
@@ -7514,6 +7697,13 @@ aiRouter.post(
   async (req, res) => {
     if (!req.auth?.user || !req.auth.supabase) {
       res.status(401).json({ error: "Authentication required." });
+      return;
+    }
+    if (req.auth.role === "player") {
+      res.status(403).json({
+        error: "Game Player accounts cannot access MANIFOLD Admin or Dealer market insights.",
+        code: "PLAYER_ROLE_FORBIDDEN"
+      });
       return;
     }
     const { verifyActiveAdmin: verifyActiveAdmin2, verifyDealerAccount: verifyDealerAccount2 } = await Promise.resolve().then(() => (init_supabaseServer(), supabaseServer_exports));
@@ -7631,11 +7821,12 @@ aiRouter.post(
       return;
     }
     try {
+      const effectiveRole = toAiServiceRole(req.auth?.role);
       const result = await runAutomotiveAssistant({
         messages: parsed.data.messages,
         focusedCarSlug: parsed.data.focusedCarSlug,
         surface: parsed.data.surface,
-        role: req.auth?.role || "anonymous",
+        role: effectiveRole,
         dealerId: req.auth?.dealerId,
         dealerBusinessName: req.auth?.dealerBusinessName,
         supabase: req.auth?.supabase,
@@ -7646,7 +7837,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || "anonymous",
+          user_role: effectiveRole,
           dealer_id: req.auth?.dealerId || null,
           feature_module: "assistant",
           model: result.usage.model,
@@ -7669,7 +7860,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || "anonymous",
+          user_role: toAiServiceRole(req.auth?.role),
           feature_module: "assistant",
           model: setting.model_override || getOpenAiConfigStatus().configuredModel || "unconfigured",
           input_tokens: 0,
@@ -7700,6 +7891,7 @@ function createApp() {
   });
   app2.use(express.json({ limit: "15mb" }));
   app2.use(express.urlencoded({ extended: true, limit: "15mb" }));
+  app2.use("/api/auth", authRouter);
   app2.use("/api/market-intelligence", marketIntelligenceRouter);
   app2.use("/api/world", worldRouter);
   app2.use("/api/dealers", dealersRouter);

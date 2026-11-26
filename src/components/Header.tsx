@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDealerAuth } from '../context/DealerAuthContext';
+import { useRole } from '../context/RoleContext';
 
 interface HeaderProps {
   currentRoute: string;
@@ -37,7 +38,9 @@ export const Header: React.FC<HeaderProps> = ({
 
   const { isAdmin } = useAuth();
   const { dealerAccount } = useDealerAuth();
-  const isDealer = Boolean(dealerAccount?.hasAccount);
+  const { isGamePlayer, isAdminAccount, isDealerAccount } = useRole();
+  const showAdmin = isAdmin && isAdminAccount;
+  const showDealer = !showAdmin && !isGamePlayer && (isDealerAccount || Boolean(dealerAccount?.hasAccount));
 
   useEffect(() => {
     const handleScroll = () => {
@@ -47,21 +50,28 @@ export const Header: React.FC<HeaderProps> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const navItems = [
-    { label: '3D World', route: '/' },
+  const baseNavItems = [
     { label: 'Marketplace', route: '/car-marketplace' },
+    { label: '3D World', route: '/3d-world' },
     { label: 'Cars', route: '/cars' },
     { label: 'Dealers', route: '/dealers' },
     { label: 'Car Hunt', route: '/car-hunt' },
     { label: 'Reviews', route: '/reviews' },
     { label: 'Sell a Car', route: '/sell-a-car' },
     { label: 'About', route: '/about' },
-    isAdmin
-      ? { label: 'Admin Dashboard', route: '/admin' }
-      : isDealer
-      ? { label: 'Dealer Dashboard', route: '/dealer/dashboard' }
-      : { label: 'Dealer Portal', route: '/dealer/sign-in' },
   ];
+
+  // Strict RBAC: Game Players must never see Admin or Dealer navigation menus
+  const navItems = isGamePlayer
+    ? baseNavItems
+    : [
+        ...baseNavItems,
+        showAdmin
+          ? { label: 'Admin Dashboard', route: '/admin' }
+          : showDealer
+          ? { label: 'Dealer Dashboard', route: '/dealer/dashboard' }
+          : { label: 'Dealer Portal', route: '/dealer/sign-in' },
+      ];
 
   const handleNavClick = (route: string) => {
     navigate(route);
@@ -69,8 +79,8 @@ export const Header: React.FC<HeaderProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const isHome = currentRoute === '/';
-  const showSolidHeader = !isHome || isScrolled;
+  const hasHeroBackdrop = currentRoute === '/car-marketplace' || currentRoute === '/3d-world' || currentRoute === '/';
+  const showSolidHeader = !hasHeroBackdrop || isScrolled;
 
   return (
     <>
@@ -86,7 +96,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center justify-between h-full gap-4">
             {/* Brand Wordmark & Tagline Lockup */}
             <div
-              onClick={() => handleNavClick('/')}
+              onClick={() => handleNavClick('/car-marketplace')}
               className="cursor-pointer group flex flex-col justify-center shrink-0"
             >
               <div className="flex items-center gap-1.5">
@@ -105,6 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
               {navItems.map((item) => {
                 const isActive =
                   currentRoute === item.route ||
+                  (item.route === '/car-marketplace' && currentRoute === '/') ||
                   (item.route === '/dealers' && currentRoute === '/:dealerSlug') ||
                   (item.route === '/cars' && currentRoute === '/cars/:slug');
                 return (
@@ -153,8 +164,8 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </button>
 
-              {/* Primary Action Button (Red) - strictly role-aware per Section 20 & 21 */}
-              {isAdmin ? (
+              {/* Primary Action Button (Red) - strictly role-aware */}
+              {showAdmin ? (
                 <button
                   onClick={() => handleNavClick('/admin')}
                   className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider px-3.5 xl:px-4 py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
@@ -162,7 +173,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
                   <span>ADMIN DASHBOARD</span>
                 </button>
-              ) : isDealer ? (
+              ) : showDealer ? (
                 <button
                   onClick={() => handleNavClick('/dealer/dashboard')}
                   className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider px-3.5 xl:px-4 py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
@@ -230,6 +241,7 @@ export const Header: React.FC<HeaderProps> = ({
                 {navItems.map((item) => {
                   const isActive =
                     currentRoute === item.route ||
+                    (item.route === '/car-marketplace' && currentRoute === '/') ||
                     (item.route === '/dealers' && currentRoute === '/:dealerSlug') ||
                     (item.route === '/cars' && currentRoute === '/cars/:slug');
                   return (
@@ -273,20 +285,22 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>Talk to MANIFOLD</span>
                 </button>
 
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    if (onOpenAdminLogin) {
-                      onOpenAdminLogin();
-                    } else {
-                      handleNavClick('/admin/login');
-                    }
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 text-xs text-gray-300 hover:text-white py-1.5 transition font-medium"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#EF233C]" />
-                  <span>Admin Sign In</span>
-                </button>
+                {!isGamePlayer && !showDealer && (
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      if (onOpenAdminLogin) {
+                        onOpenAdminLogin();
+                      } else {
+                        handleNavClick('/admin/login');
+                      }
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 text-xs text-gray-300 hover:text-white py-1.5 transition font-medium"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#EF233C]" />
+                    <span>Admin Sign In</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

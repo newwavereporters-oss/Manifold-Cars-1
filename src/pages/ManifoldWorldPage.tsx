@@ -58,6 +58,8 @@ import {
   type PlayerProfile,
   type WorldDbStatus,
 } from '../services/playerService';
+import { useRole } from '../context/RoleContext';
+import { resolveCurrentUserRole } from '../services/roleService';
 import {
   WorldMultiplayerSession,
   type ActiveConversationState,
@@ -129,9 +131,11 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   onInterested,
 }) => {
   // Authentication, Onboarding & 24h Lock State
+  const { role: currentAccountRole, isGamePlayer, refreshRole } = useRole();
   const [authChecking, setAuthChecking] = useState(true);
   const [dbStatus, setDbStatus] = useState<WorldDbStatus | null>(null);
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(null);
+  const [sessionRoleConflict, setSessionRoleConflict] = useState<'admin' | 'dealer' | null>(null);
   const [serverClockOffsetMs, setServerClockOffsetMs] = useState(0);
   const [isConfigViewerOpen, setIsConfigViewerOpen] = useState(false);
   const [lockTick, setLockTick] = useState(0);
@@ -330,9 +334,21 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
         accessTokenRef.current = sessionData.session?.access_token || null;
 
         if (sessionData.session) {
-          const res = await fetchMyPlayerProfile();
-          if (mounted && res.success && res.profile) {
-            applyProfileToWorld(res.profile, res.serverClockOffsetMs || 0);
+          const resolved = await resolveCurrentUserRole(sessionData.session.access_token);
+          if (!mounted) return;
+          if (
+            resolved.role === 'admin' ||
+            resolved.role === 'dealer' ||
+            resolved.role === 'dealer_onboarding'
+          ) {
+            setSessionRoleConflict(resolved.role === 'admin' ? 'admin' : 'dealer');
+            setPlayerProfile(null);
+          } else {
+            setSessionRoleConflict(null);
+            const res = await fetchMyPlayerProfile();
+            if (mounted && res.success && res.profile) {
+              applyProfileToWorld(res.profile, res.serverClockOffsetMs || 0);
+            }
           }
         }
       }
@@ -345,6 +361,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
       accessTokenRef.current = session?.access_token || null;
       if (event === 'SIGNED_OUT') {
         lastAppliedPlayerIdRef.current = null;
+        setSessionRoleConflict(null);
         setPlayerProfile(null);
         setCustomization(DEFAULT_CUSTOMIZATION);
         setPlayerCredits(5000);
@@ -641,7 +658,9 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   }, [playerProfile]);
 
   const handleAuthenticated = (profile: PlayerProfile, offsetMs: number) => {
+    setSessionRoleConflict(null);
     applyProfileToWorld(profile, offsetMs);
+    void refreshRole();
   };
 
   const handleBriefingAccepted = (updatedProfile: PlayerProfile, offsetMs: number) => {
@@ -1533,6 +1552,14 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
           dbStatus={dbStatus}
           onAuthenticated={handleAuthenticated}
           onNavigateMarketplace={() => navigate('/car-marketplace')}
+          sessionRoleConflict={sessionRoleConflict}
+          onReturnToDashboard={() =>
+            navigate(sessionRoleConflict === 'admin' ? '/admin' : '/dealer/dashboard')
+          }
+          onSignOutConflictingSession={async () => {
+            await supabase.auth.signOut().catch(() => {});
+            setSessionRoleConflict(null);
+          }}
         />
       )}
 
@@ -1786,6 +1813,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             onNavigate={(route) => {
               void safeNavigateWithAbandon(route);
             }}
+            hideDealerPortalActions={isGamePlayer || currentAccountRole === 'player'}
           />
 
           <CityMapModal

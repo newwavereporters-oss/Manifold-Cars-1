@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured, supabaseUrl } from '../lib/supabase';
 import { retryWithBackoff, withTimeout } from '../utils/networkReliability';
+import { resolveCurrentUserRole } from './roleService';
 import type {
   InteriorTheme,
   MusicPreference,
@@ -260,6 +261,26 @@ export async function registerPlayerAccount(params: {
     return { success: false, error: 'Supabase authentication is not configured.' };
   }
 
+  // Prevent active Admin or Dealer sessions from creating a conflicting Game Player record
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData?.session?.user) {
+      const currentRole = await resolveCurrentUserRole(sessionData.session.access_token);
+      if (
+        currentRole.role === 'admin' ||
+        currentRole.role === 'dealer' ||
+        currentRole.role === 'dealer_onboarding'
+      ) {
+        return {
+          success: false,
+          error: 'Please sign out of your Admin or Dealer session before registering a Game Player account.',
+        };
+      }
+    }
+  } catch {
+    // proceed
+  }
+
   const fullName = params.fullName.trim();
   const nickname = params.nickname.trim();
   const email = params.email.trim().toLowerCase();
@@ -300,6 +321,7 @@ export async function registerPlayerAccount(params: {
             full_name: fullName,
             nickname,
             phone_number: phoneNumber,
+            role: 'player',
           },
         },
       }),
@@ -372,6 +394,23 @@ export async function loginPlayerAccount(
       return { success: false, error: error ? mapWorldError(error) : 'Invalid email or password.' };
     }
 
+    // Strict Role Separation: never allow Admin or Dealer credentials to auto-provision or enter as a Game Player
+    const resolved = await resolveCurrentUserRole(data.session?.access_token);
+    if (resolved.role === 'admin') {
+      await supabase.auth.signOut().catch(() => {});
+      return {
+        success: false,
+        error: 'Admin accounts cannot sign in to the Game Player portal. Please use the Admin Portal.',
+      };
+    }
+    if (resolved.role === 'dealer' || resolved.role === 'dealer_onboarding') {
+      await supabase.auth.signOut().catch(() => {});
+      return {
+        success: false,
+        error: 'Dealer accounts cannot sign in to the Game Player portal. Please use a separate Game Player account.',
+      };
+    }
+
     return await fetchMyPlayerProfile();
   } catch (err) {
     return { success: false, error: mapWorldError(err) };
@@ -385,7 +424,7 @@ export async function requestPlayerPasswordReset(email: string): Promise<{ succe
   try {
     const { error } = await withTimeout(
       supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: `${window.location.origin}/`,
+        redirectTo: `${window.location.origin}/3d-world`,
       }),
       10000,
       'Password reset'

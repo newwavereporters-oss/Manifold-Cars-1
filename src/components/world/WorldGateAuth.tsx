@@ -12,6 +12,8 @@ import {
   AlertCircle,
   Loader2,
   ShieldCheck,
+  ShieldAlert,
+  LogOut,
 } from 'lucide-react';
 import {
   loginPlayerAccount,
@@ -25,6 +27,9 @@ interface WorldGateAuthProps {
   dbStatus: WorldDbStatus | null;
   onAuthenticated: (profile: PlayerProfile, serverClockOffsetMs: number) => void;
   onNavigateMarketplace: () => void;
+  sessionRoleConflict?: 'admin' | 'dealer' | null;
+  onReturnToDashboard?: () => void;
+  onSignOutConflictingSession?: () => Promise<void> | void;
 }
 
 type AuthScreenMode = 'LOGIN' | 'REGISTER' | 'FORGOT';
@@ -33,6 +38,9 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
   dbStatus,
   onAuthenticated,
   onNavigateMarketplace,
+  sessionRoleConflict = null,
+  onReturnToDashboard,
+  onSignOutConflictingSession,
 }) => {
   const [mode, setMode] = useState<AuthScreenMode>('LOGIN');
 
@@ -246,6 +254,49 @@ export const WorldGateAuth: React.FC<WorldGateAuthProps> = ({
         )}
 
         <div className="p-4 sm:p-6 pt-4 space-y-4">
+          {sessionRoleConflict && (
+            <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-100 text-xs space-y-2.5">
+              <div className="flex items-start gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-white">
+                    {sessionRoleConflict === 'admin'
+                      ? 'Administrator Session Active'
+                      : 'Dealer Session Active'}
+                  </p>
+                  <p className="text-amber-100/90 mt-0.5 leading-relaxed">
+                    {sessionRoleConflict === 'admin'
+                      ? 'Admin accounts cannot enter 3D World as Game Players. Sign out first to sign in with a separate Game Player account.'
+                      : 'Dealer accounts cannot enter 3D World as Game Players. Sign out first to sign in with a separate Game Player account.'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {onReturnToDashboard && (
+                  <button
+                    type="button"
+                    onClick={onReturnToDashboard}
+                    className="px-3 py-1.5 rounded-lg bg-[#EF233C] hover:bg-[#d90429] text-white text-[11px] font-bold transition cursor-pointer"
+                  >
+                    {sessionRoleConflict === 'admin'
+                      ? 'Return to Admin Dashboard'
+                      : 'Return to Dealer Dashboard'}
+                  </button>
+                )}
+                {onSignOutConflictingSession && (
+                  <button
+                    type="button"
+                    onClick={() => void onSignOutConflictingSession()}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <LogOut className="w-3 h-3" />
+                    <span>Sign Out Session</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="p-3 rounded-2xl bg-red-500/15 border border-red-500/40 text-red-200 text-xs flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />

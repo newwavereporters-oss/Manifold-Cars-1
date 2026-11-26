@@ -16,6 +16,8 @@ const KNOWN_PUBLIC_EXACT = new Set([
   '/',
   '/car-marketplace',
   '/marketplace',
+  '/3d-world',
+  '/world',
   '/cars',
   '/dealers',
   '/car-hunt',
@@ -34,6 +36,8 @@ const RESERVED_ROOT_SEGMENTS = new Set([
   'cars',
   'car-marketplace',
   'marketplace',
+  '3d-world',
+  'world',
   'car-hunt',
   'reviews',
   'sell-a-car',
@@ -113,7 +117,8 @@ export function normalizeBrowserLocation(
   if (trimmedHash.startsWith('#/')) {
     const hashBody = trimmedHash.slice(1); // starts with '/'
     const [hashPathRaw, hashQuery] = hashBody.split('?');
-    const cleanPath = normalizePathname(hashPathRaw);
+    const normalizedPath = normalizePathname(hashPathRaw);
+    const cleanPath = normalizedPath === '/' ? '/car-marketplace' : normalizedPath;
     const mergedSearch = hashQuery
       ? `?${hashQuery}`
       : search && search.startsWith('?')
@@ -124,7 +129,8 @@ export function normalizeBrowserLocation(
     return { cleanUrl, changed: cleanUrl !== currentFull };
   }
 
-  const cleanPath = normalizePathname(pathname || '/');
+  const normalizedPath = normalizePathname(pathname || '/');
+  const cleanPath = normalizedPath === '/' ? '/car-marketplace' : normalizedPath;
   const cleanSearch = search || '';
   const cleanUrl = `${cleanPath}${cleanSearch}`;
   const current = `${pathname || '/'}${cleanSearch}`;
@@ -259,12 +265,17 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
     };
   }
 
-  // 4. Canonical Public Routes
+  // 4. Canonical Public Routes (root '/' redirects to '/car-marketplace')
   if (KNOWN_PUBLIC_EXACT.has(pathname)) {
-    const canonical = pathname === '/marketplace' ? '/car-marketplace' : pathname;
+    const canonical =
+      pathname === '/' || pathname === '/marketplace'
+        ? '/car-marketplace'
+        : pathname === '/world'
+        ? '/3d-world'
+        : pathname;
     return {
       normalizedRoute: canonical,
-      pathname,
+      pathname: canonical,
       queryString,
       scope: 'public',
       isKnownRoute: true,

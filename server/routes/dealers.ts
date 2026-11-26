@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { getServerEnv } from '../config/env.js';
 import { getSupabaseClient } from '../lib/supabaseServer.js';
 import { sendMigrationSqlFile } from '../lib/migrationSql.js';
+import { requireAdmin } from '../middleware/auth.js';
 import { standardApiLimiter } from '../middleware/rateLimit.js';
 import { sanitizePublicDealerPayload } from './cars.js';
 import { extractSupabaseHost } from './world.js';
@@ -56,7 +57,7 @@ router.get('/public', standardApiLimiter, async (_req: Request, res: Response) =
   return res.json({ dealers, supabaseHost });
 });
 
-router.get('/db-status', standardApiLimiter, async (req: Request, res: Response) => {
+router.get('/db-status', requireAdmin, standardApiLimiter, async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
 

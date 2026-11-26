@@ -1,6 +1,7 @@
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { getServerEnv } from './config/env.js';
+import { authRouter } from './routes/auth.js';
 import { dealersRouter } from './routes/dealers.js';
 import { carsRouter } from './routes/cars.js';
 import { marketIntelligenceRouter } from './routes/marketIntelligence.js';
@@ -25,6 +26,7 @@ export function createApp() {
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
+  app.use('/api/auth', authRouter);
   app.use('/api/market-intelligence', marketIntelligenceRouter);
   app.use('/api/world', worldRouter);
   app.use('/api/dealers', dealersRouter);

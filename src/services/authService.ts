@@ -1,5 +1,6 @@
 import { AdminUser, UserRole } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { resolveCurrentUserRole } from './roleService';
 
 type AuthStateListener = (user: AdminUser | null) => void;
 
@@ -173,13 +174,24 @@ class AuthService {
       const admin = await this.verifyAdminAuthorization(authData.user.id, cleanEmail);
 
       if (!admin) {
+        const resolved = await resolveCurrentUserRole(authData.session?.access_token);
         // Immediately sign them out of Supabase Auth
         await supabase.auth.signOut();
         this.currentUser = null;
         this.notifyListeners();
+
+        let errorMessage = 'You are not authorized to access the MANIFOLD Admin Area.';
+        if (resolved.role === 'player') {
+          errorMessage =
+            'Game Player accounts cannot sign in to the MANIFOLD Admin Area. Please return to 3D World.';
+        } else if (resolved.role === 'dealer' || resolved.role === 'dealer_onboarding') {
+          errorMessage =
+            'Dealer accounts cannot sign in to the MANIFOLD Admin Area. Please use the Dealer Portal.';
+        }
+
         return {
           user: null,
-          error: 'You are not authorized to access the MANIFOLD Admin Area.',
+          error: errorMessage,
         };
       }
 

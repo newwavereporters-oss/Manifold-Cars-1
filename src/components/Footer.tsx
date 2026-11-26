@@ -1,6 +1,7 @@
 import React from 'react';
 import { Youtube, Instagram, Facebook, Twitter, Phone, Mail, MapPin } from 'lucide-react';
 import footerCityscapeBg from '../assets/images/Cinematic Luxury SUV Cityscape at Sunset.png';
+import { useRole } from '../context/RoleContext';
 
 interface FooterProps {
   navigate: (route: string) => void;
@@ -9,6 +10,8 @@ interface FooterProps {
 }
 
 export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenAdminLogin }) => {
+  const { isGamePlayer, isDealerAccount } = useRole();
+
   const handleNav = (route: string) => {
     navigate(route);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -47,7 +50,7 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
           {/* Brand Column */}
           <div className="lg:col-span-2 space-y-4">
             <div
-              onClick={() => handleNav('/')}
+              onClick={() => handleNav('/car-marketplace')}
               className="cursor-pointer inline-flex flex-col group"
             >
               <div className="flex items-center gap-1.5">
@@ -123,7 +126,7 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
             <ul className="space-y-2 text-xs text-gray-400">
               <li>
                 <button
-                  onClick={() => handleNav('/')}
+                  onClick={() => handleNav('/3d-world')}
                   className="hover:text-white transition-colors text-white font-semibold flex items-center gap-1.5"
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-[#EF233C]" />
@@ -194,14 +197,16 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
                   Blog & Market Insights
                 </button>
               </li>
-              <li>
-                <button
-                  onClick={() => handleNav('/dealer/sign-in')}
-                  className="hover:text-white transition-colors text-gray-300 font-medium"
-                >
-                  Dealer Portal
-                </button>
-              </li>
+              {!isGamePlayer && (
+                <li>
+                  <button
+                    onClick={() => handleNav(isDealerAccount ? '/dealer/dashboard' : '/dealer/sign-in')}
+                    className="hover:text-white transition-colors text-gray-300 font-medium"
+                  >
+                    {isDealerAccount ? 'Dealer Dashboard' : 'Dealer Portal'}
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
 
@@ -294,18 +299,24 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
             >
               About Us
             </button>
-            <button
-              onClick={() => handleNav('/dealer/sign-in')}
-              className="hover:text-white transition-colors font-medium text-gray-300"
-            >
-              Dealer Portal
-            </button>
-            <button
-              onClick={() => handleNav('/dealer/register')}
-              className="hover:text-white transition-colors"
-            >
-              Register Dealership
-            </button>
+            {!isGamePlayer && (
+              <>
+                <button
+                  onClick={() => handleNav(isDealerAccount ? '/dealer/dashboard' : '/dealer/sign-in')}
+                  className="hover:text-white transition-colors font-medium text-gray-300"
+                >
+                  {isDealerAccount ? 'Dealer Dashboard' : 'Dealer Portal'}
+                </button>
+                {!isDealerAccount && (
+                  <button
+                    onClick={() => handleNav('/dealer/register')}
+                    className="hover:text-white transition-colors"
+                  >
+                    Register Dealership
+                  </button>
+                )}
+              </>
+            )}
             <button
               onClick={() => handleNav('/about')}
               className="hover:text-white transition-colors"
@@ -318,20 +329,24 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
             >
               Terms of Service
             </button>
-            <span className="text-gray-600">·</span>
-            <button
-              onClick={() => {
-                if (onOpenAdminLogin) {
-                  onOpenAdminLogin();
-                } else {
-                  handleNav('/admin/login');
-                }
-              }}
-              className="text-[11px] text-gray-300 hover:text-white transition-colors cursor-pointer font-medium hover:underline"
-              title="MANIFOLD Operational Portal"
-            >
-              Admin Sign In
-            </button>
+            {!isGamePlayer && !isDealerAccount && (
+              <>
+                <span className="text-gray-600">·</span>
+                <button
+                  onClick={() => {
+                    if (onOpenAdminLogin) {
+                      onOpenAdminLogin();
+                    } else {
+                      handleNav('/admin/login');
+                    }
+                  }}
+                  className="text-[11px] text-gray-300 hover:text-white transition-colors cursor-pointer font-medium hover:underline"
+                  title="MANIFOLD Operational Portal"
+                >
+                  Admin Sign In
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

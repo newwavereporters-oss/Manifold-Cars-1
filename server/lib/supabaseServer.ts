@@ -323,3 +323,110 @@ export async function verifyDealerAccount(
     };
   }
 }
+
+export interface PlayerProfileCheckResult {
+  isPlayer: boolean;
+  playerId?: string;
+  nickname?: string;
+  accountStatus?: string;
+}
+
+export async function verifyPlayerProfile(
+  supabase: SupabaseClient,
+  user: User
+): Promise<PlayerProfileCheckResult> {
+  const lookupClient = getSupabaseAdminClient() ?? supabase;
+  try {
+    const { data, error } = await lookupClient
+      .from('player_profiles')
+      .select('id, nickname, account_status')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error || !data || !data.id) {
+      return { isPlayer: false };
+    }
+
+    return {
+      isPlayer: true,
+      playerId: String(data.id),
+      nickname: typeof data.nickname === 'string' ? data.nickname : undefined,
+      accountStatus: typeof data.account_status === 'string' ? data.account_status : 'active',
+    };
+  } catch {
+    return { isPlayer: false };
+  }
+}
+
+export type ManifoldAccountRole =
+  | 'admin'
+  | 'dealer'
+  | 'dealer_onboarding'
+  | 'player'
+  | 'buyer';
+
+export interface ResolvedAccountIdentity {
+  role: ManifoldAccountRole;
+  adminRole?: string;
+  dealerId?: string;
+  dealerBusinessName?: string;
+  dealerAccountStatus?: string;
+  dealerApproved?: boolean;
+  playerId?: string;
+  playerNickname?: string;
+  playerAccountStatus?: string;
+}
+
+/**
+ * Resolves the authoritative role for an authenticated Supabase user from database tables.
+ * Strict separation:
+ * 1. Active row in admin_users -> 'admin'
+ * 2. Row in player_profiles -> 'player' (prevents any Game Player from escalating into Dealer routes)
+ * 3. Row in dealer_accounts -> 'dealer'
+ * 4. Explicit dealer signup metadata prior to completing business info -> 'dealer_onboarding'
+ * 5. Otherwise -> 'buyer'
+ */
+export async function resolveAuthenticatedRole(
+  supabase: SupabaseClient,
+  user: User
+): Promise<ResolvedAccountIdentity> {
+  const [adminCheck, playerCheck, dealerCheck] = await Promise.all([
+    verifyActiveAdmin(supabase, user),
+    verifyPlayerProfile(supabase, user),
+    verifyDealerAccount(supabase, user),
+  ]);
+
+  if (adminCheck.isAdmin) {
+    return {
+      role: 'admin',
+      adminRole: adminCheck.role,
+    };
+  }
+
+  if (playerCheck.isPlayer) {
+    return {
+      role: 'player',
+      playerId: playerCheck.playerId,
+      playerNickname: playerCheck.nickname,
+      playerAccountStatus: playerCheck.accountStatus,
+    };
+  }
+
+  if (dealerCheck.hasAccount && dealerCheck.dealerId) {
+    return {
+      role: 'dealer',
+      dealerId: dealerCheck.dealerId,
+      dealerBusinessName: dealerCheck.businessName,
+      dealerAccountStatus: dealerCheck.accountStatus,
+      dealerApproved: dealerCheck.isApproved,
+    };
+  }
+
+  const rawMetaRole = String(user.user_metadata?.role || '').trim().toLowerCase();
+  if (rawMetaRole === 'dealer') {
+    return { role: 'dealer_onboarding' };
+  }
+
+  return { role: 'buyer' };
+}
+

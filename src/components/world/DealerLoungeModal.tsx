@@ -7,12 +7,14 @@ interface DealerLoungeModalProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigate: (route: string) => void;
+  hideDealerPortalActions?: boolean;
 }
 
 export const DealerLoungeModal: React.FC<DealerLoungeModalProps> = ({
   isOpen,
   onClose,
   onNavigate,
+  hideDealerPortalActions = false,
 }) => {
   if (!isOpen) return null;
 
@@ -67,41 +69,43 @@ export const DealerLoungeModal: React.FC<DealerLoungeModalProps> = ({
           </div>
 
           {/* Action Portals */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Dealer Portal Actions */}
-            <div className="p-4 bg-white/5 rounded-2xl border border-white/10 flex flex-col justify-between">
-              <div>
-                <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center mb-3">
-                  <Building2 className="w-5 h-5" />
+          <div className={`grid grid-cols-1 ${hideDealerPortalActions ? '' : 'sm:grid-cols-2'} gap-4`}>
+            {/* Dealer Portal Actions (hidden from Game Players) */}
+            {!hideDealerPortalActions && (
+              <div className="p-4 bg-white/5 rounded-2xl border border-white/10 flex flex-col justify-between">
+                <div>
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center mb-3">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Accredited Dealer Portal</h4>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Manage vehicle inventory, list verified cars, respond to buyer enquiries, and track escrow sales.
+                  </p>
                 </div>
-                <h4 className="text-sm font-bold text-white">Accredited Dealer Portal</h4>
-                <p className="text-xs text-gray-400 mt-1">
-                  Manage vehicle inventory, list verified cars, respond to buyer enquiries, and track escrow sales.
-                </p>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onNavigate('/dealer/sign-in');
+                    }}
+                    className="flex-1 min-h-[44px] py-2.5 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-bold uppercase rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>Dealer Sign In</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onNavigate('/dealer/register');
+                    }}
+                    className="flex-1 min-h-[44px] py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Register</span>
+                  </button>
+                </div>
               </div>
-              <div className="mt-4 flex gap-2">
-                <button
-                  onClick={() => {
-                    onClose();
-                    onNavigate('/dealer/sign-in');
-                  }}
-                  className="flex-1 min-h-[44px] py-2.5 bg-[#EF233C] hover:bg-[#d90429] text-white text-xs font-bold uppercase rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <LogIn className="w-3.5 h-3.5" />
-                  <span>Dealer Sign In</span>
-                </button>
-                <button
-                  onClick={() => {
-                    onClose();
-                    onNavigate('/dealer/register');
-                  }}
-                  className="flex-1 min-h-[44px] py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Register</span>
-                </button>
-              </div>
-            </div>
+            )}
 
             {/* Car Hunt Concierge */}
             <div className="p-4 bg-white/5 rounded-2xl border border-white/10 flex flex-col justify-between">

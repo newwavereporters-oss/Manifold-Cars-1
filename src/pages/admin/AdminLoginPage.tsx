@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowRight, AlertCircle, Loader2, ShieldAlert, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useRole } from '../../context/RoleContext';
+import { supabase } from '../../lib/supabase';
 
 interface AdminLoginPageProps {
   navigate: (route: string) => void;
@@ -8,18 +10,19 @@ interface AdminLoginPageProps {
 
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ navigate }) => {
   const { signIn, isAuthenticated } = useAuth();
+  const { role, isGamePlayer, isDealerAccount } = useRole();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // If already authenticated, redirect
+  // If already authenticated as admin, redirect
   React.useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && role === 'admin') {
       navigate('/admin');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, role, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,7 +51,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ navigate }) => {
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center relative z-10 px-4">
         {/* Brand Wordmark Lockup */}
         <div
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/car-marketplace')}
           className="cursor-pointer inline-flex flex-col items-center group mb-4"
         >
           <div className="flex items-center gap-1.5">
@@ -72,6 +75,41 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ navigate }) => {
 
       <div className="mt-7 sm:mx-auto sm:w-full sm:max-w-md px-4 relative z-10">
         <div className="bg-white py-8 px-6 sm:px-10 shadow-2xl rounded-2xl border border-gray-100">
+          {(isGamePlayer || isDealerAccount || role === 'dealer_onboarding') && (
+            <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2.5">
+              <div className="flex items-start gap-2.5 text-xs text-amber-900">
+                <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                <div>
+                  <p className="font-bold">Active Non-Admin Session Detected</p>
+                  <p className="text-amber-800 mt-0.5 leading-relaxed">
+                    {isGamePlayer
+                      ? 'You are currently signed in with a Game Player account. Game Players cannot access the Admin Dashboard.'
+                      : 'You are currently signed in with a Dealer account. Dealers cannot access the Admin Dashboard.'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => navigate(isGamePlayer ? '/3d-world' : '/dealer/dashboard')}
+                  className="px-3 py-1.5 bg-[#071A2B] hover:bg-[#0b253d] text-white text-[11px] font-bold rounded-lg transition cursor-pointer"
+                >
+                  {isGamePlayer ? 'Return to 3D World' : 'Return to Dealer Portal'}
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await supabase.auth.signOut().catch(() => {});
+                  }}
+                  className="px-3 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 text-[11px] font-bold rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
+                >
+                  <LogOut className="w-3 h-3" />
+                  <span>Sign Out Session</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 p-3.5 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2.5 text-xs text-red-700">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#EF233C]" />
@@ -151,7 +189,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ navigate }) => {
               <span>Role-Protected Session</span>
             </div>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/car-marketplace')}
               className="text-gray-500 hover:text-gray-900 font-medium transition"
             >
               ← Back to Marketplace

@@ -17,7 +17,6 @@ import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { AdminEditCarPage } from './pages/admin/AdminEditCarPage';
 import { AdminGuard } from './components/AdminGuard';
 import { AdminLoginModal } from './components/AdminLoginModal';
-import { DealerAuthProvider } from './context/DealerAuthContext';
 import { DealerGuard } from './components/dealer/DealerGuard';
 import { DealerSignInPage } from './pages/dealer/DealerSignInPage';
 import { DealerRegisterPage } from './pages/dealer/DealerRegisterPage';
@@ -78,9 +77,9 @@ export function App() {
     return () => unsub();
   }, []);
 
-  // Ensure all 3D game engine and music audio stop immediately when leaving `/`
+  // Ensure all 3D game engine and music audio stop immediately when leaving `/3d-world`
   useEffect(() => {
-    if (currentRoute !== '/') {
+    if (currentRoute !== '/3d-world') {
       engineAudio.stop();
       musicLibrary.pause();
     }
@@ -338,7 +337,7 @@ export function App() {
       currentRoute !== '/dealer/offer';
 
     return (
-      <DealerAuthProvider>
+      <>
         {currentRoute === '/dealer/sign-in' ? (
           <DealerSignInPage navigate={navigate} />
         ) : currentRoute === '/dealer/register' ? (
@@ -377,7 +376,7 @@ export function App() {
             externalOpenSignal={assistantSignal}
           />
         )}
-      </DealerAuthProvider>
+      </>
     );
   }
 
@@ -400,7 +399,7 @@ export function App() {
           <NotFoundView path={currentRoute} navigate={navigate} scope="public" />
         )}
 
-        {routeState.isKnownRoute && currentRoute === '/' && (
+        {routeState.isKnownRoute && currentRoute === '/3d-world' && (
           <ManifoldWorldPage
             cars={cars}
             navigate={navigate}
@@ -411,7 +410,7 @@ export function App() {
         )}
 
         {routeState.isKnownRoute &&
-          (currentRoute === '/car-marketplace' || currentRoute === '/marketplace') && (
+          (currentRoute === '/' || currentRoute === '/car-marketplace' || currentRoute === '/marketplace') && (
             <HomePage
               cars={publicCars}
               favorites={favorites}
@@ -525,7 +524,7 @@ export function App() {
       </main>
 
       {/* AI Automotive Concierge Assistant (Non-3D Public Marketplace Surfaces) */}
-      {currentRoute !== '/' && routeState.isKnownRoute && (
+      {currentRoute !== '/3d-world' && routeState.isKnownRoute && (
         <AiAutomotiveAssistant
           surface={currentRoute === '/cars/:slug' ? 'car_detail' : 'marketplace'}
           focusedCar={currentRoute === '/cars/:slug' ? activeCar : null}
@@ -537,7 +536,7 @@ export function App() {
       )}
 
       {/* Global Footer (Rendered on non-3D world pages for full viewport gaming experience) */}
-      {currentRoute !== '/' && (
+      {currentRoute !== '/3d-world' && (
         <Footer
           navigate={navigate}
           onFilterBrand={(brand) => {

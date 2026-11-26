@@ -19,15 +19,20 @@ import {
   Check,
   X,
   ArrowLeft,
+  ShieldAlert,
+  Gamepad2,
+  LogOut,
 } from 'lucide-react';
 import { useDealerAuth } from '../../context/DealerAuthContext';
+import { useRole } from '../../context/RoleContext';
 
 interface DealerRegisterPageProps {
   navigate: (route: string) => void;
 }
 
 export const DealerRegisterPage: React.FC<DealerRegisterPageProps> = ({ navigate }) => {
-  const { signUp, user, dealerAccount } = useDealerAuth();
+  const { signUp, signOut, user, dealerAccount } = useDealerAuth();
+  const { role, isGamePlayer, isAdminAccount } = useRole();
 
   // Section 6: Pre-signup Information Modal (defaults to true before registration starts)
   const [showPreSignupModal, setShowPreSignupModal] = useState(true);
@@ -49,10 +54,10 @@ export const DealerRegisterPage: React.FC<DealerRegisterPageProps> = ({ navigate
 
   // If already authenticated and has a dealer account, redirect
   React.useEffect(() => {
-    if (user && dealerAccount?.hasAccount) {
+    if (user && dealerAccount?.hasAccount && role === 'dealer') {
       navigate('/dealer/dashboard');
     }
-  }, [user, dealerAccount, navigate]);
+  }, [user, dealerAccount, role, navigate]);
 
   // Validation feedback helpers
   const isPasswordLongEnough = password.length >= 8;
@@ -123,7 +128,7 @@ export const DealerRegisterPage: React.FC<DealerRegisterPageProps> = ({ navigate
       {/* Back to Marketplace */}
       <div className="absolute top-4 left-4 sm:top-6 sm:left-6 z-20">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/car-marketplace')}
           className="min-h-[44px] flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-white transition px-3 py-2 rounded-lg hover:bg-white/5"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -134,7 +139,7 @@ export const DealerRegisterPage: React.FC<DealerRegisterPageProps> = ({ navigate
       {/* ============================================================ */}
       {/* SECTION 6: PRE-SIGNUP INFORMATION MODAL: "Why list with MANIFOLD?" */}
       {/* ============================================================ */}
-      {showPreSignupModal && (
+      {showPreSignupModal && !isGamePlayer && !isAdminAccount && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85">
           <div className="bg-[#0B2239] border border-white/10 rounded-2xl max-w-xl w-full max-h-[90dvh] flex flex-col shadow-2xl text-white relative overflow-hidden">
             <div className="p-5 sm:p-6 pb-3 flex items-start justify-between gap-3 border-b border-white/10">
@@ -247,7 +252,7 @@ export const DealerRegisterPage: React.FC<DealerRegisterPageProps> = ({ navigate
       {/* Header Lockup */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center relative z-10 px-4">
         <div
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/car-marketplace')}
           className="cursor-pointer inline-flex flex-col items-center group mb-4"
         >
           <div className="flex items-center gap-1.5">
@@ -272,6 +277,42 @@ export const DealerRegisterPage: React.FC<DealerRegisterPageProps> = ({ navigate
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4">
         <div className="bg-[#0B2239] py-6 sm:py-8 px-5 sm:px-8 border border-white/10 rounded-2xl shadow-2xl">
+          {(isGamePlayer || isAdminAccount) && (
+            <div className="mb-5 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-100 leading-relaxed">
+                  <strong className="block text-white mb-0.5">
+                    {isGamePlayer ? 'Game Player Session Active' : 'Admin Session Active'}
+                  </strong>
+                  <span>
+                    {isGamePlayer
+                      ? 'Game Player accounts cannot register or access the Dealer Portal. Sign out first to register a separate dealership account.'
+                      : 'You are currently signed in as an Administrator. Sign out first to register a separate dealership account.'}
+                  </span>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate(isGamePlayer ? '/3d-world' : '/admin')}
+                  className="px-3 py-1.5 bg-[#EF233C] hover:bg-[#D90429] text-white text-[11px] font-bold rounded-lg inline-flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  {isGamePlayer ? <Gamepad2 className="w-3.5 h-3.5" /> : null}
+                  <span>{isGamePlayer ? 'Return to 3D World' : 'Return to Admin'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void signOut()}
+                  className="px-3 py-1.5 bg-white/10 hover:bg-white/15 text-gray-200 text-[11px] font-bold rounded-lg inline-flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out Session</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mb-5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3 animate-in fade-in">
               <AlertCircle className="w-4 h-4 text-[#EF233C] shrink-0 mt-0.5" />

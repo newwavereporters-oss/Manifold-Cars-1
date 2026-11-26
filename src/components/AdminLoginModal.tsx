@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, Eye, EyeOff, ShieldCheck, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Lock, Mail, Eye, EyeOff, ShieldCheck, ArrowRight, AlertCircle, Loader2, ShieldAlert, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useRole } from '../context/RoleContext';
+import { supabase } from '../lib/supabase';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -14,6 +16,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   onSuccessNavigate,
 }) => {
   const { signIn } = useAuth();
+  const { role, isGamePlayer, isDealerAccount } = useRole();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -84,6 +87,29 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 
         {/* Content Body */}
         <div className="p-6 sm:p-7">
+          {(isGamePlayer || isDealerAccount || role === 'dealer_onboarding') && (
+            <div className="mb-4 p-3.5 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+              <div className="flex items-start gap-2 text-xs text-amber-900">
+                <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                <span>
+                  {isGamePlayer
+                    ? 'You are currently signed in as a Game Player. Sign out first to switch to an Admin account.'
+                    : 'You are currently signed in as a Dealer. Sign out first to switch to an Admin account.'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  await supabase.auth.signOut().catch(() => {});
+                }}
+                className="px-3 py-1 bg-amber-900 text-white text-[11px] font-bold rounded-md inline-flex items-center gap-1 hover:bg-amber-800 transition cursor-pointer"
+              >
+                <LogOut className="w-3 h-3" />
+                <span>Sign Out Current Session</span>
+              </button>
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2.5 text-xs text-red-700">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#EF233C]" />

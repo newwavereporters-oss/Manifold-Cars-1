@@ -8,7 +8,7 @@ import {
   getSupabaseClient,
 } from '../lib/supabaseServer.js';
 import { sendMigrationSqlFile } from '../lib/migrationSql.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requirePlayer } from '../middleware/auth.js';
 import { chatModerationLimiter, standardApiLimiter } from '../middleware/rateLimit.js';
 import { validateModerateChatBody } from '../middleware/validate.js';
 import { getGenAI } from '../services/marketIntelligenceBackend.js';
@@ -277,7 +277,7 @@ router.get('/migration-sql', standardApiLimiter, (_req: Request, res: Response) 
 
 router.post(
   '/moderate-chat',
-  requireAuth,
+  requirePlayer,
   chatModerationLimiter,
   validateModerateChatBody,
   async (req: Request, res: Response) => {

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { dealerOnboardingService, DealerAccountStatus } from '../services/dealerOnboardingService';
+import { resolveCurrentUserRole } from '../services/roleService';
 
 interface DealerAuthContextType {
   user: User | null;
@@ -31,6 +32,12 @@ export const DealerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!activeSession?.user) {
       setDealerAccount(null);
       return null;
+    }
+    const resolved = await resolveCurrentUserRole(activeSession.access_token);
+    if (resolved.role === 'player' || resolved.role === 'admin') {
+      const nonDealer: DealerAccountStatus = { hasAccount: false };
+      setDealerAccount(nonDealer);
+      return nonDealer;
     }
     const status = await dealerOnboardingService.getDealerAccountStatus();
     setDealerAccount(status);
@@ -136,6 +143,44 @@ export const DealerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return { success: false, error: 'Authentication failed. Please try again.' };
       }
 
+      // Verify authoritative DB role before granting Dealer Portal access
+      const resolved = await resolveCurrentUserRole(data.session?.access_token);
+      if (resolved.role === 'player') {
+        await supabase.auth.signOut().catch(() => {});
+        dealerOnboardingService.clearCache();
+        setUser(null);
+        setSession(null);
+        setDealerAccount(null);
+        return {
+          success: false,
+          error: 'Game Player accounts cannot access the Dealer Portal. Please sign in to 3D World instead.',
+        };
+      }
+
+      if (resolved.role === 'admin') {
+        await supabase.auth.signOut().catch(() => {});
+        dealerOnboardingService.clearCache();
+        setUser(null);
+        setSession(null);
+        setDealerAccount(null);
+        return {
+          success: false,
+          error: 'Admin accounts cannot sign in via the Dealer Portal. Please use the MANIFOLD Admin Portal.',
+        };
+      }
+
+      if (resolved.role !== 'dealer' && resolved.role !== 'dealer_onboarding') {
+        await supabase.auth.signOut().catch(() => {});
+        dealerOnboardingService.clearCache();
+        setUser(null);
+        setSession(null);
+        setDealerAccount(null);
+        return {
+          success: false,
+          error: 'This account is not registered as a MANIFOLD Dealer. Please create a Dealer account first.',
+        };
+      }
+
       setUser(data.user);
       setSession(data.session);
 
@@ -173,6 +218,22 @@ export const DealerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     if (!cleanEmail || !pass || !fullName.trim() || !phone.trim()) {
       return { success: false, error: 'All fields are required to register your dealership.' };
+    }
+
+    // Prevent Game Player or Admin sessions from creating a conflicting dealer identity
+    try {
+      const { data: existingSession } = await supabase.auth.getSession();
+      if (existingSession?.session?.user) {
+        const existingRole = await resolveCurrentUserRole(existingSession.session.access_token);
+        if (existingRole.role === 'player' || existingRole.role === 'admin') {
+          return {
+            success: false,
+            error: 'Please sign out of your current account before registering a dealership account.',
+          };
+        }
+      }
+    } catch {
+      // proceed
     }
 
     // Password strength check: at least 8 characters, at least 1 number, at least 1 letter

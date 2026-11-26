@@ -37,8 +37,8 @@ router.get('/health', standardApiLimiter, (_req: Request, res: Response) => {
   });
 });
 
-// Database Migration & Table Verification Diagnostic Route
-router.get('/db-migration-status', standardApiLimiter, async (req: Request, res: Response) => {
+// Database Migration & Table Verification Diagnostic Route (Admin-only)
+router.get('/db-migration-status', requireAdmin, standardApiLimiter, async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
   const supabase = getSupabaseClient(authHeader);
 

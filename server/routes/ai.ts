@@ -70,6 +70,15 @@ function makeRequestId(): string {
   return `ai_${crypto.randomUUID().slice(0, 12)}`;
 }
 
+function toAiServiceRole(
+  role?: string
+): 'admin' | 'dealer' | 'buyer' | 'anonymous' {
+  if (role === 'admin' || role === 'dealer' || role === 'buyer' || role === 'anonymous') {
+    return role;
+  }
+  return 'buyer';
+}
+
 // ==============================================================================
 // 1. ADMIN HEALTH, TEST, DB STATUS & MIGRATION SQL
 // ==============================================================================
@@ -402,11 +411,12 @@ aiRouter.post(
     }
 
     try {
+      const effectiveRole = toAiServiceRole(req.auth?.role);
       const result = await runVehicleIntelligenceSearch({
         query: parsed.data.query,
         inputMode: parsed.data.inputMode,
         limit: parsed.data.limit,
-        userRole: req.auth?.role || 'anonymous',
+        userRole: effectiveRole,
         supabase: req.auth?.supabase,
         modelOverride: setting.model_override,
         maxOutputTokens: setting.max_output_tokens,
@@ -416,7 +426,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || 'anonymous',
+          user_role: effectiveRole,
           dealer_id: req.auth?.dealerId || null,
           feature_module: 'vehicle_search',
           model: result.usage.model,
@@ -444,7 +454,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || 'anonymous',
+          user_role: toAiServiceRole(req.auth?.role),
           feature_module: 'vehicle_search',
           model: setting.model_override || getOpenAiConfigStatus().configuredModel || 'unconfigured',
           input_tokens: 0,
@@ -556,7 +566,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || 'anonymous',
+          user_role: toAiServiceRole(req.auth?.role),
           dealer_id: req.auth?.dealerId || null,
           feature_module: 'voice_transcribe',
           model: result.model,
@@ -582,7 +592,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || 'anonymous',
+          user_role: toAiServiceRole(req.auth?.role),
           feature_module: 'voice_transcribe',
           model: setting.model_override || getOpenAiConfigStatus().transcriptionModel || 'unconfigured',
           input_tokens: 0,
@@ -622,9 +632,10 @@ aiRouter.post(
     const wantAiCommentary = parsed.data.includeAiCommentary && setting.enabled;
 
     try {
+      const effectiveRole = toAiServiceRole(req.auth?.role);
       const result = await runVehiclePriceIntelligence({
         input: { ...parsed.data, includeAiCommentary: wantAiCommentary },
-        role: req.auth?.role || 'anonymous',
+        role: effectiveRole,
         supabase: req.auth?.supabase,
         modelOverride: setting.model_override,
         maxOutputTokens: setting.max_output_tokens,
@@ -635,7 +646,7 @@ aiRouter.post(
           {
             request_id: requestId,
             user_id: req.auth?.user?.id || null,
-            user_role: req.auth?.role || 'anonymous',
+            user_role: effectiveRole,
             dealer_id: req.auth?.dealerId || null,
             feature_module: 'price_intelligence',
             model: result.usage.model,
@@ -661,11 +672,12 @@ aiRouter.post(
       });
     } catch (err) {
       const safe = sanitizeOpenAiError(err);
+      const effectiveRole = toAiServiceRole(req.auth?.role);
       await recordAiUsage(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || 'anonymous',
+          user_role: effectiveRole,
           feature_module: 'price_intelligence',
           model: setting.model_override || getOpenAiConfigStatus().configuredModel || 'unconfigured',
           input_tokens: 0,
@@ -683,7 +695,7 @@ aiRouter.post(
       try {
         const deterministicOnly = await runVehiclePriceIntelligence({
           input: { ...parsed.data, includeAiCommentary: false },
-          role: req.auth?.role || 'anonymous',
+          role: effectiveRole,
           supabase: req.auth?.supabase,
         });
         res.json({
@@ -715,6 +727,15 @@ aiRouter.post(
   async (req: AuthenticatedRequest, res: Response) => {
     if (!req.auth?.user || !req.auth.supabase) {
       res.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+
+    // Strict role separation: Game Players must never access Admin or Dealer market insights
+    if (req.auth.role === 'player') {
+      res.status(403).json({
+        error: 'Game Player accounts cannot access MANIFOLD Admin or Dealer market insights.',
+        code: 'PLAYER_ROLE_FORBIDDEN',
+      });
       return;
     }
 
@@ -854,11 +875,12 @@ aiRouter.post(
     }
 
     try {
+      const effectiveRole = toAiServiceRole(req.auth?.role);
       const result = await runAutomotiveAssistant({
         messages: parsed.data.messages,
         focusedCarSlug: parsed.data.focusedCarSlug,
         surface: parsed.data.surface,
-        role: req.auth?.role || 'anonymous',
+        role: effectiveRole,
         dealerId: req.auth?.dealerId,
         dealerBusinessName: req.auth?.dealerBusinessName,
         supabase: req.auth?.supabase,
@@ -870,7 +892,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || 'anonymous',
+          user_role: effectiveRole,
           dealer_id: req.auth?.dealerId || null,
           feature_module: 'assistant',
           model: result.usage.model,
@@ -894,7 +916,7 @@ aiRouter.post(
         {
           request_id: requestId,
           user_id: req.auth?.user?.id || null,
-          user_role: req.auth?.role || 'anonymous',
+          user_role: toAiServiceRole(req.auth?.role),
           feature_module: 'assistant',
           model: setting.model_override || getOpenAiConfigStatus().configuredModel || 'unconfigured',
           input_tokens: 0,
