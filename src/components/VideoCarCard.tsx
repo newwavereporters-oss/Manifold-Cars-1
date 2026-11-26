@@ -8,6 +8,7 @@ import {
   resolveCarYouTubeVideoId,
 } from '../utils/carMedia';
 import { getYouTubeFallbackThumbnailUrl } from '../utils/youtube';
+import { WatermarkedVehicleImage } from './WatermarkedVehicleImage';
 
 interface VideoCarCardProps {
   car: Car;
@@ -78,11 +79,12 @@ export const VideoCarCard: React.FC<VideoCarCardProps> = ({
         className="relative aspect-[16/9] w-full bg-[#071A2B] overflow-hidden cursor-pointer shrink-0"
       >
         {!imgExhausted && imgSrc ? (
-          <img
+          <WatermarkedVehicleImage
             src={imgSrc}
             alt={car.title}
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover filter brightness-[0.92] group-hover:scale-105 transition-transform duration-300 ease-out"
+            className="w-full h-full"
+            imgClassName="w-full h-full object-cover filter brightness-[0.92] group-hover:scale-105 transition-transform duration-300 ease-out"
+            watermarkSize="md"
             onError={handleImageError}
           />
         ) : (

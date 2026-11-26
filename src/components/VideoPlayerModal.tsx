@@ -3,6 +3,7 @@ import { X, ShieldCheck, PhoneCall, ArrowRight, Video, Image as ImageIcon } from
 import { Car } from '../types';
 import { FORMAT_CURRENCY } from '../data/mockCars';
 import { getCarCardPrimaryImage, resolveCarYouTubeVideoId } from '../utils/carMedia';
+import { WatermarkedVehicleImage } from './WatermarkedVehicleImage';
 
 interface VideoPlayerModalProps {
   isOpen: boolean;
@@ -71,11 +72,12 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           ) : (
             <div className="w-full h-full relative flex flex-col items-center justify-center bg-[#071A2B] text-white p-6 text-center">
               {fallbackCover && (
-                <img
+                <WatermarkedVehicleImage
                   src={fallbackCover}
                   alt={title}
-                  referrerPolicy="no-referrer"
-                  className="absolute inset-0 w-full h-full object-cover opacity-25"
+                  className="absolute inset-0 w-full h-full opacity-25"
+                  imgClassName="w-full h-full object-cover"
+                  watermarkSize="lg"
                 />
               )}
               <div className="relative z-10 max-w-md space-y-3 bg-[#071A2B]/85 backdrop-blur-sm p-6 rounded-2xl border border-white/15">

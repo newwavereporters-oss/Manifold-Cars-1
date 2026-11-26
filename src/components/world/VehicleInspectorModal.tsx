@@ -1,6 +1,8 @@
 import React from 'react';
 import { X, ShieldCheck, Play, ArrowRight, CheckCircle2, MapPin, Gauge, Fuel, Cog } from 'lucide-react';
 import { Car } from '../../types';
+import { getCarCardPrimaryImage } from '../../utils/carMedia';
+import { WatermarkedVehicleImage } from '../WatermarkedVehicleImage';
 
 interface VehicleInspectorModalProps {
   isOpen: boolean;
@@ -37,13 +39,14 @@ export const VehicleInspectorModal: React.FC<VehicleInspectorModalProps> = ({
 
         {/* Vehicle Image Header */}
         <div className="relative h-44 sm:h-60 [@media(max-height:480px)]:h-32 w-full bg-slate-900 overflow-hidden shrink-0">
-          <img
-            src={car.gallery_image_1_url}
+          <WatermarkedVehicleImage
+            src={car.gallery_image_1_url || getCarCardPrimaryImage(car)}
             alt={car.title}
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover"
+            className="w-full h-full"
+            imgClassName="w-full h-full object-cover"
+            watermarkSize="lg"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#071A2B] via-transparent to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#071A2B] via-transparent to-transparent pointer-events-none" />
 
           {/* Condition & Verification Badge */}
           <div className="absolute top-3 left-3 sm:top-4 sm:left-4 flex items-center gap-2 pr-12">

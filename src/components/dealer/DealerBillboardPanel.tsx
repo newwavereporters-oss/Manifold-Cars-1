@@ -17,6 +17,7 @@ import {
   getDealerBillboardUpgradeWhatsAppUrl,
 } from '../../services/billboardService';
 import { type DealerCarRecord } from '../../services/dealerVehicleService';
+import { WatermarkedVehicleImage } from '../WatermarkedVehicleImage';
 
 interface DealerBillboardPanelProps {
   dealerId?: string;
@@ -228,10 +229,12 @@ export const DealerBillboardPanel: React.FC<DealerBillboardPanelProps> = ({
               >
                 <div className="flex items-center gap-3.5 min-w-0">
                   {slot.vehicle_image ? (
-                    <img
+                    <WatermarkedVehicleImage
                       src={slot.vehicle_image}
                       alt={slot.vehicle_title || 'Billboard vehicle'}
-                      className="w-20 h-14 object-cover rounded-xl bg-gray-100 border border-gray-200 shrink-0"
+                      className="w-20 h-14 rounded-xl bg-gray-100 border border-gray-200 shrink-0"
+                      imgClassName="w-full h-full object-cover"
+                      watermarkSize="sm"
                     />
                   ) : (
                     <div className="w-20 h-14 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">
@@ -345,10 +348,12 @@ export const DealerBillboardPanel: React.FC<DealerBillboardPanelProps> = ({
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     {thumb ? (
-                      <img
+                      <WatermarkedVehicleImage
                         src={thumb}
                         alt={car.title}
-                        className="w-16 h-11 object-cover rounded-xl bg-gray-100 border border-gray-200 shrink-0"
+                        className="w-16 h-11 rounded-xl bg-gray-100 border border-gray-200 shrink-0"
+                        imgClassName="w-full h-full object-cover"
+                        watermarkSize="sm"
                       />
                     ) : (
                       <div className="w-16 h-11 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">

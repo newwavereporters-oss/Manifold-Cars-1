@@ -484,7 +484,9 @@ export function App() {
           <DealersDirectoryPage cars={publicCars} navigate={navigate} />
         )}
 
-        {routeState.isKnownRoute && currentRoute === '/:dealerSlug' && routeState.dealerSlug && (
+        {routeState.isKnownRoute &&
+          (currentRoute === '/dealers/:dealerSlug' || currentRoute === '/:dealerSlug') &&
+          routeState.dealerSlug && (
           <DealerStorefrontPage
             dealerSlug={routeState.dealerSlug}
             cars={publicCars}

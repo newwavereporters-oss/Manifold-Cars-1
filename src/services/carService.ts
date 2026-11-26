@@ -6,10 +6,13 @@ import { brandService } from './brandService';
 import { categoryService } from './categoryService';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PUBLIC_DEALER_SELECT_FULL =
-  'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year';
-const PUBLIC_DEALER_SELECT_MINIMAL =
-  'id, name, slug, city, state, is_verified, joined_year';
+const PUBLIC_DEALER_SELECT_CANDIDATES = [
+  'id, business_name, slug, city, state, is_verified, dealer_status, joined_year',
+  'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year',
+  'id, business_name, slug, city, state, is_verified, joined_year',
+  'id, name, slug, city, state, is_verified, joined_year',
+];
+let resolvedCarDealerSelect: string | null = null;
 
 type CarChangeListener = (cars: Car[]) => void;
 
@@ -23,7 +26,7 @@ type LoadStateListener = (state: CarServiceLoadState) => void;
 
 export function isPublicMarketplaceCar(car: Pick<Car, 'status'>): boolean {
   const statusUpper = String(car.status || '').trim().toUpperCase();
-  return statusUpper !== 'DRAFT' && statusUpper !== 'ARCHIVED';
+  return statusUpper === 'PUBLISHED';
 }
 
 export function sanitizePublicDealerRow(raw: any): any | null {
@@ -98,23 +101,22 @@ function mapSupabaseToCar(row: any): Car {
           safeJoinedDealer.business_name ||
           safeJoinedDealer.name ||
           row.dealer_name ||
-          'MANIFOLD Verified Partner',
+          'MANIFOLD Partner Dealership',
         city: safeJoinedDealer.city || row.dealer_city || 'Lekki',
         state: safeJoinedDealer.state || row.dealer_state || 'Lagos',
         verified_partner:
-          safeJoinedDealer.dealer_status === 'approved'
-            ? true
-            : safeJoinedDealer.dealer_status === 'disapproved'
+          safeJoinedDealer.dealer_status === 'disapproved' ||
+          safeJoinedDealer.dealer_status === 'suspended'
             ? false
-            : safeJoinedDealer.is_verified ?? safeJoinedDealer.verified_partner ?? true,
+            : Boolean(safeJoinedDealer.is_verified ?? safeJoinedDealer.verified_partner ?? false),
         joined_year: safeJoinedDealer.joined_year || 2024,
       }
     : {
         id: String(row.dealer_id || 'dlr-partner-01'),
-        name: row.dealer_name || 'MANIFOLD Verified Partner',
+        name: row.dealer_name || 'MANIFOLD Partner Dealership',
         city: row.dealer_city || 'Lekki',
         state: row.dealer_state || 'Lagos',
-        verified_partner: true,
+        verified_partner: false,
         joined_year: 2024,
       };
 
@@ -155,8 +157,8 @@ function mapSupabaseToCar(row: any): Car {
     gallery_image_1_url: gallery1,
     gallery_image_2_url: gallery2,
     verification: {
-      is_verified: Boolean(row.is_verified ?? true),
-      dealer_verified: true,
+      is_verified: Boolean(row.is_verified ?? false),
+      dealer_verified: Boolean(dealerObj.verified_partner),
       vehicle_physically_seen: true,
       video_reviewed: Boolean(videoObj.youtube_video_id),
       price_confirmed: true,
@@ -213,17 +215,22 @@ class CarService {
 
     const fetchSafeDealers = async () => {
       if (dealerIds.length === 0) return { data: [], error: null };
-      const first = await supabase
-        .from('dealers')
-        .select(PUBLIC_DEALER_SELECT_FULL)
-        .in('id', dealerIds);
-      if (first.error?.code === '42703') {
-        return supabase
-          .from('dealers')
-          .select(PUBLIC_DEALER_SELECT_MINIMAL)
-          .in('id', dealerIds);
+      const candidates = resolvedCarDealerSelect
+        ? [
+            resolvedCarDealerSelect,
+            ...PUBLIC_DEALER_SELECT_CANDIDATES.filter((c) => c !== resolvedCarDealerSelect),
+          ]
+        : PUBLIC_DEALER_SELECT_CANDIDATES;
+      let res: any = { data: [], error: null };
+      for (const cols of candidates) {
+        res = await supabase.from('dealers').select(cols).in('id', dealerIds);
+        if (!res.error) {
+          resolvedCarDealerSelect = cols;
+          break;
+        }
+        if (res.error?.code !== '42703') break;
       }
-      return first;
+      return res;
     };
 
     const [mediaSettled, imagesSettled, dealersSettled] = await Promise.allSettled([
@@ -365,26 +372,28 @@ class CarService {
           resolvedRows = await this.fetchPublicCarsViaApi();
         } else {
           // 1. Primary relational query with non-PII dealer projection
-          let primary = await supabase
-            .from('cars')
-            .select(`
-              *,
-              car_media (*),
-              car_images (*),
-              dealers (${PUBLIC_DEALER_SELECT_FULL})
-            `)
-            .order('created_at', { ascending: false });
-
-          if (primary.error?.code === '42703') {
+          const candidates = resolvedCarDealerSelect
+            ? [
+                resolvedCarDealerSelect,
+                ...PUBLIC_DEALER_SELECT_CANDIDATES.filter((c) => c !== resolvedCarDealerSelect),
+              ]
+            : PUBLIC_DEALER_SELECT_CANDIDATES;
+          let primary: any = { data: null, error: null };
+          for (const cols of candidates) {
             primary = await supabase
               .from('cars')
               .select(`
                 *,
                 car_media (*),
                 car_images (*),
-                dealers (${PUBLIC_DEALER_SELECT_MINIMAL})
+                dealers (${cols})
               `)
               .order('created_at', { ascending: false });
+            if (!primary.error) {
+              resolvedCarDealerSelect = cols;
+              break;
+            }
+            if (primary.error?.code !== '42703') break;
           }
 
           if (!primary.error && Array.isArray(primary.data)) {
@@ -445,28 +454,30 @@ class CarService {
       return apiRow ? mapSupabaseToCar(apiRow) : null;
     }
 
-    let primary = await supabase
-      .from('cars')
-      .select(`
-        *,
-        car_media (*),
-        car_images (*),
-        dealers (${PUBLIC_DEALER_SELECT_FULL})
-      `)
-      .eq('id', id)
-      .maybeSingle();
+    const candidates = resolvedCarDealerSelect
+      ? [
+          resolvedCarDealerSelect,
+          ...PUBLIC_DEALER_SELECT_CANDIDATES.filter((c) => c !== resolvedCarDealerSelect),
+        ]
+      : PUBLIC_DEALER_SELECT_CANDIDATES;
 
-    if (primary.error?.code === '42703') {
+    let primary: any = { data: null, error: null };
+    for (const cols of candidates) {
       primary = await supabase
         .from('cars')
         .select(`
           *,
           car_media (*),
           car_images (*),
-          dealers (${PUBLIC_DEALER_SELECT_MINIMAL})
+          dealers (${cols})
         `)
         .eq('id', id)
         .maybeSingle();
+      if (!primary.error) {
+        resolvedCarDealerSelect = cols;
+        break;
+      }
+      if (primary.error?.code !== '42703') break;
     }
 
     if (!primary.error) {
@@ -488,28 +499,30 @@ class CarService {
       return apiRow ? mapSupabaseToCar(apiRow) : null;
     }
 
-    let primary = await supabase
-      .from('cars')
-      .select(`
-        *,
-        car_media (*),
-        car_images (*),
-        dealers (${PUBLIC_DEALER_SELECT_FULL})
-      `)
-      .eq('slug', slug)
-      .maybeSingle();
+    const candidates = resolvedCarDealerSelect
+      ? [
+          resolvedCarDealerSelect,
+          ...PUBLIC_DEALER_SELECT_CANDIDATES.filter((c) => c !== resolvedCarDealerSelect),
+        ]
+      : PUBLIC_DEALER_SELECT_CANDIDATES;
 
-    if (primary.error?.code === '42703') {
+    let primary: any = { data: null, error: null };
+    for (const cols of candidates) {
       primary = await supabase
         .from('cars')
         .select(`
           *,
           car_media (*),
           car_images (*),
-          dealers (${PUBLIC_DEALER_SELECT_MINIMAL})
+          dealers (${cols})
         `)
         .eq('slug', slug)
         .maybeSingle();
+      if (!primary.error) {
+        resolvedCarDealerSelect = cols;
+        break;
+      }
+      if (primary.error?.code !== '42703') break;
     }
 
     if (!primary.error) {

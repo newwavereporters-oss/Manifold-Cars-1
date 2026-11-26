@@ -16,6 +16,7 @@ import {
   normalizeVehicleCondition,
 } from '../../utils/carMedia';
 import { DealerVideoMarketingNotice } from '../../components/dealer/DealerVideoMarketingNotice';
+import { DealerPhotoGallery } from '../../components/dealer/DealerPhotoGallery';
 import {
   CarFront,
   Video,
@@ -1186,85 +1187,15 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
               </span>
             </div>
 
-            <p className="text-xs text-gray-500 leading-relaxed">
-              Upload or link up to two static images: Image 1 for the front exterior signature card, and Image 2 for the cockpit / cabin (optional if you have one primary photo ready).
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {/* Image 1: Exterior */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Image 1 (Front Exterior) <span className="text-[#EF233C]">*</span>
-                </label>
-                <input
-                  type="url"
-                  value={image1Url}
-                  onChange={(e) => setImage1Url(e.target.value)}
-                  placeholder="https://example.com/car-front-exterior.jpg"
-                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
-                />
-                {image1Url ? (
-                  <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-100 border border-gray-200 group">
-                    <img
-                      src={image1Url}
-                      alt="Gallery Preview 1"
-                      className="w-full h-full object-cover"
-                      onError={() => setSubmitError('Image 1 URL failed to load. Please verify link.')}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setImage1Url('')}
-                      className="absolute top-2 right-2 p-1 bg-black/60 hover:bg-black text-white rounded-lg transition"
-                      title="Remove image"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="aspect-video rounded-xl bg-gray-50 border border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 p-4 text-center">
-                    <ImageIcon className="w-6 h-6 mb-1" />
-                    <span className="text-[11px]">Primary exterior photo preview</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Image 2: Interior */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Image 2 (Cabin / Cockpit) <span className="text-gray-400 font-normal lowercase">(optional)</span>
-                </label>
-                <input
-                  type="url"
-                  value={image2Url}
-                  onChange={(e) => setImage2Url(e.target.value)}
-                  placeholder="https://example.com/car-cabin-interior.jpg"
-                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
-                />
-                {image2Url ? (
-                  <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-100 border border-gray-200 group">
-                    <img
-                      src={image2Url}
-                      alt="Gallery Preview 2"
-                      className="w-full h-full object-cover"
-                      onError={() => setSubmitError('Image 2 URL failed to load. Please verify link.')}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setImage2Url('')}
-                      className="absolute top-2 right-2 p-1 bg-black/60 hover:bg-black text-white rounded-lg transition"
-                      title="Remove image"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="aspect-video rounded-xl bg-gray-50 border border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 p-4 text-center">
-                    <ImageIcon className="w-6 h-6 mb-1" />
-                    <span className="text-[11px]">Cockpit / interior photo preview</span>
-                  </div>
-                )}
-              </div>
-            </div>
+            <DealerPhotoGallery
+              dealerId={dealerAccount?.dealerId || 'dealer'}
+              vehicleId={submissionAttemptIdRef.current}
+              image1Url={image1Url}
+              image2Url={image2Url}
+              onChangeImage1={setImage1Url}
+              onChangeImage2={setImage2Url}
+              disabled={submitting || !isApproved}
+            />
           </div>
 
           {/* ACTIONS: SAVE DRAFT vs PUBLISH VEHICLE */}

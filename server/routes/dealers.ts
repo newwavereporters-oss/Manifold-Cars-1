@@ -10,10 +10,16 @@ import { extractSupabaseHost } from './world.js';
 
 const router = Router();
 
-const PUBLIC_DEALER_COLUMNS_FULL =
-  'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year';
-const PUBLIC_DEALER_COLUMNS_MINIMAL =
-  'id, name, slug, city, state, is_verified, joined_year';
+const PUBLIC_DEALER_COLUMN_CANDIDATES = [
+  'id, business_name, slug, city, state, is_verified, dealer_status, joined_year',
+  'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year',
+  'id, business_name, slug, city, state, is_verified, joined_year',
+  'id, name, slug, city, state, is_verified, joined_year',
+  'id, business_name, city, state, is_verified, joined_year',
+  'id, name, city, state, is_verified, joined_year',
+];
+
+let resolvedPublicDealerColumns: string | null = null;
 
 router.get('/public', standardApiLimiter, async (_req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -31,12 +37,26 @@ router.get('/public', standardApiLimiter, async (_req: Request, res: Response) =
     });
   }
 
-  let query = await supabase.from('dealers').select(PUBLIC_DEALER_COLUMNS_FULL);
-  if (query.error?.code === '42703') {
-    query = await supabase.from('dealers').select(PUBLIC_DEALER_COLUMNS_MINIMAL);
+  const candidates = resolvedPublicDealerColumns
+    ? [
+        resolvedPublicDealerColumns,
+        ...PUBLIC_DEALER_COLUMN_CANDIDATES.filter((c) => c !== resolvedPublicDealerColumns),
+      ]
+    : PUBLIC_DEALER_COLUMN_CANDIDATES;
+
+  let query: any = null;
+  for (const cols of candidates) {
+    query = await supabase.from('dealers').select(cols);
+    if (!query.error) {
+      resolvedPublicDealerColumns = cols;
+      break;
+    }
+    if (query.error?.code !== '42703') {
+      break;
+    }
   }
 
-  if (query.error) {
+  if (query?.error) {
     return res.status(502).json({
       error: query.error.message,
       code: query.error.code,

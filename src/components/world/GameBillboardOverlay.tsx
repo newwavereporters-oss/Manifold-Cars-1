@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, Megaphone, Sparkles } from 'lucide-react';
 import { GameBillboardItem } from '../../services/billboardService';
+import { WatermarkedVehicleImage } from '../WatermarkedVehicleImage';
 
 interface GameBillboardOverlayProps {
   items: GameBillboardItem[];
@@ -143,14 +144,15 @@ export const GameBillboardOverlay: React.FC<GameBillboardOverlayProps> = ({
           {/* Vehicle Thumbnail */}
           <div className="relative w-14 h-10 sm:w-24 sm:h-14 [@media(max-height:480px)]:h-9 rounded-xl overflow-hidden bg-slate-900 border border-white/10 shrink-0">
             {!imgBroken && current.image_url ? (
-              <img
+              <WatermarkedVehicleImage
                 src={current.image_url}
                 alt={current.title}
-                referrerPolicy="no-referrer"
+                className="w-full h-full"
+                imgClassName="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                watermarkSize="sm"
                 onError={() =>
                   setBrokenImageIds((prev) => ({ ...prev, [current.assignment_id]: true }))
                 }
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-950 text-amber-300">

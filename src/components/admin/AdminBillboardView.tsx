@@ -17,6 +17,7 @@ import {
   type AdminBillboardOverview,
   type AdminDealerQuotaRow,
 } from '../../services/billboardService';
+import { WatermarkedVehicleImage } from '../WatermarkedVehicleImage';
 
 export const AdminBillboardView: React.FC = () => {
   const [overview, setOverview] = useState<AdminBillboardOverview | null>(null);
@@ -211,10 +212,12 @@ export const AdminBillboardView: React.FC = () => {
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           {row.image_url && (
-                            <img
+                            <WatermarkedVehicleImage
                               src={row.image_url}
                               alt={row.vehicle_title}
-                              className="w-14 h-10 object-cover rounded-lg bg-gray-100 border border-gray-200 shrink-0"
+                              className="w-14 h-10 rounded-lg bg-gray-100 border border-gray-200 shrink-0"
+                              imgClassName="w-full h-full object-cover"
+                              watermarkSize="sm"
                             />
                           )}
                           <div>

@@ -306,7 +306,7 @@ export const DealersDirectoryPage: React.FC<DealersDirectoryPageProps> = ({
                 <button
                   key={dealer.id}
                   type="button"
-                  onClick={() => navigate(`/${dealer.permalinkSlug}`)}
+                  onClick={() => navigate(`/dealers/${dealer.permalinkSlug}`)}
                   className="group bg-white rounded-xl border border-gray-200 hover:border-[#071A2B]/40 hover:shadow-lg transition-all duration-200 p-5 text-left flex flex-col justify-between gap-4 cursor-pointer"
                 >
                   <div className="space-y-3">
@@ -348,10 +348,10 @@ export const DealersDirectoryPage: React.FC<DealersDirectoryPageProps> = ({
 
                   <div className="pt-3 border-t border-gray-100 flex items-center justify-between gap-2 text-xs">
                     <span className="text-gray-400 font-mono truncate">
-                      /{dealer.permalinkSlug}
+                      /dealers/{dealer.permalinkSlug}
                     </span>
                     <span className="inline-flex items-center gap-1 font-bold text-[#071A2B] group-hover:text-[#EF233C] uppercase tracking-wider whitespace-nowrap shrink-0">
-                      <span>View Cars</span>
+                      <span>View All Cars</span>
                       <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                     </span>
                   </div>

@@ -118,8 +118,9 @@ export const DealerStorefrontPage: React.FC<DealerStorefrontPageProps> = ({
     if (!resolvedDealer) return [];
     const targetNameSlug = slugifyBusinessName(resolvedDealer.name);
     return publicCars.filter((car) => {
-      if (car.dealer?.id && String(car.dealer.id) === String(resolvedDealer.id)) {
-        return true;
+      const carDealerId = String(car.dealer?.id || '').trim();
+      if (carDealerId) {
+        return carDealerId === String(resolvedDealer.id);
       }
       if (car.dealer?.name && slugifyBusinessName(car.dealer.name) === targetNameSlug) {
         return true;
@@ -153,7 +154,7 @@ export const DealerStorefrontPage: React.FC<DealerStorefrontPageProps> = ({
 
   const shareUrl =
     typeof window !== 'undefined' && resolvedDealer
-      ? `${window.location.origin}/${resolvedDealer.permalinkSlug}`
+      ? `${window.location.origin}/dealers/${resolvedDealer.permalinkSlug}`
       : '';
 
   const handleCopyShareLink = () => {
@@ -190,7 +191,7 @@ export const DealerStorefrontPage: React.FC<DealerStorefrontPageProps> = ({
           </h1>
           <p className="text-sm text-gray-500 leading-relaxed">
             We couldn&apos;t find a dealership showroom at{' '}
-            <span className="font-mono text-gray-800 font-semibold">/{dealerSlug}</span>.
+            <span className="font-mono text-gray-800 font-semibold">/dealers/{dealerSlug}</span>.
             Browse the full Dealers Directory or view all verified cars on MANIFOLD.
           </p>
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">

@@ -32,6 +32,7 @@ import {
 import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
 import { dealerService } from '../../services/dealerService';
 import { slugifyBusinessName } from '../../utils/dealerSlug';
+import { WatermarkedVehicleImage } from '../../components/WatermarkedVehicleImage';
 
 interface DealerCarsPageProps {
   navigate: (route: string) => void;
@@ -139,7 +140,7 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
     };
   }, [dealerAccount?.dealerId, dealerAccount?.businessName]);
 
-  const showroomPath = `/${showroomSlug}`;
+  const showroomPath = `/dealers/${showroomSlug}`;
   const showroomFullUrl =
     typeof window !== 'undefined' ? `${window.location.origin}${showroomPath}` : showroomPath;
 
@@ -478,11 +479,12 @@ export const DealerCarsPage: React.FC<DealerCarsPageProps> = ({ navigate }) => {
                         <td className="py-3.5 px-4 sm:px-6">
                           <div className="flex items-center gap-3">
                             {thumb ? (
-                              <img
+                              <WatermarkedVehicleImage
                                 src={thumb}
                                 alt={car.title}
-                                referrerPolicy="no-referrer"
-                                className="w-16 h-11 object-cover rounded-xl bg-gray-100 shrink-0 border border-gray-200"
+                                className="w-16 h-11 rounded-xl bg-gray-100 shrink-0 border border-gray-200"
+                                imgClassName="w-full h-full object-cover"
+                                watermarkSize="sm"
                               />
                             ) : (
                               <div className="w-16 h-11 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">

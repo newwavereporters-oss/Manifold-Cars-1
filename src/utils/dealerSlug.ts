@@ -26,10 +26,19 @@ export function slugifyBusinessName(name: string): string {
   return cleaned || 'dealership';
 }
 
+function isCleanReusableSlug(rawSlug?: string | null): boolean {
+  const trimmed = String(rawSlug || '').trim().toLowerCase();
+  if (!trimmed) return false;
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(trimmed)) return false;
+  // Legacy onboarding SQL appended a 6-hex UUID suffix; normalize those to clean business-name slugs
+  if (/-[0-9a-f]{6}$/.test(trimmed)) return false;
+  return true;
+}
+
 /**
- * Assigns every dealership a clean, deterministic, collision-free `/<business-name>` permalink slug.
- * Primary owners of a name receive `/business-name`; exact name collisions receive a short
- * deterministic suffix so every dealer link remains unique.
+ * Assigns every dealership a clean, deterministic, collision-free `/dealers/<business-name>` permalink slug.
+ * Prefers persisted clean DB `dealers.slug` when unique; otherwise derives from `business_name`
+ * and deduplicates collisions deterministically (`base`, `base-2`, `base-3`).
  */
 export function assignDealerPermalinkSlugs<T extends DealerSlugCandidate>(
   dealers: T[]
@@ -42,20 +51,17 @@ export function assignDealerPermalinkSlugs<T extends DealerSlugCandidate>(
   const slugById = new Map<string, string>();
 
   for (const dealer of sortedByStableKey) {
-    const base = slugifyBusinessName(getCandidateName(dealer));
-    let candidate = base;
-    if (usedSlugs.has(candidate)) {
-      const idSuffix = String(dealer.id || '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '')
-        .slice(0, 4);
-      candidate = idSuffix ? `${base}-${idSuffix}` : `${base}-${usedSlugs.size + 1}`;
-      let counter = 2;
-      while (usedSlugs.has(candidate)) {
-        candidate = `${base}-${counter}`;
-        counter += 1;
-      }
+    const preferred = isCleanReusableSlug(dealer.slug)
+      ? String(dealer.slug).trim().toLowerCase()
+      : slugifyBusinessName(getCandidateName(dealer));
+
+    let candidate = preferred;
+    let counter = 2;
+    while (usedSlugs.has(candidate)) {
+      candidate = `${preferred}-${counter}`;
+      counter += 1;
     }
+
     usedSlugs.add(candidate);
     slugById.set(String(dealer.id), candidate);
   }
@@ -74,6 +80,9 @@ export function getDealerPermalinkSlug(
     const assigned = assignDealerPermalinkSlugs(allDealers);
     const match = assigned.find((d) => String(d.id) === String(dealer.id));
     if (match) return match.permalinkSlug;
+  }
+  if (isCleanReusableSlug(dealer.slug)) {
+    return String(dealer.slug).trim().toLowerCase();
   }
   return dealer.permalinkSlug || slugifyBusinessName(getCandidateName(dealer));
 }
@@ -117,6 +126,17 @@ export function resolveDealerByPermalinkSlug<T extends DealerSlugCandidate>(
     );
   });
   if (nameSlugMatch) return nameSlugMatch;
+
+  // 4. Legacy 6-hex suffix fallback (e.g. bookmark to /dealers/abc-motors-a1b2c3 after slug cleanup)
+  const strippedLegacyHex = raw.replace(/-[0-9a-f]{6}$/i, '');
+  if (strippedLegacyHex && strippedLegacyHex !== raw) {
+    const legacyFallback = withPermalinks.find(
+      (d) =>
+        d.permalinkSlug.toLowerCase() === strippedLegacyHex ||
+        slugifyBusinessName(getCandidateName(d)) === strippedLegacyHex
+    );
+    if (legacyFallback) return legacyFallback;
+  }
 
   return null;
 }

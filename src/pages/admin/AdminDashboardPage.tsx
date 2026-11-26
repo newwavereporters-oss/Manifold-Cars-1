@@ -54,6 +54,7 @@ import { AdminBillboardView } from '../../components/admin/AdminBillboardView';
 import { AdminMissionsView } from '../../components/admin/AdminMissionsView';
 import { AdminDealersView } from '../../components/admin/AdminDealersView';
 import { AdminDealerManagement } from '../../components/admin/AdminDealerManagement';
+import { WatermarkedVehicleImage } from '../../components/WatermarkedVehicleImage';
 import { useAuth } from '../../context/AuthContext';
 import { FORMAT_CURRENCY, FORMAT_NUMBER } from '../../data/mockCars';
 import { Car, CarBrand, BodyTypeCategory } from '../../types';
@@ -1296,10 +1297,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <tr key={car.id} className="hover:bg-gray-50/80 transition">
                         <td className="py-3.5 px-4">
                           <div className="flex items-center gap-3">
-                            <img
+                            <WatermarkedVehicleImage
                               src={car.video?.youtube_thumbnail_url || car.gallery_image_1_url}
                               alt={car.title}
-                              className="w-16 h-10 object-cover rounded-md bg-gray-100 border border-gray-200 shrink-0"
+                              className="w-16 h-10 rounded-md bg-gray-100 border border-gray-200 shrink-0"
+                              imgClassName="w-full h-full object-cover"
+                              watermarkSize="sm"
                             />
                             <div>
                               <p

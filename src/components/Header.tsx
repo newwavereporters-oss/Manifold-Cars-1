@@ -116,7 +116,8 @@ export const Header: React.FC<HeaderProps> = ({
                 const isActive =
                   currentRoute === item.route ||
                   (item.route === '/car-marketplace' && currentRoute === '/') ||
-                  (item.route === '/dealers' && currentRoute === '/:dealerSlug') ||
+                  (item.route === '/dealers' &&
+                    (currentRoute === '/dealers/:dealerSlug' || currentRoute === '/:dealerSlug')) ||
                   (item.route === '/cars' && currentRoute === '/cars/:slug');
                 return (
                   <button
@@ -242,7 +243,8 @@ export const Header: React.FC<HeaderProps> = ({
                   const isActive =
                     currentRoute === item.route ||
                     (item.route === '/car-marketplace' && currentRoute === '/') ||
-                    (item.route === '/dealers' && currentRoute === '/:dealerSlug') ||
+                    (item.route === '/dealers' &&
+                      (currentRoute === '/dealers/:dealerSlug' || currentRoute === '/:dealerSlug')) ||
                     (item.route === '/cars' && currentRoute === '/cars/:slug');
                   return (
                     <button

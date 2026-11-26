@@ -46,6 +46,7 @@ import {
 import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
 import { dealerService } from '../../services/dealerService';
 import { slugifyBusinessName } from '../../utils/dealerSlug';
+import { WatermarkedVehicleImage } from '../../components/WatermarkedVehicleImage';
 
 interface DealerDashboardPageProps {
   navigate: (route: string) => void;
@@ -104,7 +105,7 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
     };
   }, [dealerAccount?.dealerId, businessName]);
 
-  const showroomPath = `/${showroomSlug}`;
+  const showroomPath = `/dealers/${showroomSlug}`;
   const showroomFullUrl =
     typeof window !== 'undefined' ? `${window.location.origin}${showroomPath}` : showroomPath;
 
@@ -555,10 +556,12 @@ export const DealerDashboardPage: React.FC<DealerDashboardPageProps> = ({ naviga
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         {car.gallery_image_1_url || car.youtube_thumbnail_url ? (
-                          <img
+                          <WatermarkedVehicleImage
                             src={car.gallery_image_1_url || car.youtube_thumbnail_url}
                             alt={car.title}
-                            className="w-14 h-10 object-cover rounded-lg bg-gray-100 shrink-0"
+                            className="w-14 h-10 rounded-lg bg-gray-100 shrink-0"
+                            imgClassName="w-full h-full object-cover"
+                            watermarkSize="sm"
                           />
                         ) : (
                           <div className="w-14 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">

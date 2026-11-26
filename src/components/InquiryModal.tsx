@@ -3,6 +3,8 @@ import { X, ShieldCheck, CheckCircle2, Phone, MessageSquare, Mail, Loader2, Aler
 import { Car } from '../types';
 import { FORMAT_CURRENCY } from '../data/mockCars';
 import { inquiryService } from '../services/inquiryService';
+import { getCarCardPrimaryImage } from '../utils/carMedia';
+import { WatermarkedVehicleImage } from './WatermarkedVehicleImage';
 
 interface InquiryModalProps {
   isOpen: boolean;
@@ -131,11 +133,12 @@ export const InquiryModal: React.FC<InquiryModalProps> = ({
             {car ? (
               <div className="bg-gray-50 rounded-lg p-3.5 border border-gray-200 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <img
-                    src={car.video.youtube_thumbnail_url}
+                  <WatermarkedVehicleImage
+                    src={getCarCardPrimaryImage(car)}
                     alt={car.title}
-                    className="w-16 h-11 object-cover rounded shrink-0 border border-gray-200"
-                    referrerPolicy="no-referrer"
+                    className="w-16 h-11 rounded shrink-0 border border-gray-200"
+                    imgClassName="w-full h-full object-cover"
+                    watermarkSize="sm"
                   />
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-[#071A2B] truncate">{car.title}</p>

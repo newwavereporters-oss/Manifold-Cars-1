@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Play, Youtube, ArrowRight, Eye, Calendar, ShieldCheck } from 'lucide-react';
 import { MEDIA_REVIEWS, YouTubeMediaItem } from '../data/brandsAndTypes';
 import { Car } from '../types';
+import { getCarCardPrimaryImage } from '../utils/carMedia';
+import { WatermarkedVehicleImage } from '../components/WatermarkedVehicleImage';
 
 interface ReviewsPageProps {
   cars: Car[];
@@ -159,11 +161,12 @@ export const ReviewsPage: React.FC<ReviewsPageProps> = ({
                 onClick={() => onSelectCar(car)}
                 className="bg-white rounded-lg border border-gray-200 overflow-hidden p-3 hover:shadow-md cursor-pointer flex gap-4"
               >
-                <img
-                  src={car.video.youtube_thumbnail_url}
+                <WatermarkedVehicleImage
+                  src={getCarCardPrimaryImage(car)}
                   alt={car.title}
-                  className="w-28 h-20 object-cover rounded shrink-0"
-                  referrerPolicy="no-referrer"
+                  className="w-28 h-20 rounded shrink-0"
+                  imgClassName="w-full h-full object-cover"
+                  watermarkSize="sm"
                 />
                 <div className="min-w-0 flex flex-col justify-between">
                   <div>

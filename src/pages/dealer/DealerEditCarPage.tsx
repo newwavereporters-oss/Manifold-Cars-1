@@ -13,6 +13,7 @@ import { carService } from '../../services/carService';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../../utils/youtube';
 import { buildVehicleModelTitle, normalizeVehicleCondition } from '../../utils/carMedia';
 import { DealerVideoMarketingNotice } from '../../components/dealer/DealerVideoMarketingNotice';
+import { DealerPhotoGallery } from '../../components/dealer/DealerPhotoGallery';
 import {
   CarFront,
   Video,
@@ -1111,57 +1112,15 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {/* Image 1 */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Image 1 (Front Exterior)
-                </label>
-                <input
-                  type="url"
-                  value={image1Url}
-                  onChange={(e) => setImage1Url(e.target.value)}
-                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
-                />
-                {image1Url && (
-                  <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
-                    <img src={image1Url} alt="Image 1" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setImage1Url('')}
-                      className="absolute top-2 right-2 p-1 bg-black/60 text-white rounded-lg"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Image 2 */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Image 2 (Cabin / Cockpit)
-                </label>
-                <input
-                  type="url"
-                  value={image2Url}
-                  onChange={(e) => setImage2Url(e.target.value)}
-                  className="w-full h-10 px-3 text-xs bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:outline-none focus:border-[#EF233C]"
-                />
-                {image2Url && (
-                  <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
-                    <img src={image2Url} alt="Image 2" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setImage2Url('')}
-                      className="absolute top-2 right-2 p-1 bg-black/60 text-white rounded-lg"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
+            <DealerPhotoGallery
+              dealerId={dealerAccount?.dealerId || originalCar?.dealer_id || 'dealer'}
+              vehicleId={carId}
+              image1Url={image1Url}
+              image2Url={image2Url}
+              onChangeImage1={setImage1Url}
+              onChangeImage2={setImage2Url}
+              disabled={submitting}
+            />
           </div>
 
           {/* ACTIONS */}

@@ -1880,8 +1880,13 @@ var worldRouter = router2;
 
 // server/routes/cars.ts
 var router3 = Router3();
-var PUBLIC_DEALER_SELECT_FULL = "id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year";
-var PUBLIC_DEALER_SELECT_MINIMAL = "id, name, slug, city, state, is_verified, joined_year";
+var PUBLIC_DEALER_SELECT_CANDIDATES = [
+  "id, business_name, slug, city, state, is_verified, dealer_status, joined_year",
+  "id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year",
+  "id, business_name, slug, city, state, is_verified, joined_year",
+  "id, name, slug, city, state, is_verified, joined_year"
+];
+var resolvedServerCarDealerSelect = null;
 function sanitizePublicDealerPayload(raw) {
   if (!raw || typeof raw !== "object") return null;
   const {
@@ -1897,7 +1902,7 @@ function sanitizePublicDealerPayload(raw) {
 }
 function isPublicCarStatus(status) {
   const upper = String(status || "").trim().toUpperCase();
-  return upper !== "DRAFT" && upper !== "ARCHIVED";
+  return upper === "PUBLISHED";
 }
 function formatPgError(error) {
   return {
@@ -1908,23 +1913,25 @@ function formatPgError(error) {
   };
 }
 async function fetchPublicCarsFromSupabase(client) {
-  let primary = await client.from("cars").select(
-    `
+  const candidates = resolvedServerCarDealerSelect ? [
+    resolvedServerCarDealerSelect,
+    ...PUBLIC_DEALER_SELECT_CANDIDATES.filter((c) => c !== resolvedServerCarDealerSelect)
+  ] : PUBLIC_DEALER_SELECT_CANDIDATES;
+  let primary = { data: null, error: null };
+  for (const cols of candidates) {
+    primary = await client.from("cars").select(
+      `
       *,
       car_media (*),
       car_images (*),
-      dealers (${PUBLIC_DEALER_SELECT_FULL})
+      dealers (${cols})
     `
-  ).order("created_at", { ascending: false });
-  if (primary.error?.code === "42703") {
-    primary = await client.from("cars").select(
-      `
-        *,
-        car_media (*),
-        car_images (*),
-        dealers (${PUBLIC_DEALER_SELECT_MINIMAL})
-      `
     ).order("created_at", { ascending: false });
+    if (!primary.error) {
+      resolvedServerCarDealerSelect = cols;
+      break;
+    }
+    if (primary.error?.code !== "42703") break;
   }
   let resolvedRows = null;
   if (!primary.error && Array.isArray(primary.data)) {
@@ -1949,11 +1956,20 @@ async function fetchPublicCarsFromSupabase(client) {
     );
     const fetchSafeDealers = async () => {
       if (dealerIds.length === 0) return { data: [] };
-      const first = await client.from("dealers").select(PUBLIC_DEALER_SELECT_FULL).in("id", dealerIds);
-      if (first.error?.code === "42703") {
-        return client.from("dealers").select(PUBLIC_DEALER_SELECT_MINIMAL).in("id", dealerIds);
+      const dealerCandidates = resolvedServerCarDealerSelect ? [
+        resolvedServerCarDealerSelect,
+        ...PUBLIC_DEALER_SELECT_CANDIDATES.filter((c) => c !== resolvedServerCarDealerSelect)
+      ] : PUBLIC_DEALER_SELECT_CANDIDATES;
+      let res = { data: [] };
+      for (const cols of dealerCandidates) {
+        res = await client.from("dealers").select(cols).in("id", dealerIds);
+        if (!res.error) {
+          resolvedServerCarDealerSelect = cols;
+          break;
+        }
+        if (res.error?.code !== "42703") break;
       }
-      return first;
+      return res;
     };
     const [mediaSettled, imagesSettled, dealersSettled] = await Promise.allSettled([
       carIds.length > 0 ? client.from("car_media").select("*").in("car_id", carIds) : Promise.resolve({ data: [] }),
@@ -2060,8 +2076,15 @@ var carsRouter = router3;
 
 // server/routes/dealers.ts
 var router4 = Router4();
-var PUBLIC_DEALER_COLUMNS_FULL = "id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year";
-var PUBLIC_DEALER_COLUMNS_MINIMAL = "id, name, slug, city, state, is_verified, joined_year";
+var PUBLIC_DEALER_COLUMN_CANDIDATES = [
+  "id, business_name, slug, city, state, is_verified, dealer_status, joined_year",
+  "id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year",
+  "id, business_name, slug, city, state, is_verified, joined_year",
+  "id, name, slug, city, state, is_verified, joined_year",
+  "id, business_name, city, state, is_verified, joined_year",
+  "id, name, city, state, is_verified, joined_year"
+];
+var resolvedPublicDealerColumns = null;
 router4.get("/public", standardApiLimiter, async (_req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
@@ -2075,11 +2098,22 @@ router4.get("/public", standardApiLimiter, async (_req, res) => {
       supabaseHost
     });
   }
-  let query = await supabase.from("dealers").select(PUBLIC_DEALER_COLUMNS_FULL);
-  if (query.error?.code === "42703") {
-    query = await supabase.from("dealers").select(PUBLIC_DEALER_COLUMNS_MINIMAL);
+  const candidates = resolvedPublicDealerColumns ? [
+    resolvedPublicDealerColumns,
+    ...PUBLIC_DEALER_COLUMN_CANDIDATES.filter((c) => c !== resolvedPublicDealerColumns)
+  ] : PUBLIC_DEALER_COLUMN_CANDIDATES;
+  let query = null;
+  for (const cols of candidates) {
+    query = await supabase.from("dealers").select(cols);
+    if (!query.error) {
+      resolvedPublicDealerColumns = cols;
+      break;
+    }
+    if (query.error?.code !== "42703") {
+      break;
+    }
   }
-  if (query.error) {
+  if (query?.error) {
     return res.status(502).json({
       error: query.error.message,
       code: query.error.code,

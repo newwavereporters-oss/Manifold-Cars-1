@@ -25,7 +25,9 @@ import {
 import { brandService } from '../../services/brandService';
 import { modelService } from '../../services/modelService';
 import { categoryService } from '../../services/categoryService';
-import { buildVehicleModelTitle } from '../../utils/carMedia';
+import { buildVehicleModelTitle, generateUuid } from '../../utils/carMedia';
+import { DealerPhotoGallery } from '../dealer/DealerPhotoGallery';
+import { WatermarkedVehicleImage } from '../WatermarkedVehicleImage';
 
 export interface CarFormProps {
   initialCar?: Partial<Car>;
@@ -124,6 +126,7 @@ export const CarForm: React.FC<CarFormProps> = ({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const isInitialMount = useRef(true);
+  const uploadVehicleIdRef = useRef<string>(initialCar?.id || generateUuid());
 
   // Popular Models for current brand & live brands/types
   const [popularModels, setPopularModels] = useState<string[]>([]);
@@ -1021,139 +1024,21 @@ export const CarForm: React.FC<CarFormProps> = ({
         </div>
 
         {/* 2B: GALLERY IMAGES 1 & 2 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Gallery Image 1 */}
-          <div className="p-5 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#071A2B]">
-                Gallery Image 1 URL <span className="text-[#EF233C]">*</span>
-              </label>
-              {galleryImage1Url && !img1Error && (
-                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  ✓ Ready
-                </span>
-              )}
-            </div>
-
-            <div className="relative">
-              <input
-                type="url"
-                value={galleryImage1Url}
-                onChange={(e) => {
-                  setGalleryImage1Url(e.target.value);
-                  setImg1Error(false);
-                }}
-                placeholder="https://example.com/car-exterior-photo.jpg"
-                className="w-full h-10 px-3 bg-white border border-gray-300 rounded-lg text-xs text-gray-900 focus:border-[#071A2B] outline-none"
-              />
-            </div>
-
-            {/* Image 1 Preview Box */}
-            <div className="relative aspect-video w-full bg-gray-200 rounded-lg overflow-hidden border border-gray-200 flex items-center justify-center">
-              {galleryImage1Url && !img1Error ? (
-                <>
-                  <img
-                    src={galleryImage1Url}
-                    alt="Gallery 1 preview"
-                    className="w-full h-full object-cover"
-                    onError={() => setImg1Error(true)}
-                  />
-                  <div className="absolute top-2 left-2 bg-[#071A2B]/80 text-white text-[10px] font-bold px-2 py-0.5 rounded backdrop-blur-sm">
-                    GALLERY IMAGE 1
-                  </div>
-                  <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setGalleryImage1Url('')}
-                      className="px-2 py-1 bg-black/75 hover:bg-red-600 text-white text-[10px] font-bold rounded flex items-center gap-1 transition"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Remove
-                    </button>
-                  </div>
-                </>
-              ) : img1Error ? (
-                <div className="text-center p-4 text-xs text-red-600">
-                  <AlertCircle className="w-6 h-6 mx-auto mb-1 text-red-500" />
-                  <p className="font-semibold">Unable to load image from URL</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">Please check the image link</p>
-                </div>
-              ) : (
-                <div className="text-center p-4 text-gray-400 text-xs">
-                  <ImageIcon className="w-7 h-7 mx-auto mb-1 text-gray-300" />
-                  <p className="font-semibold">Gallery Image 1 Preview</p>
-                  <p className="text-[10px] text-gray-400">Enter a direct image URL above</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Gallery Image 2 */}
-          <div className="p-5 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#071A2B]">
-                Gallery Image 2 URL <span className="text-gray-400 font-normal lowercase">(optional)</span>
-              </label>
-              {galleryImage2Url && !img2Error && (
-                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  ✓ Ready
-                </span>
-              )}
-            </div>
-
-            <div className="relative">
-              <input
-                type="url"
-                value={galleryImage2Url}
-                onChange={(e) => {
-                  setGalleryImage2Url(e.target.value);
-                  setImg2Error(false);
-                }}
-                placeholder="https://example.com/car-interior-photo.jpg"
-                className="w-full h-10 px-3 bg-white border border-gray-300 rounded-lg text-xs text-gray-900 focus:border-[#071A2B] outline-none"
-              />
-            </div>
-
-            {/* Image 2 Preview Box */}
-            <div className="relative aspect-video w-full bg-gray-200 rounded-lg overflow-hidden border border-gray-200 flex items-center justify-center">
-              {galleryImage2Url && !img2Error ? (
-                <>
-                  <img
-                    src={galleryImage2Url}
-                    alt="Gallery 2 preview"
-                    className="w-full h-full object-cover"
-                    onError={() => setImg2Error(true)}
-                  />
-                  <div className="absolute top-2 left-2 bg-[#071A2B]/80 text-white text-[10px] font-bold px-2 py-0.5 rounded backdrop-blur-sm">
-                    GALLERY IMAGE 2
-                  </div>
-                  <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setGalleryImage2Url('')}
-                      className="px-2 py-1 bg-black/75 hover:bg-red-600 text-white text-[10px] font-bold rounded flex items-center gap-1 transition"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Remove
-                    </button>
-                  </div>
-                </>
-              ) : img2Error ? (
-                <div className="text-center p-4 text-xs text-red-600">
-                  <AlertCircle className="w-6 h-6 mx-auto mb-1 text-red-500" />
-                  <p className="font-semibold">Unable to load image from URL</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">Please check the image link</p>
-                </div>
-              ) : (
-                <div className="text-center p-4 text-gray-400 text-xs">
-                  <ImageIcon className="w-7 h-7 mx-auto mb-1 text-gray-300" />
-                  <p className="font-semibold">Gallery Image 2 Preview</p>
-                  <p className="text-[10px] text-gray-400">Enter a direct image URL above</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <DealerPhotoGallery
+          dealerId={initialCar?.dealer?.id || 'admin'}
+          vehicleId={uploadVehicleIdRef.current}
+          image1Url={galleryImage1Url}
+          image2Url={galleryImage2Url}
+          onChangeImage1={(nextUrl) => {
+            setGalleryImage1Url(nextUrl);
+            setImg1Error(false);
+          }}
+          onChangeImage2={(nextUrl) => {
+            setGalleryImage2Url(nextUrl);
+            setImg2Error(false);
+          }}
+          disabled={isSaving}
+        />
 
         {/* 2C: CUSTOMER-FACING COMPOSITE MEDIA PREVIEW (PART 5) */}
         <div className="pt-4 border-t border-gray-200">
@@ -1174,12 +1059,14 @@ export const CarForm: React.FC<CarFormProps> = ({
               <div className="lg:col-span-8 relative aspect-video bg-black rounded-lg overflow-hidden border border-white/15">
                 {detectedVideoId ? (
                   <>
-                    <img
+                    <WatermarkedVehicleImage
                       src={youtubeThumbnail}
                       alt="Customer video preview"
-                      className="w-full h-full object-cover filter brightness-90"
+                      className="w-full h-full"
+                      imgClassName="w-full h-full object-cover filter brightness-90"
+                      watermarkSize="md"
                     />
-                    <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="w-12 h-12 rounded-full bg-[#EF233C] text-white flex items-center justify-center shadow-2xl">
                         <Play className="w-5 h-5 fill-current ml-0.5" />
                       </div>
@@ -1201,10 +1088,12 @@ export const CarForm: React.FC<CarFormProps> = ({
               <div className="lg:col-span-4 grid grid-cols-2 lg:grid-cols-1 gap-2.5">
                 <div className="relative aspect-video bg-black/40 rounded-lg overflow-hidden border border-white/10">
                   {galleryImage1Url ? (
-                    <img
+                    <WatermarkedVehicleImage
                       src={galleryImage1Url}
                       alt="Customer gallery 1"
-                      className="w-full h-full object-cover"
+                      className="w-full h-full"
+                      imgClassName="w-full h-full object-cover"
+                      watermarkSize="sm"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500">
@@ -1218,10 +1107,12 @@ export const CarForm: React.FC<CarFormProps> = ({
 
                 <div className="relative aspect-video bg-black/40 rounded-lg overflow-hidden border border-white/10">
                   {galleryImage2Url ? (
-                    <img
+                    <WatermarkedVehicleImage
                       src={galleryImage2Url}
                       alt="Customer gallery 2"
-                      className="w-full h-full object-cover"
+                      className="w-full h-full"
+                      imgClassName="w-full h-full object-cover"
+                      watermarkSize="sm"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500">

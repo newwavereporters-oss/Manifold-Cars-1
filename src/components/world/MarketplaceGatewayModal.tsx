@@ -2,6 +2,8 @@ import React from 'react';
 import { X, ArrowRight, ShieldCheck, Video, ExternalLink, Car as CarIcon, CheckCircle2 } from 'lucide-react';
 import { Car } from '../../types';
 import pavilionImage from '../../assets/images/world_dealership_pavilion_1791804008874.jpg';
+import { getCarCardPrimaryImage } from '../../utils/carMedia';
+import { WatermarkedVehicleImage } from '../WatermarkedVehicleImage';
 
 interface MarketplaceGatewayModalProps {
   isOpen: boolean;
@@ -117,11 +119,12 @@ export const MarketplaceGatewayModal: React.FC<MarketplaceGatewayModalProps> = (
                 className="group cursor-pointer bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#EF233C]/50 rounded-2xl overflow-hidden transition-all flex flex-col"
               >
                 <div className="relative h-28 w-full bg-slate-900 overflow-hidden">
-                  <img
-                    src={car.gallery_image_1_url}
+                  <WatermarkedVehicleImage
+                    src={car.gallery_image_1_url || getCarCardPrimaryImage(car)}
                     alt={car.title}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    className="w-full h-full"
+                    imgClassName="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    watermarkSize="sm"
                   />
                   <div className="absolute top-2 left-2 bg-black/80 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
                     {car.condition}

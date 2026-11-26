@@ -265,6 +265,35 @@ export function parseManifoldRoute(rawInput: string): ParsedRouteResult {
     };
   }
 
+  // 3B. Canonical Public Dealer Profile Route (/dealers/:dealerSlug)
+  if (pathname.startsWith('/dealers/')) {
+    const dealerSlug = pathname.slice('/dealers/'.length).trim();
+    if (dealerSlug && !dealerSlug.includes('/')) {
+      return {
+        normalizedRoute: '/dealers/:dealerSlug',
+        pathname,
+        queryString,
+        scope: 'public',
+        isKnownRoute: true,
+        slug: null,
+        dealerSlug: decodeURIComponent(dealerSlug),
+        editingCarId: null,
+        dealerEditingCarId: null,
+      };
+    }
+    return {
+      normalizedRoute: pathname,
+      pathname,
+      queryString,
+      scope: 'public',
+      isKnownRoute: false,
+      slug: null,
+      dealerSlug: null,
+      editingCarId: null,
+      dealerEditingCarId: null,
+    };
+  }
+
   // 4. Canonical Public Routes (root '/' redirects to '/car-marketplace')
   if (KNOWN_PUBLIC_EXACT.has(pathname)) {
     const canonical =

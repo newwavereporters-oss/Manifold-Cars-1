@@ -20,6 +20,7 @@ import { PriceIntelligenceCard } from '../components/ai/PriceIntelligenceCard';
 import { resolveCarYouTubeVideoId } from '../utils/carMedia';
 import { dealerService } from '../services/dealerService';
 import { getDealerPermalinkSlug } from '../utils/dealerSlug';
+import { WatermarkedVehicleImage } from '../components/WatermarkedVehicleImage';
 
 interface CarDetailPageProps {
   car: Car;
@@ -259,11 +260,12 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                 ) : (
                   <div className="w-full h-full relative flex flex-col items-center justify-center text-white p-6 text-center">
                     {(hasPhoto1 || hasPhoto2) && (
-                      <img
+                      <WatermarkedVehicleImage
                         src={car.gallery_image_1_url || car.gallery_image_2_url}
                         alt={car.title}
-                        referrerPolicy="no-referrer"
-                        className="absolute inset-0 w-full h-full object-cover opacity-25"
+                        className="absolute inset-0 w-full h-full opacity-25"
+                        imgClassName="w-full h-full object-cover"
+                        watermarkSize="lg"
                       />
                     )}
                     <div className="relative z-10 max-w-md space-y-2.5 bg-[#071A2B]/85 backdrop-blur-sm p-5 rounded-2xl border border-white/15">
@@ -290,19 +292,21 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                   </div>
                 )
               ) : activeMediaTab === 'gallery1' && hasPhoto1 && !photo1Error ? (
-                <img
+                <WatermarkedVehicleImage
                   src={car.gallery_image_1_url}
                   alt={`${car.title} gallery exterior`}
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
+                  className="w-full h-full"
+                  imgClassName="w-full h-full object-cover"
+                  watermarkSize="lg"
                   onError={() => setPhoto1Error(true)}
                 />
               ) : activeMediaTab === 'gallery2' && hasPhoto2 && !photo2Error ? (
-                <img
+                <WatermarkedVehicleImage
                   src={car.gallery_image_2_url}
                   alt={`${car.title} gallery interior showroom`}
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
+                  className="w-full h-full"
+                  imgClassName="w-full h-full object-cover"
+                  watermarkSize="lg"
                   onError={() => setPhoto2Error(true)}
                 />
               ) : (
@@ -403,18 +407,19 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                     }
                     className="relative aspect-video rounded-lg overflow-hidden border border-gray-200 cursor-pointer group bg-gray-100"
                   >
-                    <img
+                    <WatermarkedVehicleImage
                       src={car.gallery_image_1_url}
                       alt={`${car.title} gallery 1`}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      className="w-full h-full"
+                      imgClassName="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      watermarkSize="sm"
                     />
-                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center pointer-events-none">
                       <span className="opacity-0 group-hover:opacity-100 transition bg-black/75 text-white text-[10px] font-bold px-2 py-1 rounded">
                         Click to Enlarge Photo 1
                       </span>
                     </div>
-                    <span className="absolute bottom-1.5 left-1.5 bg-[#071A2B]/85 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                    <span className="absolute bottom-1.5 left-1.5 bg-[#071A2B]/85 text-white text-[9px] font-bold px-1.5 py-0.5 rounded pointer-events-none">
                       Gallery Photo 1
                     </span>
                   </div>
@@ -430,13 +435,14 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                     }
                     className="relative aspect-video rounded-lg overflow-hidden border border-gray-200 cursor-pointer group bg-gray-100"
                   >
-                    <img
+                    <WatermarkedVehicleImage
                       src={car.gallery_image_2_url}
                       alt={`${car.title} gallery 2`}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      className="w-full h-full"
+                      imgClassName="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      watermarkSize="sm"
                     />
-                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center pointer-events-none">
                       <span className="opacity-0 group-hover:opacity-100 transition bg-black/75 text-white text-[10px] font-bold px-2 py-1 rounded">
                         Click to Enlarge Photo 2
                       </span>
@@ -510,7 +516,7 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                   Listed by partner dealer{' '}
                   <button
                     type="button"
-                    onClick={() => navigate(`/${dealerPermalinkSlug}`)}
+                    onClick={() => navigate(`/dealers/${dealerPermalinkSlug}`)}
                     className="inline-flex items-center gap-1 font-bold text-white underline decoration-[#EF233C]/70 hover:text-[#EF233C] transition cursor-pointer"
                   >
                     <span>{car.dealer.name}</span>
@@ -698,10 +704,13 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                 ✕ Close
               </button>
             </div>
-            <img
+            <WatermarkedVehicleImage
               src={enlargedImage.url}
               alt={enlargedImage.title}
-              className="max-w-full max-h-[78vh] object-contain rounded-lg shadow-2xl border border-white/15"
+              className="max-w-full max-h-[78vh] rounded-lg shadow-2xl border border-white/15 bg-black"
+              imgClassName="max-w-full max-h-[78vh] object-contain"
+              watermarkSize="lg"
+              loading="eager"
             />
           </div>
         </div>

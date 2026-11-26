@@ -8,9 +8,13 @@ import { extractSupabaseHost } from './world.js';
 
 const router = Router();
 
-const PUBLIC_DEALER_SELECT_FULL =
-  'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year';
-const PUBLIC_DEALER_SELECT_MINIMAL = 'id, name, slug, city, state, is_verified, joined_year';
+const PUBLIC_DEALER_SELECT_CANDIDATES = [
+  'id, business_name, slug, city, state, is_verified, dealer_status, joined_year',
+  'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year',
+  'id, business_name, slug, city, state, is_verified, joined_year',
+  'id, name, slug, city, state, is_verified, joined_year',
+];
+let resolvedServerCarDealerSelect: string | null = null;
 
 export function sanitizePublicDealerPayload(raw: any): Record<string, any> | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -28,7 +32,7 @@ export function sanitizePublicDealerPayload(raw: any): Record<string, any> | nul
 
 export function isPublicCarStatus(status: unknown): boolean {
   const upper = String(status || '').trim().toUpperCase();
-  return upper !== 'DRAFT' && upper !== 'ARCHIVED';
+  return upper === 'PUBLISHED';
 }
 
 function formatPgError(error: any): {
@@ -54,31 +58,31 @@ export async function fetchPublicCarsFromSupabase(client: SupabaseClient): Promi
   payload: { error: string; code?: string; details?: string; hint?: string };
 }> {
   // 1. Primary relational select with strictly safe non-PII dealer projection
-  let primary = await client
-    .from('cars')
-    .select(
-      `
-      *,
-      car_media (*),
-      car_images (*),
-      dealers (${PUBLIC_DEALER_SELECT_FULL})
-    `
-    )
-    .order('created_at', { ascending: false });
+  const candidates = resolvedServerCarDealerSelect
+    ? [
+        resolvedServerCarDealerSelect,
+        ...PUBLIC_DEALER_SELECT_CANDIDATES.filter((c) => c !== resolvedServerCarDealerSelect),
+      ]
+    : PUBLIC_DEALER_SELECT_CANDIDATES;
 
-  // Retry relational query with minimal dealer columns if business_name/dealer_status aren't present
-  if (primary.error?.code === '42703') {
+  let primary: any = { data: null, error: null };
+  for (const cols of candidates) {
     primary = await client
       .from('cars')
       .select(
         `
-        *,
-        car_media (*),
-        car_images (*),
-        dealers (${PUBLIC_DEALER_SELECT_MINIMAL})
-      `
+      *,
+      car_media (*),
+      car_images (*),
+      dealers (${cols})
+    `
       )
       .order('created_at', { ascending: false });
+    if (!primary.error) {
+      resolvedServerCarDealerSelect = cols;
+      break;
+    }
+    if (primary.error?.code !== '42703') break;
   }
 
   let resolvedRows: any[] | null = null;
@@ -112,14 +116,22 @@ export async function fetchPublicCarsFromSupabase(client: SupabaseClient): Promi
 
     const fetchSafeDealers = async () => {
       if (dealerIds.length === 0) return { data: [] };
-      const first = await client
-        .from('dealers')
-        .select(PUBLIC_DEALER_SELECT_FULL)
-        .in('id', dealerIds);
-      if (first.error?.code === '42703') {
-        return client.from('dealers').select(PUBLIC_DEALER_SELECT_MINIMAL).in('id', dealerIds);
+      const dealerCandidates = resolvedServerCarDealerSelect
+        ? [
+            resolvedServerCarDealerSelect,
+            ...PUBLIC_DEALER_SELECT_CANDIDATES.filter((c) => c !== resolvedServerCarDealerSelect),
+          ]
+        : PUBLIC_DEALER_SELECT_CANDIDATES;
+      let res: any = { data: [] };
+      for (const cols of dealerCandidates) {
+        res = await client.from('dealers').select(cols).in('id', dealerIds);
+        if (!res.error) {
+          resolvedServerCarDealerSelect = cols;
+          break;
+        }
+        if (res.error?.code !== '42703') break;
       }
-      return first;
+      return res;
     };
 
     const [mediaSettled, imagesSettled, dealersSettled] = await Promise.allSettled([

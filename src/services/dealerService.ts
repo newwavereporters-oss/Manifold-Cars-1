@@ -237,10 +237,17 @@ class DealerService {
   private cache: DealerFullRecord[] = [];
   private publicCache: PublicDealerRecord[] = [];
 
+  private resolvedPublicDealerCols: string | null = null;
+
   public async getPublicDealers(): Promise<PublicDealerRecord[]> {
-    const PUBLIC_COLS_FULL =
-      'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year';
-    const PUBLIC_COLS_MINIMAL = 'id, name, slug, city, state, is_verified, joined_year';
+    const PUBLIC_COLS_CANDIDATES = [
+      'id, business_name, slug, city, state, is_verified, dealer_status, joined_year',
+      'id, name, business_name, slug, city, state, is_verified, dealer_status, joined_year',
+      'id, business_name, slug, city, state, is_verified, joined_year',
+      'id, name, slug, city, state, is_verified, joined_year',
+      'id, business_name, city, state, is_verified, joined_year',
+      'id, name, city, state, is_verified, joined_year',
+    ];
 
     let rows: any[] = [];
 
@@ -258,15 +265,30 @@ class DealerService {
       }
       rows = Array.isArray(body?.dealers) ? body.dealers : [];
     } else {
-      let query = await supabase.from('dealers').select(PUBLIC_COLS_FULL);
-      if (query.error?.code === '42703') {
-        query = await supabase.from('dealers').select(PUBLIC_COLS_MINIMAL);
+      const candidates = this.resolvedPublicDealerCols
+        ? [
+            this.resolvedPublicDealerCols,
+            ...PUBLIC_COLS_CANDIDATES.filter((c) => c !== this.resolvedPublicDealerCols),
+          ]
+        : PUBLIC_COLS_CANDIDATES;
+
+      let query: any = null;
+      for (const cols of candidates) {
+        query = await supabase.from('dealers').select(cols);
+        if (!query.error) {
+          this.resolvedPublicDealerCols = cols;
+          break;
+        }
+        if (query.error?.code !== '42703') {
+          break;
+        }
       }
-      if (query.error) {
+
+      if (query?.error) {
         const codePrefix = query.error.code ? `[${query.error.code}] ` : '';
         throw new Error(`Unable to load dealers directory: ${codePrefix}${query.error.message}`);
       }
-      rows = query.data || [];
+      rows = query?.data || [];
     }
 
     const baseRows = rows
@@ -274,19 +296,22 @@ class DealerService {
         const st = String(d?.dealer_status || '').trim().toLowerCase();
         return st !== 'disapproved' && st !== 'suspended';
       })
-      .map((d: any) => ({
-        id: String(d.id),
-        name: (d.business_name || d.name || 'MANIFOLD Partner Dealership').trim(),
-        slug: d.slug || null,
-        city: d.city || 'Lagos',
-        state: d.state || 'Lagos',
-        verified_partner:
-          d.dealer_status === 'approved'
-            ? true
+      .map((d: any) => {
+        const st = String(d?.dealer_status || '').trim().toLowerCase();
+        const isDisapproved = st === 'disapproved' || st === 'suspended';
+        return {
+          id: String(d.id),
+          name: (d.business_name || d.name || 'MANIFOLD Partner Dealership').trim(),
+          slug: d.slug || null,
+          city: d.city || 'Lagos',
+          state: d.state || 'Lagos',
+          verified_partner: isDisapproved
+            ? false
             : Boolean(d.is_verified ?? d.verified_partner ?? false),
-        dealer_status: d.dealer_status || undefined,
-        joined_year: Number(d.joined_year) || 2024,
-      }));
+          dealer_status: d.dealer_status || undefined,
+          joined_year: Number(d.joined_year) || 2024,
+        };
+      });
 
     const withPermalinks = assignDealerPermalinkSlugs(baseRows).sort((a, b) =>
       a.name.localeCompare(b.name)
@@ -313,22 +338,23 @@ class DealerService {
 
     if (data && data.length > 0) {
       this.cache = data
-        .map((d: any) => ({
-          id: String(d.id),
-          name: d.business_name || d.name || 'Unnamed Dealership',
-          city: d.city || 'Lagos',
-          state: d.state || 'Lagos',
-          verified_partner:
-            d.dealer_status === 'approved'
-              ? true
-              : d.dealer_status === 'disapproved'
+        .map((d: any) => {
+          const st = String(d?.dealer_status || '').trim().toLowerCase();
+          const isDisapproved = st === 'disapproved' || st === 'suspended';
+          return {
+            id: String(d.id),
+            name: d.business_name || d.name || 'Unnamed Dealership',
+            city: d.city || 'Lagos',
+            state: d.state || 'Lagos',
+            verified_partner: isDisapproved
               ? false
-              : d.is_verified ?? d.verified_partner ?? false,
-          joined_year: d.joined_year || 2024,
-          address: d.address,
-          phone: d.phone,
-          email: d.email,
-        }))
+              : Boolean(d.is_verified ?? d.verified_partner ?? false),
+            joined_year: d.joined_year || 2024,
+            address: d.address,
+            phone: d.phone,
+            email: d.email,
+          };
+        })
         .sort((a, b) => a.name.localeCompare(b.name));
       return [...this.cache];
     }
@@ -630,12 +656,19 @@ class DealerService {
         ? crypto.randomUUID()
         : `00000000-0000-4000-8000-${Date.now().toString().padStart(12, '0').slice(-12)}`);
     const baseSlug = slugifyBusinessName(cleanName);
-    const { data: existingSlugRow } = await supabase
+    const { data: existingSlugRows } = await supabase
       .from('dealers')
-      .select('id')
-      .eq('slug', baseSlug)
-      .maybeSingle();
-    const slug = existingSlugRow ? `${baseSlug}-${id.slice(0, 4).toLowerCase()}` : baseSlug;
+      .select('slug')
+      .ilike('slug', `${baseSlug}%`);
+    const takenSlugs = new Set(
+      (existingSlugRows || []).map((row: any) => String(row.slug || '').toLowerCase())
+    );
+    let slug = baseSlug;
+    let suffix = 2;
+    while (takenSlugs.has(slug.toLowerCase())) {
+      slug = `${baseSlug}-${suffix}`;
+      suffix += 1;
+    }
 
     // Try business_name schema first, then fallback to name schema
     let { error } = await supabase.from('dealers').insert({

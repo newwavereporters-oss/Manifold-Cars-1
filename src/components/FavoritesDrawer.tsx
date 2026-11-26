@@ -2,6 +2,8 @@ import React from 'react';
 import { X, Heart, Trash2, ArrowRight, ShieldCheck } from 'lucide-react';
 import { Car } from '../types';
 import { FORMAT_CURRENCY } from '../data/mockCars';
+import { getCarCardPrimaryImage } from '../utils/carMedia';
+import { WatermarkedVehicleImage } from './WatermarkedVehicleImage';
 
 interface FavoritesDrawerProps {
   isOpen: boolean;
@@ -60,16 +62,21 @@ export const FavoritesDrawer: React.FC<FavoritesDrawerProps> = ({
                   key={car.id}
                   className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm hover:shadow transition flex gap-3 relative group"
                 >
-                  <img
-                    src={car.video.youtube_thumbnail_url}
-                    alt={car.title}
-                    className="w-24 h-16 object-cover rounded shrink-0 cursor-pointer"
+                  <div
+                    className="w-24 h-16 rounded shrink-0 cursor-pointer overflow-hidden"
                     onClick={() => {
                       onClose();
                       onSelectCar(car);
                     }}
-                    referrerPolicy="no-referrer"
-                  />
+                  >
+                    <WatermarkedVehicleImage
+                      src={getCarCardPrimaryImage(car)}
+                      alt={car.title}
+                      className="w-full h-full"
+                      imgClassName="w-full h-full object-cover"
+                      watermarkSize="sm"
+                    />
+                  </div>
 
                   <div className="flex-1 min-w-0 flex flex-col justify-between">
                     <div>
