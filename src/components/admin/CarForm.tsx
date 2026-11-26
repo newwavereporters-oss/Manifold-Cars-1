@@ -1027,6 +1027,7 @@ export const CarForm: React.FC<CarFormProps> = ({
         <DealerPhotoGallery
           dealerId={initialCar?.dealer?.id || 'admin'}
           vehicleId={uploadVehicleIdRef.current}
+          mode={initialCar?.id ? 'edit' : 'create'}
           image1Url={galleryImage1Url}
           image2Url={galleryImage2Url}
           onChangeImage1={(nextUrl) => {

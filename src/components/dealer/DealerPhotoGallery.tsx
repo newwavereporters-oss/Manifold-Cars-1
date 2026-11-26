@@ -9,6 +9,7 @@ import {
   Camera,
   CheckCircle2,
   ExternalLink,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   formatFileSizeKb,
@@ -19,6 +20,7 @@ import {
 } from '../../utils/imageOptimizer';
 import {
   deleteVehicleImageByUrl,
+  importVehicleImageFromUrl,
   uploadVehicleImage,
   VehicleImageSlot,
 } from '../../services/vehicleImageService';
@@ -36,6 +38,7 @@ interface SlotMeta {
 interface DealerPhotoGalleryProps {
   dealerId: string;
   vehicleId: string;
+  mode?: 'create' | 'edit';
   image1Url: string;
   image2Url: string;
   onChangeImage1: (nextUrl: string) => void;
@@ -47,6 +50,7 @@ interface SlotStatusState {
   mode: 'upload' | 'url';
   uploading: boolean;
   dragging: boolean;
+  pendingUrl: string;
   error: string | null;
   errorCode: VehicleImageErrorCode | null;
   optimizedSizeBytes: number | null;
@@ -56,6 +60,7 @@ const DEFAULT_SLOT_STATE: SlotStatusState = {
   mode: 'upload',
   uploading: false,
   dragging: false,
+  pendingUrl: '',
   error: null,
   errorCode: null,
   optimizedSizeBytes: null,
@@ -64,6 +69,7 @@ const DEFAULT_SLOT_STATE: SlotStatusState = {
 export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
   dealerId,
   vehicleId,
+  mode = 'edit',
   image1Url,
   image2Url,
   onChangeImage1,
@@ -112,6 +118,7 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
         dealerId,
         vehicleId,
         slot,
+        mode,
         previousUrl: currentUrl,
       });
 
@@ -138,6 +145,58 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
     }
   };
 
+  const handleImportExternalUrl = async (
+    slot: VehicleImageSlot,
+    currentUrl: string,
+    onChange: (nextUrl: string) => void
+  ) => {
+    if (disabled) return;
+    const candidateUrl = (slotStates[slot].pendingUrl || '').trim();
+    if (!candidateUrl) {
+      updateSlotState(slot, {
+        error: 'Enter an HTTPS image URL to verify and import.',
+        errorCode: 'UPLOAD_FAILED',
+      });
+      return;
+    }
+
+    updateSlotState(slot, {
+      uploading: true,
+      error: null,
+      errorCode: null,
+    });
+
+    try {
+      const result = await importVehicleImageFromUrl({
+        url: candidateUrl,
+        dealerId,
+        vehicleId,
+        slot,
+        mode,
+        previousUrl: currentUrl,
+      });
+
+      onChange(result.publicUrl);
+      updateSlotState(slot, {
+        uploading: false,
+        pendingUrl: '',
+        error: null,
+        errorCode: null,
+        optimizedSizeBytes: result.optimizedSizeBytes,
+      });
+    } catch (err: any) {
+      const code = (err?.code || 'UPLOAD_FAILED') as VehicleImageErrorCode;
+      updateSlotState(slot, {
+        uploading: false,
+        error:
+          code === 'IMAGE_TOO_LARGE_AFTER_COMPRESSION'
+            ? TINYPNG_HINT_MESSAGE
+            : err?.message || 'Unable to verify or import this image URL.',
+        errorCode: code,
+      });
+    }
+  };
+
   const handleRemovePhoto = async (
     slot: VehicleImageSlot,
     currentUrl: string,
@@ -146,12 +205,13 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
     if (disabled) return;
     onChange('');
     updateSlotState(slot, {
+      pendingUrl: '',
       error: null,
       errorCode: null,
       optimizedSizeBytes: null,
     });
     if (currentUrl) {
-      await deleteVehicleImageByUrl(currentUrl);
+      await deleteVehicleImageByUrl(currentUrl, { vehicleId, slot });
     }
   };
 
@@ -178,7 +238,7 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-gray-500">
-          Upload directly from your phone or computer (JPG, PNG, WebP — automatically optimized under 100 KB), or paste an image link.
+          Upload directly from your phone or computer (JPG, PNG, WebP — server-verified &amp; optimized under 100 KB), or import an image URL.
         </p>
       </div>
 
@@ -240,7 +300,7 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
                     }`}
                   >
                     <Link2 className="w-3 h-3" />
-                    <span>Enter URL</span>
+                    <span>Import URL</span>
                   </button>
                 </div>
               </div>
@@ -274,7 +334,7 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
                     {state.uploading && (
                       <div className="absolute inset-0 bg-black/55 backdrop-blur-[1px] flex flex-col items-center justify-center text-white gap-2">
                         <Loader2 className="w-6 h-6 animate-spin" />
-                        <span className="text-xs font-bold">Optimizing & uploading...</span>
+                        <span className="text-xs font-bold">Verifying &amp; processing...</span>
                       </div>
                     )}
                   </div>
@@ -284,8 +344,8 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
                       <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                       <span className="truncate">
                         {state.optimizedSizeBytes
-                          ? `Optimized (${formatFileSizeKb(state.optimizedSizeBytes)})`
-                          : 'Photo attached'}
+                          ? `Verified (${formatFileSizeKb(state.optimizedSizeBytes)})`
+                          : 'Verified photo attached'}
                       </span>
                     </div>
 
@@ -315,7 +375,7 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
                 </div>
               )}
 
-              {/* Upload Dropzone (shown in upload mode when empty or ready) */}
+              {/* Upload Dropzone */}
               {state.mode === 'upload' && !hasImage && (
                 <div
                   role="button"
@@ -355,10 +415,10 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
                     <>
                       <Loader2 className="w-7 h-7 animate-spin text-[#EF233C] mb-2" />
                       <p className="text-xs font-bold text-gray-800">
-                        Optimizing & uploading photo...
+                        Validating &amp; optimizing photo...
                       </p>
                       <p className="text-[11px] text-gray-500 mt-0.5">
-                        Compressing to under 100 KB
+                        Re-encoding safely under 100 KB
                       </p>
                     </>
                   ) : (
@@ -367,7 +427,7 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
                         <Camera className="w-5 h-5" />
                       </div>
                       <p className="text-xs font-bold text-gray-800">
-                        Click to upload or drag & drop
+                        Click to upload or drag &amp; drop
                       </p>
                       <p className="text-[11px] text-gray-500 mt-1">
                         JPG, JPEG, PNG or WebP
@@ -377,27 +437,55 @@ export const DealerPhotoGallery: React.FC<DealerPhotoGalleryProps> = ({
                 </div>
               )}
 
-              {/* Manual URL Input */}
+              {/* Server-Verified URL Import */}
               {state.mode === 'url' && (
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <label className="block text-[11px] font-bold text-gray-700">
-                    Image URL
+                    Import External Image URL
                   </label>
-                  <input
-                    type="url"
-                    disabled={disabled || state.uploading}
-                    value={value}
-                    onChange={(e) => {
-                      updateSlotState(slot, {
-                        error: null,
-                        errorCode: null,
-                        optimizedSizeBytes: null,
-                      });
-                      onChange(e.target.value);
-                    }}
-                    placeholder="https://example.com/vehicle-photo.jpg"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#EF233C]/20"
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="url"
+                      disabled={disabled || state.uploading}
+                      value={state.pendingUrl}
+                      onChange={(e) => {
+                        updateSlotState(slot, {
+                          pendingUrl: e.target.value,
+                          error: null,
+                          errorCode: null,
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void handleImportExternalUrl(slot, value, onChange);
+                        }
+                      }}
+                      placeholder="https://example.com/vehicle-photo.jpg"
+                      className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#EF233C]/20"
+                    />
+                    <button
+                      type="button"
+                      disabled={disabled || state.uploading || !state.pendingUrl.trim()}
+                      onClick={() => void handleImportExternalUrl(slot, value, onChange)}
+                      className="px-3 py-2 rounded-xl bg-[#071A2B] hover:bg-[#0d2a44] disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1.5 shrink-0 transition-colors"
+                    >
+                      {state.uploading ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Importing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Import</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    External images are downloaded, verified, re-encoded under 100 KB, and stored securely on MANIFOLD.
+                  </p>
                 </div>
               )}
 

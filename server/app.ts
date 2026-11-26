@@ -7,6 +7,7 @@ import { carsRouter } from './routes/cars.js';
 import { marketIntelligenceRouter } from './routes/marketIntelligence.js';
 import { worldRouter } from './routes/world.js';
 import { aiRouter } from './routes/ai.js';
+import { vehicleImagesRouter } from './routes/vehicleImages.js';
 
 export function createApp() {
   // Ensure server environment variables are loaded
@@ -30,6 +31,7 @@ export function createApp() {
   app.use('/api/market-intelligence', marketIntelligenceRouter);
   app.use('/api/world', worldRouter);
   app.use('/api/dealers', dealersRouter);
+  app.use('/api/dealer/vehicles/images', vehicleImagesRouter);
   app.use('/api/cars', carsRouter);
   app.use('/api/ai', aiRouter);
 

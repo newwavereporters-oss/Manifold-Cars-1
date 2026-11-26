@@ -1115,6 +1115,7 @@ export const DealerEditCarPage: React.FC<DealerEditCarPageProps> = ({ carId, nav
             <DealerPhotoGallery
               dealerId={dealerAccount?.dealerId || originalCar?.dealer_id || 'dealer'}
               vehicleId={carId}
+              mode="edit"
               image1Url={image1Url}
               image2Url={image2Url}
               onChangeImage1={setImage1Url}

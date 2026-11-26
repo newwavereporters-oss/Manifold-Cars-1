@@ -260,7 +260,11 @@ async function verifyDealerAccount(supabase, user) {
         reason: "Your dealership account is suspended."
       };
     }
-    const { data: dealerRow } = await supabase.from("dealers").select("id, name, business_name, dealer_status, is_verified").eq("id", dealerId).maybeSingle();
+    let { data: dealerRow, error: dealerRowErr } = await supabase.from("dealers").select("id, business_name, dealer_status, is_verified").eq("id", dealerId).maybeSingle();
+    if (dealerRowErr?.code === "42703") {
+      const fallbackDealerRes = await supabase.from("dealers").select("id, name, dealer_status, is_verified").eq("id", dealerId).maybeSingle();
+      dealerRow = fallbackDealerRes.data;
+    }
     const dealerStatus = String(dealerRow?.dealer_status || "").toLowerCase() || (accountStatus === "active" && dealerRow?.is_verified !== false ? "approved" : "pending");
     const isVerified = typeof dealerRow?.is_verified === "boolean" ? dealerRow.is_verified : accountStatus === "active";
     const isApproved = accountStatus === "active" && dealerStatus === "approved" && isVerified;
@@ -648,6 +652,12 @@ var aiAssistantLimiter = createRateLimiter({
   maxRequests: 25,
   keyPrefix: "ai-assistant",
   message: "Automotive assistant rate limit reached. Please pause briefly."
+});
+var vehicleImageUploadLimiter = createRateLimiter({
+  windowMs: 6e4,
+  maxRequests: 30,
+  keyPrefix: "vehicle-image-upload",
+  message: "Too many image upload requests. Please wait a moment before uploading again."
 });
 
 // server/routes/auth.ts
@@ -1878,6 +1888,148 @@ Message: ${JSON.stringify(trimmed)}`,
 );
 var worldRouter = router2;
 
+// src/utils/vehicleImageUrl.ts
+var VEHICLE_IMAGES_BUCKET = "vehicle-images";
+var VEHICLE_IMAGES_PUBLIC_MARKER = `/storage/v1/object/public/${VEHICLE_IMAGES_BUCKET}/`;
+var APPROVED_STORAGE_EXTENSIONS = /* @__PURE__ */ new Set([".jpg", ".jpeg", ".webp"]);
+var APPROVED_LOCAL_ASSET_EXTENSIONS = /* @__PURE__ */ new Set([".jpg", ".jpeg", ".png", ".webp"]);
+var BLOCKED_DANGEROUS_EXTENSIONS = [
+  ".svg",
+  ".svgz",
+  ".html",
+  ".htm",
+  ".xhtml",
+  ".xml",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".php",
+  ".asp",
+  ".aspx",
+  ".jsp",
+  ".exe",
+  ".dll",
+  ".bat",
+  ".sh",
+  ".pdf",
+  ".zip"
+];
+var APPROVED_YOUTUBE_IMAGE_HOSTS = /* @__PURE__ */ new Set([
+  "i.ytimg.com",
+  "img.youtube.com",
+  "i1.ytimg.com",
+  "i2.ytimg.com",
+  "i3.ytimg.com",
+  "i4.ytimg.com"
+]);
+function getNormalizedPathname(rawUrl) {
+  const withoutHash = rawUrl.split("#")[0];
+  const withoutQuery = withoutHash.split("?")[0];
+  return withoutQuery.trim().toLowerCase();
+}
+function hasDangerousExtension(pathnameLower) {
+  return BLOCKED_DANGEROUS_EXTENSIONS.some((ext) => pathnameLower.endsWith(ext));
+}
+function hasExtensionInSet(pathnameLower, allowed) {
+  for (const ext of allowed) {
+    if (pathnameLower.endsWith(ext)) {
+      return true;
+    }
+  }
+  return false;
+}
+function extractVehicleImageStoragePath(rawUrl) {
+  const trimmed = (rawUrl || "").trim();
+  if (!trimmed) return null;
+  const idx = trimmed.indexOf(VEHICLE_IMAGES_PUBLIC_MARKER);
+  if (idx === -1) return null;
+  const afterMarker = trimmed.slice(idx + VEHICLE_IMAGES_PUBLIC_MARKER.length);
+  const withoutQuery = afterMarker.split("?")[0].split("#")[0];
+  let decoded = withoutQuery;
+  try {
+    decoded = decodeURIComponent(withoutQuery);
+  } catch {
+    return null;
+  }
+  const normalized = decoded.replace(/^\/+/, "");
+  if (!normalized || normalized.includes("..") || normalized.includes("\\")) {
+    return null;
+  }
+  return normalized;
+}
+function isVerifiedManifoldStorageImageUrl(rawUrl, expectedSupabaseUrl) {
+  const trimmed = (rawUrl || "").trim();
+  if (!trimmed || /[\u0000-\u001F\u007F]/.test(trimmed)) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("javascript:") || lower.startsWith("data:") || lower.startsWith("vbscript:") || lower.startsWith("file:") || lower.startsWith("blob:")) {
+    return false;
+  }
+  let parsed;
+  try {
+    parsed = new URL(trimmed, "https://manifold.local");
+  } catch {
+    return false;
+  }
+  const isRelativeStorageUrl = trimmed.startsWith("/");
+  if (!isRelativeStorageUrl && parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    return false;
+  }
+  if (!isRelativeStorageUrl) {
+    if (expectedSupabaseUrl) {
+      try {
+        const expected = new URL(expectedSupabaseUrl.trim());
+        if (parsed.origin !== expected.origin) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    } else if (!parsed.hostname.toLowerCase().endsWith(".supabase.co")) {
+      return false;
+    }
+  }
+  const pathnameLower = parsed.pathname.toLowerCase();
+  if (!pathnameLower.startsWith(VEHICLE_IMAGES_PUBLIC_MARKER) && !pathnameLower.includes(VEHICLE_IMAGES_PUBLIC_MARKER)) {
+    return false;
+  }
+  const storagePath = extractVehicleImageStoragePath(trimmed);
+  if (!storagePath) return false;
+  const pathLower = storagePath.toLowerCase();
+  if (hasDangerousExtension(pathLower)) return false;
+  return hasExtensionInSet(pathLower, APPROVED_STORAGE_EXTENSIONS);
+}
+function isApprovedVehicleImageUrl(rawUrl, expectedSupabaseUrl) {
+  const trimmed = (rawUrl || "").trim();
+  if (!trimmed || /[\u0000-\u001F\u007F]/.test(trimmed)) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("javascript:") || lower.startsWith("data:") || lower.startsWith("vbscript:") || lower.startsWith("file:") || lower.startsWith("ftp:") || lower.startsWith("blob:") || trimmed.startsWith("//")) {
+    return false;
+  }
+  if (isVerifiedManifoldStorageImageUrl(trimmed, expectedSupabaseUrl)) {
+    return true;
+  }
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    const pathnameLower = getNormalizedPathname(trimmed);
+    if (pathnameLower.includes("..") || hasDangerousExtension(pathnameLower)) {
+      return false;
+    }
+    return hasExtensionInSet(pathnameLower, APPROVED_LOCAL_ASSET_EXTENSIONS);
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:") return false;
+    const hostLower = parsed.hostname.toLowerCase();
+    if (!APPROVED_YOUTUBE_IMAGE_HOSTS.has(hostLower)) {
+      return false;
+    }
+    const pathnameLower = parsed.pathname.toLowerCase();
+    if (hasDangerousExtension(pathnameLower)) return false;
+    return hasExtensionInSet(pathnameLower, /* @__PURE__ */ new Set([".jpg", ".jpeg", ".webp"]));
+  } catch {
+    return false;
+  }
+}
+
 // server/routes/cars.ts
 var router3 = Router3();
 var PUBLIC_DEALER_SELECT_CANDIDATES = [
@@ -2009,10 +2161,21 @@ async function fetchPublicCarsFromSupabase(client) {
       dealers: row.dealer_id ? dealerById.get(String(row.dealer_id)) || null : null
     }));
   }
-  const sanitized = (resolvedRows || []).filter((row) => isPublicCarStatus(row?.status)).map((row) => ({
-    ...row,
-    dealers: sanitizePublicDealerPayload(row?.dealers)
-  }));
+  const configuredSupabaseUrl = getServerEnv().supabaseUrl || null;
+  const sanitized = (resolvedRows || []).filter((row) => isPublicCarStatus(row?.status)).map((row) => {
+    const safeImg1 = isApprovedVehicleImageUrl(row?.gallery_image_1_url, configuredSupabaseUrl) ? row.gallery_image_1_url : null;
+    const safeImg2 = isApprovedVehicleImageUrl(row?.gallery_image_2_url, configuredSupabaseUrl) ? row.gallery_image_2_url : null;
+    const safeCarImages = Array.isArray(row?.car_images) ? row.car_images.filter(
+      (img) => isApprovedVehicleImageUrl(img?.image_url, configuredSupabaseUrl)
+    ) : [];
+    return {
+      ...row,
+      gallery_image_1_url: safeImg1,
+      gallery_image_2_url: safeImg2,
+      car_images: safeCarImages,
+      dealers: sanitizePublicDealerPayload(row?.dealers)
+    };
+  });
   return { ok: true, cars: sanitized };
 }
 router3.get("/", standardApiLimiter, async (_req, res) => {
@@ -7912,6 +8075,1210 @@ aiRouter.post(
   }
 );
 
+// server/routes/vehicleImages.ts
+init_supabaseServer();
+import crypto6 from "node:crypto";
+import { Router as Router8 } from "express";
+import multer2 from "multer";
+
+// server/services/vehicleImageSecurity.ts
+import sharp from "sharp";
+sharp.concurrency(1);
+sharp.cache(false);
+var MAX_RAW_UPLOAD_BYTES = 4 * 1024 * 1024;
+var MAX_FINAL_IMAGE_BYTES = 102400;
+var MAX_INPUT_WIDTH = 6e3;
+var MAX_INPUT_HEIGHT = 6e3;
+var MAX_INPUT_PIXELS = 24e6;
+var TARGET_MAX_WIDTH = 1200;
+var TARGET_MAX_HEIGHT = 900;
+var PROCESSING_TIMEOUT_MS = 1e4;
+var PROCESSING_TIMEOUT_SECONDS = 10;
+var VehicleImageSecurityError = class extends Error {
+  constructor(message, code, statusCode = 400) {
+    super(message);
+    this.name = "VehicleImageSecurityError";
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+};
+var ALLOWED_INPUT_FORMATS = /* @__PURE__ */ new Set(["jpeg", "png", "webp"]);
+function inspectDisallowedPayloadSignatures(buffer) {
+  const head = buffer.subarray(0, 512);
+  const headText = head.toString("utf8").replace(/^\uFEFF/, "").trimStart().toLowerCase();
+  if (headText.startsWith("<svg") || headText.startsWith("<?xml") || headText.includes("<svg")) {
+    throw new VehicleImageSecurityError(
+      "SVG images are not allowed. Upload a static JPEG, PNG, or WebP photo.",
+      "SVG_NOT_ALLOWED",
+      400
+    );
+  }
+  if (headText.startsWith("<!doctype") || headText.startsWith("<html") || headText.startsWith("<script") || headText.startsWith("<head") || headText.startsWith("<body")) {
+    throw new VehicleImageSecurityError(
+      "HTML or script content is not a valid vehicle image.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  const ascii6 = head.subarray(0, 6).toString("ascii");
+  if (ascii6 === "GIF87a" || ascii6 === "GIF89a") {
+    throw new VehicleImageSecurityError(
+      "GIF images are not supported. Upload a static JPEG, PNG, or WebP photo.",
+      "ANIMATED_IMAGE_NOT_ALLOWED",
+      400
+    );
+  }
+  if (head.subarray(0, 5).toString("ascii") === "%PDF-") {
+    throw new VehicleImageSecurityError(
+      "PDF files are not allowed. Upload a static JPEG, PNG, or WebP photo.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  if (head.length >= 4 && head[0] === 80 && head[1] === 75 && (head[2] === 3 || head[2] === 5 || head[2] === 7)) {
+    throw new VehicleImageSecurityError(
+      "Archive files are not valid vehicle images.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  if (head.length >= 2 && head[0] === 77 && head[1] === 90 || head.length >= 4 && head[0] === 127 && head[1] === 69 && head[2] === 76 && head[3] === 70 || head.length >= 4 && (head[0] === 254 && head[1] === 237 && head[2] === 250 && (head[3] === 206 || head[3] === 207) || head[0] === 207 && head[1] === 250 && head[2] === 237 && head[3] === 254)) {
+    throw new VehicleImageSecurityError(
+      "Executable binaries are not valid vehicle images.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+}
+function withProcessingTimeout(promise) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new VehicleImageSecurityError(
+          "Image processing timed out. Please upload a smaller standard JPEG, PNG, or WebP image.",
+          "PROCESSING_TIMEOUT",
+          408
+        )
+      );
+    }, PROCESSING_TIMEOUT_MS);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+async function encodeAndVerify(inputBuffer, maxWidth, maxHeight, format, quality) {
+  const pipeline = sharp(inputBuffer, {
+    failOn: "truncated",
+    limitInputPixels: MAX_INPUT_PIXELS,
+    pages: 1,
+    timeoutSeconds: PROCESSING_TIMEOUT_SECONDS
+  }).rotate().resize({
+    width: maxWidth,
+    height: maxHeight,
+    fit: "inside",
+    withoutEnlargement: true
+  });
+  const result = format === "webp" ? await pipeline.webp({ quality, effort: 4 }).toBuffer({ resolveWithObject: true }) : await pipeline.jpeg({ quality, mozjpeg: true }).toBuffer({ resolveWithObject: true });
+  return {
+    buffer: result.data,
+    width: result.info.width,
+    height: result.info.height
+  };
+}
+async function validateAndReencodeVehicleImage(rawBuffer) {
+  if (!Buffer.isBuffer(rawBuffer) || rawBuffer.length === 0) {
+    throw new VehicleImageSecurityError(
+      "Uploaded image file is empty.",
+      "EMPTY_FILE",
+      400
+    );
+  }
+  if (rawBuffer.length > MAX_RAW_UPLOAD_BYTES) {
+    throw new VehicleImageSecurityError(
+      `Raw image upload exceeds the ${Math.round(MAX_RAW_UPLOAD_BYTES / (1024 * 1024))} MB limit.`,
+      "RAW_FILE_TOO_LARGE",
+      413
+    );
+  }
+  inspectDisallowedPayloadSignatures(rawBuffer);
+  return withProcessingTimeout(
+    (async () => {
+      let metadata;
+      try {
+        metadata = await sharp(rawBuffer, {
+          failOn: "truncated",
+          limitInputPixels: MAX_INPUT_PIXELS,
+          animated: true,
+          timeoutSeconds: PROCESSING_TIMEOUT_SECONDS
+        }).metadata();
+      } catch (err) {
+        const msg = String(err?.message || "").toLowerCase();
+        if (msg.includes("pixel limit") || msg.includes("exceeds image size")) {
+          throw new VehicleImageSecurityError(
+            "Image dimensions exceed safe processing limits.",
+            "EXCESSIVE_DIMENSIONS",
+            413
+          );
+        }
+        throw new VehicleImageSecurityError(
+          "Unable to decode image file. Only genuine static JPEG, PNG, or WebP photos are accepted.",
+          "DECODE_FAILED",
+          400
+        );
+      }
+      const detectedFormat = String(metadata.format || "").toLowerCase();
+      if (detectedFormat === "svg") {
+        throw new VehicleImageSecurityError(
+          "SVG images are not allowed. Upload a static JPEG, PNG, or WebP photo.",
+          "SVG_NOT_ALLOWED",
+          400
+        );
+      }
+      if (detectedFormat === "gif") {
+        throw new VehicleImageSecurityError(
+          "GIF images are not supported. Upload a static JPEG, PNG, or WebP photo.",
+          "ANIMATED_IMAGE_NOT_ALLOWED",
+          400
+        );
+      }
+      if (!ALLOWED_INPUT_FORMATS.has(detectedFormat)) {
+        throw new VehicleImageSecurityError(
+          "Unsupported image format. Only genuine static JPEG, PNG, and WebP images are allowed.",
+          "UNSUPPORTED_IMAGE_FORMAT",
+          400
+        );
+      }
+      const pageCount = Number(metadata.pages || 1);
+      if (pageCount > 1 || Array.isArray(metadata.delay) && metadata.delay.length > 1) {
+        throw new VehicleImageSecurityError(
+          "Animated images are not permitted. Upload a static JPEG, PNG, or WebP photo.",
+          "ANIMATED_IMAGE_NOT_ALLOWED",
+          400
+        );
+      }
+      const width = Number(metadata.width || 0);
+      const height = Number(metadata.height || 0);
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        throw new VehicleImageSecurityError(
+          "Image has invalid dimensions and could not be decoded.",
+          "DECODE_FAILED",
+          400
+        );
+      }
+      if (width > MAX_INPUT_WIDTH || height > MAX_INPUT_HEIGHT || width * height > MAX_INPUT_PIXELS) {
+        throw new VehicleImageSecurityError(
+          `Image dimensions (${width}x${height}) exceed maximum allowed size (${MAX_INPUT_WIDTH}x${MAX_INPUT_HEIGHT} / 24 MP).`,
+          "EXCESSIVE_DIMENSIONS",
+          413
+        );
+      }
+      const attempts = [
+        { maxW: TARGET_MAX_WIDTH, maxH: TARGET_MAX_HEIGHT, format: "webp", quality: 82 },
+        { maxW: TARGET_MAX_WIDTH, maxH: TARGET_MAX_HEIGHT, format: "webp", quality: 72 },
+        { maxW: TARGET_MAX_WIDTH, maxH: TARGET_MAX_HEIGHT, format: "webp", quality: 60 },
+        { maxW: TARGET_MAX_WIDTH, maxH: TARGET_MAX_HEIGHT, format: "webp", quality: 48 },
+        { maxW: TARGET_MAX_WIDTH, maxH: TARGET_MAX_HEIGHT, format: "jpeg", quality: 74 },
+        { maxW: TARGET_MAX_WIDTH, maxH: TARGET_MAX_HEIGHT, format: "jpeg", quality: 58 },
+        { maxW: 960, maxH: 720, format: "webp", quality: 64 },
+        { maxW: 960, maxH: 720, format: "webp", quality: 46 },
+        { maxW: 800, maxH: 600, format: "webp", quality: 52 },
+        { maxW: 800, maxH: 600, format: "jpeg", quality: 52 },
+        { maxW: 640, maxH: 480, format: "webp", quality: 42 },
+        { maxW: 640, maxH: 480, format: "webp", quality: 30 },
+        { maxW: 480, maxH: 360, format: "webp", quality: 28 }
+      ];
+      let bestCandidate = null;
+      for (const attempt of attempts) {
+        let encoded;
+        try {
+          encoded = await encodeAndVerify(
+            rawBuffer,
+            attempt.maxW,
+            attempt.maxH,
+            attempt.format,
+            attempt.quality
+          );
+        } catch (err) {
+          const msg = String(err?.message || "").toLowerCase();
+          if (msg.includes("pixel limit") || msg.includes("exceeds image size")) {
+            throw new VehicleImageSecurityError(
+              "Image dimensions exceed safe decoding limits.",
+              "EXCESSIVE_DIMENSIONS",
+              413
+            );
+          }
+          throw new VehicleImageSecurityError(
+            "Image data is corrupted or malformed and failed decoding.",
+            "DECODE_FAILED",
+            400
+          );
+        }
+        if (encoded.buffer.length <= MAX_FINAL_IMAGE_BYTES) {
+          bestCandidate = {
+            ...encoded,
+            format: attempt.format
+          };
+          break;
+        }
+      }
+      if (!bestCandidate) {
+        throw new VehicleImageSecurityError(
+          "Image is still too large to upload. You can reduce its size using TinyPNG and try again.",
+          "IMAGE_TOO_LARGE_AFTER_COMPRESSION",
+          413
+        );
+      }
+      const finalMeta = await sharp(bestCandidate.buffer, {
+        failOn: "truncated",
+        limitInputPixels: MAX_INPUT_PIXELS
+      }).metadata();
+      const finalFormat = String(finalMeta.format || "").toLowerCase();
+      if (finalFormat !== "webp" && finalFormat !== "jpeg") {
+        throw new VehicleImageSecurityError(
+          "Re-encoded output failed final image verification.",
+          "DECODE_FAILED",
+          500
+        );
+      }
+      const ext = bestCandidate.format === "webp" ? "webp" : "jpg";
+      const mimeType = bestCandidate.format === "webp" ? "image/webp" : "image/jpeg";
+      return {
+        buffer: bestCandidate.buffer,
+        mimeType,
+        extension: ext,
+        width: bestCandidate.width,
+        height: bestCandidate.height,
+        inputFormat: detectedFormat,
+        originalBytes: rawBuffer.length,
+        outputBytes: bestCandidate.buffer.length
+      };
+    })()
+  );
+}
+
+// server/services/safeRemoteImageFetcher.ts
+import dns2 from "node:dns/promises";
+import http from "node:http";
+import https from "node:https";
+import net2 from "node:net";
+var REMOTE_FETCH_TIMEOUT_MS = 1e4;
+var MAX_REMOTE_REDIRECTS = 3;
+var BLOCKED_HOSTNAMES = /* @__PURE__ */ new Set([
+  "localhost",
+  "localhost.localdomain",
+  "ip6-localhost",
+  "ip6-loopback",
+  "metadata",
+  "metadata.google.internal",
+  "metadata.goog",
+  "instance-data"
+]);
+var BLOCKED_HOSTNAME_SUFFIXES = [
+  ".localhost",
+  ".local",
+  ".internal",
+  ".localdomain",
+  ".home.arpa",
+  ".arpa"
+];
+function ipv4ToUint32(ip) {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return null;
+  let result = 0;
+  for (const part of parts) {
+    if (!/^\d{1,3}$/.test(part)) return null;
+    const num = Number(part);
+    if (!Number.isInteger(num) || num < 0 || num > 255) return null;
+    result = (result << 8 | num) >>> 0;
+  }
+  return result;
+}
+function isBlockedIpv4(ip) {
+  const n = ipv4ToUint32(ip);
+  if (n === null) return true;
+  const inRange = (cidrBase, prefixLen) => {
+    const base = ipv4ToUint32(cidrBase);
+    if (base === null) return true;
+    const mask = prefixLen === 0 ? 0 : ~0 << 32 - prefixLen >>> 0;
+    return (n & mask) === (base & mask);
+  };
+  return inRange("0.0.0.0", 8) || // Current network / unspecified
+  inRange("10.0.0.0", 8) || // RFC1918 private
+  inRange("100.64.0.0", 10) || // CGNAT / Alibaba cloud metadata 100.100.100.200
+  inRange("127.0.0.0", 8) || // Loopback
+  inRange("169.254.0.0", 16) || // Link-local & AWS/GCP/Azure IMDS (169.254.169.254)
+  inRange("172.16.0.0", 12) || // RFC1918 private
+  inRange("192.0.0.0", 24) || // IETF protocol assignments
+  inRange("192.0.2.0", 24) || // TEST-NET-1
+  inRange("192.88.99.0", 24) || // 6to4 relay anycast
+  inRange("192.168.0.0", 16) || // RFC1918 private
+  inRange("198.18.0.0", 15) || // Benchmarking
+  inRange("198.51.100.0", 24) || // TEST-NET-2
+  inRange("203.0.113.0", 24) || // TEST-NET-3
+  inRange("224.0.0.0", 4) || // Multicast
+  inRange("240.0.0.0", 4);
+}
+function expandIpv6ToWords(ip) {
+  const zoneIdx = ip.indexOf("%");
+  const clean = (zoneIdx !== -1 ? ip.slice(0, zoneIdx) : ip).toLowerCase();
+  if (clean.includes(".")) {
+    const lastColon = clean.lastIndexOf(":");
+    if (lastColon === -1) return null;
+    const v4Part = clean.slice(lastColon + 1);
+    const v4Num = ipv4ToUint32(v4Part);
+    if (v4Num === null) return null;
+    const hi = (v4Num >>> 16 & 65535).toString(16);
+    const lo = (v4Num & 65535).toString(16);
+    return expandIpv6ToWords(`${clean.slice(0, lastColon)}:${hi}:${lo}`);
+  }
+  const halves = clean.split("::");
+  if (halves.length > 2) return null;
+  const parseSide = (side) => {
+    if (!side) return [];
+    const groups = side.split(":");
+    const out = [];
+    for (const g of groups) {
+      if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+      out.push(parseInt(g, 16));
+    }
+    return out;
+  };
+  const left = parseSide(halves[0]);
+  if (!left) return null;
+  if (halves.length === 1) {
+    return left.length === 8 ? left : null;
+  }
+  const right = parseSide(halves[1]);
+  if (!right) return null;
+  const missing = 8 - (left.length + right.length);
+  if (missing < 1) return null;
+  return [...left, ...new Array(missing).fill(0), ...right];
+}
+function isBlockedIpv6(ip) {
+  const words = expandIpv6ToWords(ip);
+  if (!words || words.length !== 8) return true;
+  const allZeroPrefix = words.slice(0, 7).every((w) => w === 0);
+  if (allZeroPrefix && (words[7] === 0 || words[7] === 1)) {
+    return true;
+  }
+  const isV4Mapped = words[0] === 0 && words[1] === 0 && words[2] === 0 && words[3] === 0 && words[4] === 0 && words[5] === 65535;
+  const isV4Compat = words[0] === 0 && words[1] === 0 && words[2] === 0 && words[3] === 0 && words[4] === 0 && words[5] === 0;
+  const isNat64 = words[0] === 100 && words[1] === 65435 && words[2] === 0 && words[3] === 0 && words[4] === 0 && words[5] === 0;
+  if (isV4Mapped || isV4Compat || isNat64) {
+    const embeddedV4 = `${words[6] >> 8 & 255}.${words[6] & 255}.${words[7] >> 8 & 255}.${words[7] & 255}`;
+    return isBlockedIpv4(embeddedV4);
+  }
+  if ((words[0] & 65024) === 64512) return true;
+  if ((words[0] & 65472) === 65152) return true;
+  if ((words[0] & 65472) === 65216) return true;
+  if ((words[0] & 65280) === 65280) return true;
+  if (words[0] === 256 && words[1] === 0 && words[2] === 0 && words[3] === 0) return true;
+  if (words[0] === 8193 && words[1] === 3512) return true;
+  return false;
+}
+function isBlockedIpAddress(rawIp) {
+  const ip = (rawIp || "").trim().replace(/^\[|\]$/g, "");
+  const version = net2.isIP(ip);
+  if (version === 4) return isBlockedIpv4(ip);
+  if (version === 6) return isBlockedIpv6(ip);
+  return true;
+}
+var defaultDnsResolver = async (hostname) => {
+  const results = await dns2.lookup(hostname, { all: true, verbatim: true });
+  return results.map((entry) => ({
+    address: entry.address,
+    family: entry.family === 6 ? 6 : 4
+  }));
+};
+async function validateRemoteImageTarget(rawUrl, dnsResolver = defaultDnsResolver) {
+  const trimmed = (rawUrl || "").trim();
+  if (!trimmed) {
+    throw new VehicleImageSecurityError(
+      "Please enter a valid HTTPS image URL.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new VehicleImageSecurityError(
+      "Invalid image URL format.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new VehicleImageSecurityError(
+      "Only HTTP and HTTPS image URLs are allowed.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  if (parsed.username || parsed.password) {
+    throw new VehicleImageSecurityError(
+      "Image URLs containing embedded credentials are not permitted.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  if (parsed.port && parsed.port !== "80" && parsed.port !== "443") {
+    throw new VehicleImageSecurityError(
+      "Image URLs using non-standard ports are not permitted.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (!hostname) {
+    throw new VehicleImageSecurityError("Image URL hostname is missing.", "UNSUPPORTED_IMAGE_FORMAT", 400);
+  }
+  if (BLOCKED_HOSTNAMES.has(hostname) || BLOCKED_HOSTNAME_SUFFIXES.some((suffix) => hostname.endsWith(suffix))) {
+    throw new VehicleImageSecurityError(
+      "Internal, localhost, and cloud metadata image URLs are strictly prohibited.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  const literalFamily = net2.isIP(hostname);
+  if (literalFamily === 4 || literalFamily === 6) {
+    if (isBlockedIpAddress(hostname)) {
+      throw new VehicleImageSecurityError(
+        "Private, loopback, and reserved IP image URLs are strictly prohibited.",
+        "UNSUPPORTED_IMAGE_FORMAT",
+        400
+      );
+    }
+    return {
+      url: parsed,
+      resolvedAddress: hostname,
+      family: literalFamily
+    };
+  }
+  let addresses;
+  try {
+    addresses = await dnsResolver(hostname);
+  } catch {
+    throw new VehicleImageSecurityError(
+      "Unable to resolve the image URL hostname.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  if (!Array.isArray(addresses) || addresses.length === 0) {
+    throw new VehicleImageSecurityError(
+      "Image URL hostname did not resolve to a valid public IP address.",
+      "UNSUPPORTED_IMAGE_FORMAT",
+      400
+    );
+  }
+  for (const entry of addresses) {
+    if (isBlockedIpAddress(entry.address)) {
+      throw new VehicleImageSecurityError(
+        "The remote image host resolved to a restricted internal or private network address.",
+        "UNSUPPORTED_IMAGE_FORMAT",
+        400
+      );
+    }
+  }
+  return {
+    url: parsed,
+    resolvedAddress: addresses[0].address,
+    family: addresses[0].family
+  };
+}
+function downloadPinnedHttp(params) {
+  return new Promise((resolve, reject) => {
+    const isHttps = params.url.protocol === "https:";
+    const transport = isHttps ? https : http;
+    const hostname = params.url.hostname.replace(/^\[|\]$/g, "");
+    let settled = false;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    const req = transport.request(
+      {
+        protocol: params.url.protocol,
+        hostname,
+        port: params.url.port ? Number(params.url.port) : isHttps ? 443 : 80,
+        path: `${params.url.pathname}${params.url.search}`,
+        method: "GET",
+        timeout: params.timeoutMs,
+        ...isHttps ? { servername: hostname } : {},
+        // Pin DNS resolution directly to the validated public IP to prevent DNS rebinding
+        lookup: ((_host, _opts, cb) => {
+          cb(null, params.resolvedAddress, params.family);
+        }),
+        headers: {
+          Host: params.url.host,
+          Accept: "image/webp,image/png,image/jpeg,*/*;q=0.1",
+          "User-Agent": "MANIFOLD-ImageImporter/1.0"
+        }
+      },
+      (res) => {
+        const statusCode = res.statusCode || 0;
+        if (statusCode >= 300 && statusCode < 400) {
+          res.resume();
+          if (!settled) {
+            settled = true;
+            resolve({
+              statusCode,
+              headers: res.headers,
+              body: Buffer.alloc(0)
+            });
+          }
+          return;
+        }
+        const contentLengthHeader = res.headers["content-length"];
+        const declaredLen = typeof contentLengthHeader === "string" ? Number(contentLengthHeader) : NaN;
+        if (Number.isFinite(declaredLen) && declaredLen > MAX_RAW_UPLOAD_BYTES) {
+          req.destroy();
+          fail(
+            new VehicleImageSecurityError(
+              `Remote image exceeds the ${Math.round(MAX_RAW_UPLOAD_BYTES / (1024 * 1024))} MB raw size limit.`,
+              "RAW_FILE_TOO_LARGE",
+              413
+            )
+          );
+          return;
+        }
+        const chunks = [];
+        let totalBytes = 0;
+        res.on("data", (chunk) => {
+          totalBytes += chunk.length;
+          if (totalBytes > MAX_RAW_UPLOAD_BYTES) {
+            req.destroy();
+            fail(
+              new VehicleImageSecurityError(
+                `Remote image exceeds the ${Math.round(MAX_RAW_UPLOAD_BYTES / (1024 * 1024))} MB raw size limit.`,
+                "RAW_FILE_TOO_LARGE",
+                413
+              )
+            );
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on("end", () => {
+          if (settled) return;
+          settled = true;
+          resolve({
+            statusCode,
+            headers: res.headers,
+            body: Buffer.concat(chunks, totalBytes)
+          });
+        });
+        res.on("error", () => {
+          fail(
+            new VehicleImageSecurityError(
+              "Failed while downloading the remote image.",
+              "DECODE_FAILED",
+              400
+            )
+          );
+        });
+      }
+    );
+    req.on("timeout", () => {
+      req.destroy();
+      fail(
+        new VehicleImageSecurityError(
+          "Downloading the remote image timed out.",
+          "PROCESSING_TIMEOUT",
+          408
+        )
+      );
+    });
+    req.on("error", (err) => {
+      if (err instanceof VehicleImageSecurityError) {
+        fail(err);
+      } else {
+        fail(
+          new VehicleImageSecurityError(
+            "Unable to connect to the remote image server.",
+            "DECODE_FAILED",
+            400
+          )
+        );
+      }
+    });
+    req.end();
+  });
+}
+async function fetchSafeRemoteImageBuffer(rawUrl, options) {
+  const dnsResolver = options?.dnsResolver ?? defaultDnsResolver;
+  const transport = options?.transport ?? downloadPinnedHttp;
+  let currentUrl = rawUrl;
+  for (let hop = 0; hop <= MAX_REMOTE_REDIRECTS; hop += 1) {
+    const validated = await validateRemoteImageTarget(currentUrl, dnsResolver);
+    const response = await transport({
+      url: validated.url,
+      resolvedAddress: validated.resolvedAddress,
+      family: validated.family,
+      timeoutMs: REMOTE_FETCH_TIMEOUT_MS
+    });
+    if (response.statusCode >= 300 && response.statusCode < 400) {
+      const locationHeader = response.headers.location;
+      const location = Array.isArray(locationHeader) ? locationHeader[0] : locationHeader;
+      if (!location) {
+        throw new VehicleImageSecurityError(
+          "Remote image URL returned an invalid redirect.",
+          "UNSUPPORTED_IMAGE_FORMAT",
+          400
+        );
+      }
+      if (hop >= MAX_REMOTE_REDIRECTS) {
+        throw new VehicleImageSecurityError(
+          "Remote image URL exceeded maximum allowed redirects.",
+          "UNSUPPORTED_IMAGE_FORMAT",
+          400
+        );
+      }
+      try {
+        currentUrl = new URL(location, validated.url).toString();
+      } catch {
+        throw new VehicleImageSecurityError(
+          "Remote image URL redirected to an invalid location.",
+          "UNSUPPORTED_IMAGE_FORMAT",
+          400
+        );
+      }
+      continue;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw new VehicleImageSecurityError(
+        `Remote server returned HTTP ${response.statusCode} when fetching image.`,
+        "DECODE_FAILED",
+        400
+      );
+    }
+    const rawContentType = String(response.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+    if (rawContentType && (rawContentType.includes("svg") || rawContentType.startsWith("text/") || rawContentType === "application/json" || rawContentType === "application/pdf" || rawContentType === "application/zip" || rawContentType === "application/javascript")) {
+      throw new VehicleImageSecurityError(
+        `Remote URL returned disallowed content type (${rawContentType}).`,
+        rawContentType.includes("svg") ? "SVG_NOT_ALLOWED" : "UNSUPPORTED_IMAGE_FORMAT",
+        400
+      );
+    }
+    return {
+      buffer: response.body,
+      finalUrl: validated.url.toString()
+    };
+  }
+  throw new VehicleImageSecurityError(
+    "Remote image URL could not be retrieved.",
+    "UNSUPPORTED_IMAGE_FORMAT",
+    400
+  );
+}
+
+// server/routes/vehicleImages.ts
+var VALID_VEHICLE_ID_REGEX = /^[a-zA-Z0-9_-]{8,64}$/;
+var VALID_SLOTS = /* @__PURE__ */ new Set(["front-exterior", "cabin"]);
+var uploadMiddleware = multer2({
+  storage: multer2.memoryStorage(),
+  limits: {
+    fileSize: MAX_RAW_UPLOAD_BYTES,
+    files: 1,
+    fields: 10
+  }
+});
+async function requireVehicleImageUploader(req, res, next) {
+  const verified = await verifySupabaseUser(req.headers.authorization);
+  if (!verified.ok) {
+    res.status(verified.status).json({ error: verified.error, code: "UNAUTHORIZED" });
+    return;
+  }
+  const [adminCheck, playerCheck, dealerCheck] = await Promise.all([
+    verifyActiveAdmin(verified.supabase, verified.user),
+    verifyPlayerProfile(verified.supabase, verified.user),
+    verifyDealerAccount(verified.supabase, verified.user)
+  ]);
+  if (playerCheck.isPlayer) {
+    res.status(403).json({
+      error: "Game Player accounts are not permitted to upload or modify vehicle images.",
+      code: "PLAYER_ROLE_FORBIDDEN"
+    });
+    return;
+  }
+  if (adminCheck.isAdmin) {
+    req.auth = {
+      user: verified.user,
+      token: verified.token,
+      authHeader: verified.authHeader,
+      supabase: verified.supabase,
+      role: "admin",
+      adminRole: adminCheck.role
+    };
+    next();
+    return;
+  }
+  if (!dealerCheck.hasAccount || !dealerCheck.dealerId) {
+    res.status(403).json({
+      error: dealerCheck.reason || "Authorized dealership or active administrator account required.",
+      code: "DEALER_ROLE_REQUIRED"
+    });
+    return;
+  }
+  if (!dealerCheck.isApproved) {
+    res.status(403).json({
+      error: dealerCheck.reason || "Approved dealership status is required before uploading vehicle images.",
+      code: "DEALER_APPROVAL_REQUIRED"
+    });
+    return;
+  }
+  req.auth = {
+    user: verified.user,
+    token: verified.token,
+    authHeader: verified.authHeader,
+    supabase: verified.supabase,
+    role: "dealer",
+    dealerId: dealerCheck.dealerId,
+    dealerBusinessName: dealerCheck.businessName,
+    dealerAccountStatus: dealerCheck.accountStatus,
+    dealerApproved: true
+  };
+  next();
+}
+function sanitizeSegment(value) {
+  return (value || "").trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+}
+async function authorizeVehicleTarget(params) {
+  const cleanVehicleId = (params.vehicleId || "").trim();
+  if (!VALID_VEHICLE_ID_REGEX.test(cleanVehicleId)) {
+    return {
+      ok: false,
+      status: 400,
+      code: "INVALID_VEHICLE_ID",
+      error: "A valid vehicle identifier is required."
+    };
+  }
+  const { data: existingCar, error: carLookupError } = await params.lookupClient.from("cars").select("id, dealer_id, gallery_image_1_url, gallery_image_2_url").eq("id", cleanVehicleId).maybeSingle();
+  if (carLookupError) {
+    return {
+      ok: false,
+      status: 500,
+      code: "VEHICLE_LOOKUP_FAILED",
+      error: "Unable to verify vehicle ownership at this time."
+    };
+  }
+  if (existingCar) {
+    const ownerDealerId = String(existingCar.dealer_id || "").trim();
+    if (params.actor.role === "dealer") {
+      if (!params.actor.dealerId || ownerDealerId !== String(params.actor.dealerId)) {
+        return {
+          ok: false,
+          status: 403,
+          code: "VEHICLE_OWNERSHIP_REQUIRED",
+          error: "You do not have permission to upload or modify images for another dealership\u2019s vehicle."
+        };
+      }
+    }
+    const folderDealerId = sanitizeSegment(ownerDealerId || params.actor.dealerId || "admin");
+    return {
+      ok: true,
+      folderDealerId: folderDealerId || "admin",
+      isExistingVehicle: true,
+      existingCar
+    };
+  }
+  if (params.mode === "edit") {
+    return {
+      ok: false,
+      status: 404,
+      code: "VEHICLE_NOT_FOUND",
+      error: "The selected vehicle listing could not be found."
+    };
+  }
+  if (params.actor.role === "dealer") {
+    const safeDealerFolder = sanitizeSegment(params.actor.dealerId || "");
+    if (!safeDealerFolder) {
+      return {
+        ok: false,
+        status: 403,
+        code: "DEALER_ROLE_REQUIRED",
+        error: "Valid dealership identifier is required."
+      };
+    }
+    return {
+      ok: true,
+      folderDealerId: safeDealerFolder,
+      isExistingVehicle: false,
+      existingCar: null
+    };
+  }
+  const requestedFolder = sanitizeSegment(params.requestedDealerId || "");
+  return {
+    ok: true,
+    folderDealerId: requestedFolder || "admin",
+    isExistingVehicle: false,
+    existingCar: null
+  };
+}
+async function persistVehicleSlotImage(params) {
+  const column = params.slot === "cabin" ? "gallery_image_2_url" : "gallery_image_1_url";
+  const position = params.slot === "cabin" ? 2 : 1;
+  const { error: carUpdateError } = await params.adminClient.from("cars").update({
+    [column]: params.publicUrl,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  }).eq("id", params.vehicleId);
+  if (carUpdateError) {
+    return {
+      ok: false,
+      error: carUpdateError.message || "Failed to update vehicle image record."
+    };
+  }
+  try {
+    await params.adminClient.from("car_images").delete().eq("car_id", params.vehicleId).eq("position", position);
+    if (params.publicUrl) {
+      await params.adminClient.from("car_images").insert({
+        car_id: params.vehicleId,
+        image_url: params.publicUrl,
+        position
+      });
+    }
+  } catch (err) {
+    console.warn("[vehicleImages] Non-fatal car_images sync notice:", err);
+  }
+  return { ok: true };
+}
+async function processAndStoreVehicleImage(params) {
+  if (!VALID_SLOTS.has(params.slot)) {
+    return {
+      status: 400,
+      body: { error: "Invalid image slot. Expected front-exterior or cabin.", code: "INVALID_SLOT" }
+    };
+  }
+  const lookupClient = params.adminClient ?? params.actor.supabase;
+  const authTarget = await authorizeVehicleTarget({
+    actor: params.actor,
+    vehicleId: params.vehicleId,
+    mode: params.mode,
+    requestedDealerId: params.requestedDealerId,
+    lookupClient
+  });
+  if (authTarget.ok === false) {
+    return {
+      status: authTarget.status,
+      body: { error: authTarget.error, code: authTarget.code }
+    };
+  }
+  let processed;
+  try {
+    processed = await validateAndReencodeVehicleImage(params.rawBuffer);
+  } catch (err) {
+    if (err instanceof VehicleImageSecurityError) {
+      return {
+        status: err.statusCode,
+        body: { error: err.message, code: err.code }
+      };
+    }
+    return {
+      status: 400,
+      body: {
+        error: "Unable to validate or process the uploaded image.",
+        code: "DECODE_FAILED"
+      }
+    };
+  }
+  if (!params.adminClient) {
+    return {
+      status: 503,
+      body: {
+        error: "Server storage credentials (SUPABASE_SERVICE_ROLE_KEY) must be configured to upload verified vehicle images.",
+        code: "SERVER_STORAGE_CREDENTIALS_MISSING"
+      }
+    };
+  }
+  const cleanVehicleId = sanitizeSegment(params.vehicleId);
+  const generatedFileName = `${params.slot}-${crypto6.randomUUID()}.${processed.extension}`;
+  const storagePath = authTarget.isExistingVehicle ? `${authTarget.folderDealerId}/${cleanVehicleId}/${generatedFileName}` : `${authTarget.folderDealerId}/drafts/${cleanVehicleId}/${generatedFileName}`;
+  const { error: uploadError } = await params.adminClient.storage.from(VEHICLE_IMAGES_BUCKET).upload(storagePath, processed.buffer, {
+    contentType: processed.mimeType,
+    cacheControl: "31536000",
+    upsert: false
+  });
+  if (uploadError) {
+    return {
+      status: 502,
+      body: {
+        error: uploadError.message || "Failed to store validated image in Storage.",
+        code: "STORAGE_UPLOAD_FAILED"
+      }
+    };
+  }
+  const { data: publicUrlData } = params.adminClient.storage.from(VEHICLE_IMAGES_BUCKET).getPublicUrl(storagePath);
+  const publicUrl = publicUrlData?.publicUrl || "";
+  if (!publicUrl) {
+    await params.adminClient.storage.from(VEHICLE_IMAGES_BUCKET).remove([storagePath]).catch(() => {
+    });
+    return {
+      status: 500,
+      body: {
+        error: "Validated photo was uploaded, but its public URL could not be resolved.",
+        code: "PUBLIC_URL_RESOLUTION_FAILED"
+      }
+    };
+  }
+  const existingPreviousUrl = authTarget.isExistingVehicle ? (params.slot === "cabin" ? authTarget.existingCar?.gallery_image_2_url : authTarget.existingCar?.gallery_image_1_url) || params.previousUrl : params.previousUrl;
+  if (authTarget.isExistingVehicle) {
+    const dbSync = await persistVehicleSlotImage({
+      adminClient: params.adminClient,
+      vehicleId: cleanVehicleId,
+      slot: params.slot,
+      publicUrl
+    });
+    if (dbSync.ok === false) {
+      await params.adminClient.storage.from(VEHICLE_IMAGES_BUCKET).remove([storagePath]).catch(() => {
+      });
+      return {
+        status: 500,
+        body: {
+          error: dbSync.error,
+          code: "VEHICLE_RECORD_UPDATE_FAILED"
+        }
+      };
+    }
+  }
+  const previousStoragePath = extractVehicleImageStoragePath(existingPreviousUrl);
+  if (previousStoragePath && previousStoragePath !== storagePath && previousStoragePath.startsWith(`${authTarget.folderDealerId}/`)) {
+    await params.adminClient.storage.from(VEHICLE_IMAGES_BUCKET).remove([previousStoragePath]).catch((err) => {
+      console.warn("[vehicleImages] Non-fatal previous image cleanup notice:", err);
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      publicUrl,
+      storagePath,
+      originalSizeBytes: processed.originalBytes,
+      optimizedSizeBytes: processed.outputBytes,
+      width: processed.width,
+      height: processed.height,
+      mimeType: processed.mimeType
+    }
+  };
+}
+var router7 = Router8();
+router7.post(
+  "/upload",
+  requireVehicleImageUploader,
+  vehicleImageUploadLimiter,
+  (req, res, next) => {
+    uploadMiddleware.single("file")(req, res, (err) => {
+      if (!err) {
+        next();
+        return;
+      }
+      if (err?.code === "LIMIT_FILE_SIZE") {
+        res.status(413).json({
+          error: `Raw image upload exceeds the ${Math.round(MAX_RAW_UPLOAD_BYTES / (1024 * 1024))} MB limit.`,
+          code: "RAW_FILE_TOO_LARGE"
+        });
+        return;
+      }
+      res.status(400).json({
+        error: err?.message || "Invalid multipart image upload request.",
+        code: "INVALID_MULTIPART_UPLOAD"
+      });
+    });
+  },
+  async (req, res) => {
+    const auth = req.auth;
+    if (!auth?.user || !auth.supabase || auth.role !== "dealer" && auth.role !== "admin") {
+      res.status(403).json({ error: "Authorized dealership session required.", code: "FORBIDDEN" });
+      return;
+    }
+    const file = req.file;
+    if (!file || !Buffer.isBuffer(file.buffer)) {
+      res.status(400).json({ error: "Image file is required.", code: "EMPTY_FILE" });
+      return;
+    }
+    const slot = String(req.body?.slot || "");
+    const vehicleId = String(req.body?.vehicleId || "");
+    const mode = req.body?.mode ? String(req.body.mode) : void 0;
+    const requestedDealerId = req.body?.dealerId ? String(req.body.dealerId) : void 0;
+    const previousUrl = req.body?.previousUrl ? String(req.body.previousUrl) : null;
+    const result = await processAndStoreVehicleImage({
+      rawBuffer: file.buffer,
+      actor: {
+        userId: auth.user.id,
+        role: auth.role,
+        dealerId: auth.dealerId,
+        supabase: auth.supabase
+      },
+      vehicleId,
+      slot,
+      mode,
+      requestedDealerId,
+      previousUrl,
+      adminClient: getSupabaseAdminClient()
+    });
+    res.status(result.status).json(result.body);
+  }
+);
+router7.post(
+  "/import-url",
+  requireVehicleImageUploader,
+  vehicleImageUploadLimiter,
+  async (req, res) => {
+    const auth = req.auth;
+    if (!auth?.user || !auth.supabase || auth.role !== "dealer" && auth.role !== "admin") {
+      res.status(403).json({ error: "Authorized dealership session required.", code: "FORBIDDEN" });
+      return;
+    }
+    const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    const slot = String(req.body?.slot || "");
+    const vehicleId = String(req.body?.vehicleId || "");
+    const mode = req.body?.mode ? String(req.body.mode) : void 0;
+    const requestedDealerId = req.body?.dealerId ? String(req.body.dealerId) : void 0;
+    const previousUrl = req.body?.previousUrl ? String(req.body.previousUrl) : null;
+    if (!VALID_SLOTS.has(slot)) {
+      res.status(400).json({
+        error: "Invalid image slot. Expected front-exterior or cabin.",
+        code: "INVALID_SLOT"
+      });
+      return;
+    }
+    const adminClient = getSupabaseAdminClient();
+    const authTarget = await authorizeVehicleTarget({
+      actor: {
+        userId: auth.user.id,
+        role: auth.role,
+        dealerId: auth.dealerId,
+        supabase: auth.supabase
+      },
+      vehicleId,
+      mode,
+      requestedDealerId,
+      lookupClient: adminClient ?? auth.supabase
+    });
+    if (authTarget.ok === false) {
+      res.status(authTarget.status).json({ error: authTarget.error, code: authTarget.code });
+      return;
+    }
+    let fetchedBuffer;
+    try {
+      const remote = await fetchSafeRemoteImageBuffer(rawUrl);
+      fetchedBuffer = remote.buffer;
+    } catch (err) {
+      if (err instanceof VehicleImageSecurityError) {
+        res.status(err.statusCode).json({ error: err.message, code: err.code });
+        return;
+      }
+      res.status(400).json({
+        error: "Unable to fetch the remote image URL safely.",
+        code: "REMOTE_IMAGE_FETCH_FAILED"
+      });
+      return;
+    }
+    const result = await processAndStoreVehicleImage({
+      rawBuffer: fetchedBuffer,
+      actor: {
+        userId: auth.user.id,
+        role: auth.role,
+        dealerId: auth.dealerId,
+        supabase: auth.supabase
+      },
+      vehicleId,
+      slot,
+      mode,
+      requestedDealerId,
+      previousUrl,
+      adminClient
+    });
+    res.status(result.status).json(result.body);
+  }
+);
+router7.delete(
+  "/",
+  requireVehicleImageUploader,
+  vehicleImageUploadLimiter,
+  async (req, res) => {
+    const auth = req.auth;
+    if (!auth?.user || !auth.supabase || auth.role !== "dealer" && auth.role !== "admin") {
+      res.status(403).json({ error: "Authorized dealership session required.", code: "FORBIDDEN" });
+      return;
+    }
+    const adminClient = getSupabaseAdminClient();
+    if (!adminClient) {
+      res.status(503).json({
+        error: "Server storage credentials (SUPABASE_SERVICE_ROLE_KEY) must be configured.",
+        code: "SERVER_STORAGE_CREDENTIALS_MISSING"
+      });
+      return;
+    }
+    const rawUrl = typeof req.body?.url === "string" ? req.body.url : "";
+    const rawPath = typeof req.body?.storagePath === "string" ? req.body.storagePath : "";
+    const vehicleId = typeof req.body?.vehicleId === "string" ? req.body.vehicleId.trim() : "";
+    const slot = typeof req.body?.slot === "string" ? req.body.slot : void 0;
+    const storagePath = rawPath.trim() || extractVehicleImageStoragePath(rawUrl) || "";
+    if (!storagePath || storagePath.includes("..") || storagePath.includes("\\")) {
+      res.status(400).json({ error: "Valid storage path is required.", code: "INVALID_STORAGE_PATH" });
+      return;
+    }
+    if (auth.role === "dealer") {
+      const safeDealerFolder = sanitizeSegment(auth.dealerId || "");
+      if (!safeDealerFolder || !storagePath.startsWith(`${safeDealerFolder}/`)) {
+        res.status(403).json({
+          error: "You can only remove images inside your own dealership folder.",
+          code: "VEHICLE_OWNERSHIP_REQUIRED"
+        });
+        return;
+      }
+    }
+    if (vehicleId && VALID_VEHICLE_ID_REGEX.test(vehicleId)) {
+      const authTarget = await authorizeVehicleTarget({
+        actor: {
+          userId: auth.user.id,
+          role: auth.role,
+          dealerId: auth.dealerId,
+          supabase: auth.supabase
+        },
+        vehicleId,
+        mode: "edit",
+        lookupClient: adminClient
+      });
+      if (authTarget.ok === false && authTarget.code === "VEHICLE_OWNERSHIP_REQUIRED") {
+        res.status(403).json({ error: authTarget.error, code: authTarget.code });
+        return;
+      }
+      if (authTarget.ok && authTarget.isExistingVehicle && slot && VALID_SLOTS.has(slot)) {
+        const dbSync = await persistVehicleSlotImage({
+          adminClient,
+          vehicleId,
+          slot,
+          publicUrl: ""
+        });
+        if (dbSync.ok === false) {
+          res.status(500).json({ error: dbSync.error, code: "VEHICLE_RECORD_UPDATE_FAILED" });
+          return;
+        }
+      }
+    }
+    const { error: removeError } = await adminClient.storage.from(VEHICLE_IMAGES_BUCKET).remove([storagePath]);
+    if (removeError) {
+      res.status(502).json({
+        error: removeError.message || "Failed to delete vehicle image from Storage.",
+        code: "STORAGE_DELETE_FAILED"
+      });
+      return;
+    }
+    res.json({ deleted: true, storagePath });
+  }
+);
+var vehicleImagesRouter = router7;
+
 // server/app.ts
 function createApp() {
   getServerEnv();
@@ -7929,6 +9296,7 @@ function createApp() {
   app2.use("/api/market-intelligence", marketIntelligenceRouter);
   app2.use("/api/world", worldRouter);
   app2.use("/api/dealers", dealersRouter);
+  app2.use("/api/dealer/vehicles/images", vehicleImagesRouter);
   app2.use("/api/cars", carsRouter);
   app2.use("/api/ai", aiRouter);
   app2.use("/api", (_req, res) => {

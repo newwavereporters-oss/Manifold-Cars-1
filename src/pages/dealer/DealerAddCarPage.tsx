@@ -1190,6 +1190,7 @@ export const DealerAddCarPage: React.FC<DealerAddCarPageProps> = ({ navigate }) 
             <DealerPhotoGallery
               dealerId={dealerAccount?.dealerId || 'dealer'}
               vehicleId={submissionAttemptIdRef.current}
+              mode="create"
               image1Url={image1Url}
               image2Url={image2Url}
               onChangeImage1={setImage1Url}

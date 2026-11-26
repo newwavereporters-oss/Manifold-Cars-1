@@ -1,7 +1,8 @@
 import { Car } from '../types';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseConfig } from '../lib/supabase';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl, formatStandardYouTubeUrl } from '../utils/youtube';
 import { buildVehicleModelTitle, generateUuid, normalizeVehicleCondition } from '../utils/carMedia';
+import { isApprovedVehicleImageUrl } from '../utils/vehicleImageUrl';
 import { brandService } from './brandService';
 import { categoryService } from './categoryService';
 
@@ -81,7 +82,7 @@ function mapSupabaseToCar(row: any): Car {
     }
   }
 
-  // 2. Resolve Gallery Images from joined car_images (position 1 & 2)
+  // 2. Resolve Gallery Images from joined car_images (position 1 & 2) and filter untrusted URLs
   let gallery1 = row.gallery_image_1_url || '';
   let gallery2 = row.gallery_image_2_url || '';
 
@@ -90,6 +91,14 @@ function mapSupabaseToCar(row: any): Car {
     const img2 = row.car_images.find((img: any) => img.position === 2);
     if (img1 && img1.image_url) gallery1 = img1.image_url;
     if (img2 && img2.image_url) gallery2 = img2.image_url;
+  }
+
+  const configuredSupabaseUrl = getSupabaseConfig().url || null;
+  if (gallery1 && !isApprovedVehicleImageUrl(gallery1, configuredSupabaseUrl)) {
+    gallery1 = '';
+  }
+  if (gallery2 && !isApprovedVehicleImageUrl(gallery2, configuredSupabaseUrl)) {
+    gallery2 = '';
   }
 
   // 3. Resolve Dealer info (strictly public fields only — never expose phone/email/address)

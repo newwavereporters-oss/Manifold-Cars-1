@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CarFront } from 'lucide-react';
+import { getSupabaseConfig } from '../lib/supabase';
+import { isApprovedVehicleImageUrl } from '../utils/vehicleImageUrl';
 
 interface WatermarkedVehicleImageProps {
   src?: string | null;
@@ -26,12 +28,16 @@ export const WatermarkedVehicleImage: React.FC<WatermarkedVehicleImageProps> = (
 }) => {
   const [hasError, setHasError] = useState(false);
   const cleanSrc = (src || '').trim();
+  const configuredSupabaseUrl = getSupabaseConfig().url || null;
+  const isApprovedSource = Boolean(
+    cleanSrc && isApprovedVehicleImageUrl(cleanSrc, configuredSupabaseUrl)
+  );
 
   useEffect(() => {
     setHasError(false);
   }, [cleanSrc]);
 
-  if (!cleanSrc || hasError) {
+  if (!cleanSrc || !isApprovedSource || hasError) {
     if (fallback) {
       return <>{fallback}</>;
     }
@@ -61,6 +67,7 @@ export const WatermarkedVehicleImage: React.FC<WatermarkedVehicleImageProps> = (
         src={cleanSrc}
         alt={alt}
         loading={loading}
+        referrerPolicy="no-referrer"
         className={imgClassName}
         onError={() => {
           setHasError(true);

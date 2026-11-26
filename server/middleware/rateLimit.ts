@@ -150,3 +150,11 @@ export const aiAssistantLimiter = createRateLimiter({
   keyPrefix: 'ai-assistant',
   message: 'Automotive assistant rate limit reached. Please pause briefly.',
 });
+
+export const vehicleImageUploadLimiter = createRateLimiter({
+  windowMs: 60_000,
+  maxRequests: 30,
+  keyPrefix: 'vehicle-image-upload',
+  message: 'Too many image upload requests. Please wait a moment before uploading again.',
+});
+

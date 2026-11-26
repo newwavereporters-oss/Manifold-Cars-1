@@ -11,6 +11,7 @@
 
 -- ------------------------------------------------------------------------------
 -- 1. ENSURE EXISTING 'vehicle-images' BUCKET CONFIGURATION (100 KB LIMIT)
+--    Server re-encodes every accepted upload strictly into JPEG or WebP <= 100 KB.
 -- ------------------------------------------------------------------------------
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
@@ -18,13 +19,13 @@ VALUES (
   'vehicle-images',
   true,
   102400,
-  ARRAY['image/jpeg', 'image/png', 'image/webp']
+  ARRAY['image/jpeg', 'image/webp']
 )
 ON CONFLICT (id) DO UPDATE
 SET
   public = true,
   file_size_limit = 102400,
-  allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp'];
+  allowed_mime_types = ARRAY['image/jpeg', 'image/webp'];
 
 -- ------------------------------------------------------------------------------
 -- 1B. SAFE PLAYER CHECK HELPER (targets actual public.player_profiles table)
@@ -60,13 +61,12 @@ REVOKE ALL ON FUNCTION public.is_game_player() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.is_game_player() TO authenticated, service_role;
 
 -- ------------------------------------------------------------------------------
--- 2. STORAGE RLS POLICIES FOR 'vehicle-images'
---    Path convention: {dealer_id}/{vehicle_id}/(front-exterior|cabin).(webp|jpg|jpeg|png)
---    Access rules:
---      - Public: read-only (SELECT)
---      - Approved, active Dealers: INSERT/UPDATE/DELETE only inside own dealer_id folder
---      - Active Admins: full INSERT/UPDATE/DELETE
---      - Game Players: strictly forbidden from uploading/modifying/deleting
+-- 2. STORAGE RLS POLICIES FOR 'vehicle-images' (READ-ONLY FOR CLIENTS)
+--    Direct browser INSERT / UPDATE / DELETE policies are intentionally removed.
+--    All vehicle image uploads, URL imports, replacements, and deletions MUST go
+--    through the authenticated MANIFOLD server pipeline (/api/dealer/vehicles/images/*),
+--    which verifies Supabase Auth + database role + vehicle ownership, decodes and
+--    re-encodes images with Sharp/libvips, and writes using server-side service_role.
 -- ------------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Public read vehicle images" ON storage.objects;
 DROP POLICY IF EXISTS "Dealers upload own vehicle images" ON storage.objects;
@@ -77,94 +77,9 @@ CREATE POLICY "Public read vehicle images"
 ON storage.objects
 FOR SELECT
 TO anon, authenticated
-USING (bucket_id = 'vehicle-images');
-
-CREATE POLICY "Dealers upload own vehicle images"
-ON storage.objects
-FOR INSERT
-TO authenticated
-WITH CHECK (
-  bucket_id = 'vehicle-images'
-  AND (
-    metadata IS NULL
-    OR (
-      COALESCE((metadata->>'size')::BIGINT, 1) BETWEEN 1 AND 102400
-      AND (
-        metadata->>'mimetype' IS NULL
-        OR pg_catalog.lower(metadata->>'mimetype') IN ('image/jpeg', 'image/png', 'image/webp')
-      )
-    )
-  )
-  AND NOT public.is_game_player()
-  AND array_length(storage.foldername(name), 1) = 2
-  AND pg_catalog.split_part(name, '/', 3) ~* '^(front-exterior|cabin)\.(webp|jpe?g|png)$'
-  AND (
-    public.is_active_admin()
-    OR (
-      public.is_approved_dealer()
-      AND public.current_dealer_id() IS NOT NULL
-      AND (storage.foldername(name))[1] = public.current_dealer_id()::TEXT
-    )
-  )
-);
-
-CREATE POLICY "Dealers update own vehicle images"
-ON storage.objects
-FOR UPDATE
-TO authenticated
 USING (
   bucket_id = 'vehicle-images'
-  AND NOT public.is_game_player()
-  AND array_length(storage.foldername(name), 1) = 2
-  AND (
-    public.is_active_admin()
-    OR (
-      public.is_approved_dealer()
-      AND public.current_dealer_id() IS NOT NULL
-      AND (storage.foldername(name))[1] = public.current_dealer_id()::TEXT
-    )
-  )
-)
-WITH CHECK (
-  bucket_id = 'vehicle-images'
-  AND (
-    metadata IS NULL
-    OR (
-      COALESCE((metadata->>'size')::BIGINT, 1) BETWEEN 1 AND 102400
-      AND (
-        metadata->>'mimetype' IS NULL
-        OR pg_catalog.lower(metadata->>'mimetype') IN ('image/jpeg', 'image/png', 'image/webp')
-      )
-    )
-  )
-  AND NOT public.is_game_player()
-  AND array_length(storage.foldername(name), 1) = 2
-  AND pg_catalog.split_part(name, '/', 3) ~* '^(front-exterior|cabin)\.(webp|jpe?g|png)$'
-  AND (
-    public.is_active_admin()
-    OR (
-      public.is_approved_dealer()
-      AND public.current_dealer_id() IS NOT NULL
-      AND (storage.foldername(name))[1] = public.current_dealer_id()::TEXT
-    )
-  )
-);
-
-CREATE POLICY "Dealers delete own vehicle images"
-ON storage.objects
-FOR DELETE
-TO authenticated
-USING (
-  bucket_id = 'vehicle-images'
-  AND NOT public.is_game_player()
-  AND (
-    public.is_active_admin()
-    OR (
-      public.is_approved_dealer()
-      AND public.current_dealer_id() IS NOT NULL
-      AND (storage.foldername(name))[1] = public.current_dealer_id()::TEXT
-    )
-  )
+  AND name ~* '\.(webp|jpe?g)$'
 );
 
 -- ------------------------------------------------------------------------------

@@ -1,10 +1,11 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseConfig } from '../lib/supabase';
 import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../utils/youtube';
 import {
   buildVehicleModelTitle,
   generateUuid,
   normalizeVehicleCondition,
 } from '../utils/carMedia';
+import { isVerifiedManifoldStorageImageUrl } from '../utils/vehicleImageUrl';
 import { resolveDealerApprovalState } from './dealerOnboardingService';
 import { categoryService } from './categoryService';
 import { brandService } from './brandService';
@@ -483,6 +484,17 @@ class DealerVehicleService {
       const normalizedCondition = normalizeVehicleCondition(input.condition);
       const image1 = (input.gallery_image_1_url || '').trim() || null;
       const image2 = (input.gallery_image_2_url || '').trim() || null;
+      const configuredUrl = getSupabaseConfig().url || null;
+      if (
+        (image1 && !isVerifiedManifoldStorageImageUrl(image1, configuredUrl)) ||
+        (image2 && !isVerifiedManifoldStorageImageUrl(image2, configuredUrl))
+      ) {
+        return {
+          car: null,
+          error:
+            'Vehicle photos must be uploaded or imported through the MANIFOLD image verifier before saving.',
+        };
+      }
 
       const basePayload: Record<string, unknown> = {
         id,
@@ -802,6 +814,17 @@ class DealerVehicleService {
 
       const image1 = input.gallery_image_1_url !== undefined ? (input.gallery_image_1_url || '').trim() || null : undefined;
       const image2 = input.gallery_image_2_url !== undefined ? (input.gallery_image_2_url || '').trim() || null : undefined;
+      const configuredUrl = getSupabaseConfig().url || null;
+      if (
+        (image1 && !isVerifiedManifoldStorageImageUrl(image1, configuredUrl)) ||
+        (image2 && !isVerifiedManifoldStorageImageUrl(image2, configuredUrl))
+      ) {
+        return {
+          car: null,
+          error:
+            'Vehicle photos must be uploaded or imported through the MANIFOLD image verifier before saving.',
+        };
+      }
 
       const baseUpdates: Record<string, unknown> = {
         title,

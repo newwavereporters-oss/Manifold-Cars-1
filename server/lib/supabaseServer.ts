@@ -289,11 +289,20 @@ export async function verifyDealerAccount(
       };
     }
 
-    const { data: dealerRow } = await supabase
+    let { data: dealerRow, error: dealerRowErr } = await supabase
       .from('dealers')
-      .select('id, name, business_name, dealer_status, is_verified')
+      .select('id, business_name, dealer_status, is_verified')
       .eq('id', dealerId)
       .maybeSingle();
+
+    if (dealerRowErr?.code === '42703') {
+      const fallbackDealerRes = await supabase
+        .from('dealers')
+        .select('id, name, dealer_status, is_verified')
+        .eq('id', dealerId)
+        .maybeSingle();
+      dealerRow = fallbackDealerRes.data as any;
+    }
 
     const dealerStatus = String((dealerRow as any)?.dealer_status || '').toLowerCase() || (
       accountStatus === 'active' && (dealerRow as any)?.is_verified !== false ? 'approved' : 'pending'

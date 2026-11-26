@@ -5,6 +5,7 @@ import { getServerEnv } from '../config/env.js';
 import { getSupabaseClient } from '../lib/supabaseServer.js';
 import { standardApiLimiter } from '../middleware/rateLimit.js';
 import { extractSupabaseHost } from './world.js';
+import { isApprovedVehicleImageUrl } from '../../src/utils/vehicleImageUrl.js';
 
 const router = Router();
 
@@ -191,12 +192,29 @@ export async function fetchPublicCarsFromSupabase(client: SupabaseClient): Promi
     }));
   }
 
+  const configuredSupabaseUrl = getServerEnv().supabaseUrl || null;
   const sanitized = (resolvedRows || [])
     .filter((row) => isPublicCarStatus(row?.status))
-    .map((row) => ({
-      ...row,
-      dealers: sanitizePublicDealerPayload(row?.dealers),
-    }));
+    .map((row) => {
+      const safeImg1 = isApprovedVehicleImageUrl(row?.gallery_image_1_url, configuredSupabaseUrl)
+        ? row.gallery_image_1_url
+        : null;
+      const safeImg2 = isApprovedVehicleImageUrl(row?.gallery_image_2_url, configuredSupabaseUrl)
+        ? row.gallery_image_2_url
+        : null;
+      const safeCarImages = Array.isArray(row?.car_images)
+        ? row.car_images.filter((img: any) =>
+            isApprovedVehicleImageUrl(img?.image_url, configuredSupabaseUrl)
+          )
+        : [];
+      return {
+        ...row,
+        gallery_image_1_url: safeImg1,
+        gallery_image_2_url: safeImg2,
+        car_images: safeCarImages,
+        dealers: sanitizePublicDealerPayload(row?.dealers),
+      };
+    });
 
   return { ok: true, cars: sanitized };
 }

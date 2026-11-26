@@ -167,9 +167,12 @@ function testStoragePathAndOwnershipChecks() {
 }
 
 function testWatermarkedVehicleImageComponent() {
+  const approvedStorageUrl =
+    'https://jxjxojdinpspufsorovc.supabase.co/storage/v1/object/public/vehicle-images/dealer-123/vehicle-abc/front-exterior-uuid.webp';
+
   const html = renderToStaticMarkup(
     React.createElement(WatermarkedVehicleImage, {
-      src: 'https://cdn.example.com/2022-camry.webp',
+      src: approvedStorageUrl,
       alt: '2022 Toyota Camry',
     })
   );
@@ -182,12 +185,20 @@ function testWatermarkedVehicleImageComponent() {
 
   const unwatermarkedHtml = renderToStaticMarkup(
     React.createElement(WatermarkedVehicleImage, {
-      src: 'https://cdn.example.com/2022-camry.webp',
+      src: approvedStorageUrl,
       alt: '2022 Toyota Camry',
       showWatermark: false,
     })
   );
   assert.equal(unwatermarkedHtml.includes('>MANIFOLD<'), false);
+
+  const untrustedExternalHtml = renderToStaticMarkup(
+    React.createElement(WatermarkedVehicleImage, {
+      src: 'https://untrusted.example.com/vehicle.svg',
+      alt: 'Untrusted SVG photo',
+    })
+  );
+  assert.equal(untrustedExternalHtml.includes('<img'), false, 'Untrusted external/SVG URL is blocked');
 
   const emptyFallbackHtml = renderToStaticMarkup(
     React.createElement(WatermarkedVehicleImage, {
@@ -197,7 +208,7 @@ function testWatermarkedVehicleImageComponent() {
   );
   assert.equal(emptyFallbackHtml.includes('<img'), false, 'Empty src renders clean fallback');
 
-  console.log('✓ WatermarkedVehicleImage component rendering & anti-duplication checks passed');
+  console.log('✓ WatermarkedVehicleImage component rendering & approved-source checks passed');
 }
 
 function testPublicVisibilityStrictFiltering() {

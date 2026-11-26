@@ -1,13 +1,18 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   MAX_VEHICLE_IMAGE_BYTES,
-  OptimizedVehicleImageResult,
   optimizeVehicleImage,
   VehicleImageErrorCode,
 } from '../utils/imageOptimizer';
+import {
+  extractVehicleImageStoragePath,
+  VEHICLE_IMAGES_BUCKET,
+} from '../utils/vehicleImageUrl';
 
-export const VEHICLE_IMAGES_BUCKET = 'vehicle-images';
+export { VEHICLE_IMAGES_BUCKET };
 export type VehicleImageSlot = 'front-exterior' | 'cabin';
+
+const MAX_CLIENT_RAW_TRANSFER_BYTES = 4 * 1024 * 1024; // 4 MB server raw upload limit
 
 export interface VehicleImageUploadResult {
   publicUrl: string;
@@ -62,18 +67,7 @@ export function buildVehicleImageStoragePath(
 }
 
 export function extractStoragePathFromPublicUrl(url?: string | null): string | null {
-  const trimmed = (url || '').trim();
-  if (!trimmed) return null;
-
-  const marker = `/storage/v1/object/public/${VEHICLE_IMAGES_BUCKET}/`;
-  const idx = trimmed.indexOf(marker);
-  if (idx === -1) return null;
-
-  const afterMarker = trimmed.slice(idx + marker.length);
-  const withoutQuery = afterMarker.split('?')[0].split('#')[0];
-  const decoded = decodeURIComponent(withoutQuery).replace(/^\/+/, '');
-  if (!decoded || decoded.includes('..')) return null;
-  return decoded;
+  return extractVehicleImageStoragePath(url);
 }
 
 export function canActorModifyVehicleImages(params: {
@@ -109,116 +103,226 @@ export function canActorModifyVehicleImages(params: {
   return { allowed: true };
 }
 
-export async function deleteVehicleImageByUrl(url?: string | null): Promise<void> {
+async function getAccessTokenOrThrow(): Promise<string> {
+  if (!isSupabaseConfigured) {
+    throw new VehicleImageUploadError(
+      'Supabase authentication is not configured. Please check connection settings.',
+      'UPLOAD_FAILED'
+    );
+  }
+
+  const { data: sessionRes } = await supabase.auth.getSession();
+  const accessToken = sessionRes?.session?.access_token;
+  if (!accessToken) {
+    throw new VehicleImageUploadError(
+      'Your sign-in session has expired. Please sign in again before uploading photos.',
+      'UPLOAD_FAILED'
+    );
+  }
+  return accessToken;
+}
+
+function mapServerErrorToUploadError(
+  body: any,
+  fallbackMessage: string
+): VehicleImageUploadError {
+  const code = String(body?.code || '');
+  const msg = String(body?.error || fallbackMessage);
+
+  if (code === 'IMAGE_TOO_LARGE_AFTER_COMPRESSION') {
+    return new VehicleImageUploadError(
+      'Image is still too large to upload. You can reduce its size using TinyPNG and try again.',
+      'IMAGE_TOO_LARGE_AFTER_COMPRESSION'
+    );
+  }
+  if (
+    code === 'SVG_NOT_ALLOWED' ||
+    code === 'ANIMATED_IMAGE_NOT_ALLOWED' ||
+    code === 'UNSUPPORTED_IMAGE_FORMAT'
+  ) {
+    return new VehicleImageUploadError(msg, 'INVALID_IMAGE_TYPE');
+  }
+  if (code === 'DECODE_FAILED' || code === 'EMPTY_FILE') {
+    return new VehicleImageUploadError(msg, 'CORRUPT_IMAGE');
+  }
+  return new VehicleImageUploadError(msg, 'UPLOAD_FAILED');
+}
+
+export async function deleteVehicleImageByUrl(
+  url?: string | null,
+  options?: { vehicleId?: string; slot?: VehicleImageSlot }
+): Promise<void> {
   if (!isSupabaseConfigured) return;
   const storagePath = extractStoragePathFromPublicUrl(url);
   if (!storagePath) return;
 
   try {
-    const { error } = await supabase.storage.from(VEHICLE_IMAGES_BUCKET).remove([storagePath]);
-    if (error) {
-      console.warn('[vehicleImageService.deleteVehicleImageByUrl] Remove warning:', error.message);
+    const { data: sessionRes } = await supabase.auth.getSession();
+    const accessToken = sessionRes?.session?.access_token;
+    if (!accessToken) return;
+
+    const res = await fetch('/api/dealer/vehicles/images', {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        storagePath,
+        url,
+        vehicleId: options?.vehicleId,
+        slot: options?.slot,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      console.warn(
+        '[vehicleImageService.deleteVehicleImageByUrl] Remove warning:',
+        body?.error || `HTTP ${res.status}`
+      );
     }
   } catch (err) {
     console.warn('[vehicleImageService.deleteVehicleImageByUrl] Remove exception:', err);
   }
 }
 
+/**
+ * Uploads a vehicle image strictly through the authenticated MANIFOLD backend pipeline
+ * (/api/dealer/vehicles/images/upload). Client-side optimization runs only as a UX
+ * pre-shrink step so large camera files fit cleanly under the 4 MB server raw cap.
+ */
 export async function uploadVehicleImage(params: {
   file: File;
   dealerId: string;
   vehicleId: string;
   slot: VehicleImageSlot;
+  mode?: 'create' | 'edit';
   previousUrl?: string | null;
 }): Promise<VehicleImageUploadResult> {
-  if (!isSupabaseConfigured) {
-    throw new VehicleImageUploadError(
-      'Supabase Storage is not configured. Please check connection settings.',
-      'UPLOAD_FAILED'
-    );
-  }
+  const accessToken = await getAccessTokenOrThrow();
 
-  let optimized: OptimizedVehicleImageResult;
+  let fileToUpload: File = params.file;
+  let originalSizeBytes = params.file.size;
+
+  // Client-side optimization is strictly UX; the server re-validates, decodes, strips metadata,
+  // and enforces the 100 KB limit authoritatively.
   try {
-    optimized = await optimizeVehicleImage(params.file);
+    const optimized = await optimizeVehicleImage(params.file);
+    if (optimized.optimizedSizeBytes <= MAX_VEHICLE_IMAGE_BYTES) {
+      fileToUpload = optimized.file;
+    } else if (params.file.size > MAX_CLIENT_RAW_TRANSFER_BYTES) {
+      throw new VehicleImageUploadError(
+        'Image is still too large to upload. You can reduce its size using TinyPNG and try again.',
+        'IMAGE_TOO_LARGE_AFTER_COMPRESSION'
+      );
+    }
   } catch (err: any) {
-    if (err?.code) {
+    if (
+      err?.code === 'INVALID_IMAGE_TYPE' ||
+      err?.code === 'CORRUPT_IMAGE'
+    ) {
       throw err;
     }
-    throw new VehicleImageUploadError(
-      err?.message || 'Unable to process this image before upload.',
-      'UPLOAD_FAILED'
-    );
-  }
-
-  if (optimized.optimizedSizeBytes > MAX_VEHICLE_IMAGE_BYTES) {
-    throw new VehicleImageUploadError(
-      'Image is still too large to upload. You can reduce its size using TinyPNG and try again.',
-      'IMAGE_TOO_LARGE_AFTER_COMPRESSION'
-    );
-  }
-
-  const storagePath = buildVehicleImageStoragePath(
-    params.dealerId,
-    params.vehicleId,
-    params.slot,
-    optimized.mimeType
-  );
-
-  const { data: sessionRes } = await supabase.auth.getSession();
-  if (!sessionRes?.session?.user) {
-    throw new VehicleImageUploadError(
-      'Your sign-in session has expired. Please sign in again before uploading photos.',
-      'UPLOAD_FAILED'
-    );
-  }
-
-  const { error: uploadError } = await supabase.storage
-    .from(VEHICLE_IMAGES_BUCKET)
-    .upload(storagePath, optimized.file, {
-      cacheControl: '3600',
-      contentType: optimized.mimeType,
-      upsert: true,
-    });
-
-  if (uploadError) {
-    const msg = uploadError.message || 'Storage upload failed.';
-    if (/row-level security|permission|unauthorized|forbidden|403/i.test(msg)) {
+    if (
+      err?.code === 'IMAGE_TOO_LARGE_AFTER_COMPRESSION' &&
+      params.file.size > MAX_CLIENT_RAW_TRANSFER_BYTES
+    ) {
+      throw err;
+    }
+    if (params.file.size > MAX_CLIENT_RAW_TRANSFER_BYTES) {
       throw new VehicleImageUploadError(
-        'Upload permission denied. Please verify your dealership account is active and approved.',
+        'Selected image exceeds the 4 MB upload transfer limit. Please choose a smaller photo.',
         'UPLOAD_FAILED'
       );
     }
-    throw new VehicleImageUploadError(`Upload failed: ${msg}`, 'UPLOAD_FAILED');
   }
 
-  const { data: publicUrlData } = supabase.storage
-    .from(VEHICLE_IMAGES_BUCKET)
-    .getPublicUrl(storagePath);
+  const formData = new FormData();
+  formData.append('file', fileToUpload);
+  formData.append('dealerId', params.dealerId);
+  formData.append('vehicleId', params.vehicleId);
+  formData.append('slot', params.slot);
+  if (params.mode) {
+    formData.append('mode', params.mode);
+  }
+  if (params.previousUrl) {
+    formData.append('previousUrl', params.previousUrl);
+  }
 
-  const rawPublicUrl = publicUrlData?.publicUrl || '';
-  if (!rawPublicUrl) {
-    throw new VehicleImageUploadError(
-      'Photo uploaded, but its public URL could not be resolved.',
-      'UPLOAD_FAILED'
+  const response = await fetch('/api/dealer/vehicles/images/upload', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: formData,
+  });
+
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw mapServerErrorToUploadError(
+      body,
+      `Image upload failed (HTTP ${response.status}).`
     );
   }
 
-  // Delete previous Storage object if it used a different extension/path
-  const previousStoragePath = extractStoragePathFromPublicUrl(params.previousUrl);
-  if (previousStoragePath && previousStoragePath !== storagePath) {
-    await deleteVehicleImageByUrl(params.previousUrl);
+  return {
+    publicUrl: String(body.publicUrl),
+    storagePath: String(body.storagePath),
+    originalSizeBytes: Number(body.originalSizeBytes || originalSizeBytes),
+    optimizedSizeBytes: Number(body.optimizedSizeBytes || 0),
+    width: Number(body.width || 0),
+    height: Number(body.height || 0),
+    mimeType: String(body.mimeType || 'image/webp'),
+  };
+}
+
+/**
+ * Imports an external image URL strictly through the SSRF-protected server endpoint
+ * (/api/dealer/vehicles/images/import-url), which downloads, validates, decodes,
+ * re-encodes <= 100 KB, and stores the verified output in MANIFOLD Storage.
+ */
+export async function importVehicleImageFromUrl(params: {
+  url: string;
+  dealerId: string;
+  vehicleId: string;
+  slot: VehicleImageSlot;
+  mode?: 'create' | 'edit';
+  previousUrl?: string | null;
+}): Promise<VehicleImageUploadResult> {
+  const accessToken = await getAccessTokenOrThrow();
+
+  const response = await fetch('/api/dealer/vehicles/images/import-url', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      url: params.url,
+      dealerId: params.dealerId,
+      vehicleId: params.vehicleId,
+      slot: params.slot,
+      mode: params.mode,
+      previousUrl: params.previousUrl || undefined,
+    }),
+  });
+
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw mapServerErrorToUploadError(
+      body,
+      `Remote image verification failed (HTTP ${response.status}).`
+    );
   }
 
-  const cacheBustedUrl = `${rawPublicUrl}${rawPublicUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
-
   return {
-    publicUrl: cacheBustedUrl,
-    storagePath,
-    originalSizeBytes: optimized.originalSizeBytes,
-    optimizedSizeBytes: optimized.optimizedSizeBytes,
-    width: optimized.width,
-    height: optimized.height,
-    mimeType: optimized.mimeType,
+    publicUrl: String(body.publicUrl),
+    storagePath: String(body.storagePath),
+    originalSizeBytes: Number(body.originalSizeBytes || 0),
+    optimizedSizeBytes: Number(body.optimizedSizeBytes || 0),
+    width: Number(body.width || 0),
+    height: Number(body.height || 0),
+    mimeType: String(body.mimeType || 'image/webp'),
   };
 }
