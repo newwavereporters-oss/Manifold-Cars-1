@@ -17,17 +17,64 @@ import {
 } from '../src/services/carService.js';
 import { formatWorldSupabaseError } from '../src/services/playerService.js';
 
+const ACTUAL_WORLD_TABLE_COLUMNS: Record<string, string[]> = {
+  player_profiles: ['id', 'user_id', 'nickname', 'email', 'account_status', 'chat_status', 'created_at', 'updated_at'],
+  player_presence: ['player_id', 'user_id', 'nickname', 'is_online', 'last_heartbeat_at', 'updated_at'],
+  chat_invitations: ['id', 'sender_player_id', 'recipient_player_id', 'status', 'created_at', 'expires_at'],
+  chat_conversations: ['id', 'player_a_id', 'player_b_id', 'status', 'created_at', 'last_activity_at'],
+  chat_messages: ['id', 'conversation_id', 'sender_player_id', 'content', 'moderation_status', 'created_at'],
+  player_blocks: ['id', 'blocker_player_id', 'blocked_player_id', 'created_at'],
+  player_reports: ['id', 'reporting_player_id', 'reported_player_id', 'review_status', 'created_at'],
+  moderation_incidents: ['id', 'player_id', 'severity', 'action_taken', 'created_at'],
+  player_admin_audit_logs: ['id', 'admin_user_id', 'player_id', 'action', 'reason', 'created_at'],
+  chat_moderation_config: [
+    'id',
+    'max_message_length',
+    'discovery_radius',
+    'heartbeat_timeout_minutes',
+    'invite_expiry_seconds',
+    'warning_threshold',
+    'temp_restriction_minutes',
+    'suspension_threshold',
+    'updated_at',
+  ],
+};
+
 function createMockWorldSupabaseClient(handlers: {
   tableResponses?: Record<string, { data?: any; error?: any }>;
+  tableSchemas?: Record<string, string[]>;
   rpcResponses?: Record<string, { data?: any; error?: any }>;
 }) {
+  const schemas = handlers.tableSchemas ?? ACTUAL_WORLD_TABLE_COLUMNS;
   return {
     from(table: string) {
-      const resp = handlers.tableResponses?.[table] ?? { data: [], error: null };
       return {
-        select() {
+        select(cols?: string) {
           return {
-            limit: async () => resp,
+            limit: async () => {
+              const explicit = handlers.tableResponses?.[table];
+              if (explicit) return explicit;
+
+              const availableCols = schemas[table];
+              if (availableCols && cols) {
+                const requestedCols = cols
+                  .split(',')
+                  .map((c) => c.trim())
+                  .filter(Boolean);
+                const missingCol = requestedCols.find((col) => !availableCols.includes(col));
+                if (missingCol) {
+                  return {
+                    data: null,
+                    error: {
+                      code: '42703',
+                      message: `column ${table}.${missingCol} does not exist`,
+                    },
+                  };
+                }
+              }
+
+              return { data: [], error: null };
+            },
           };
         },
       };
@@ -53,7 +100,6 @@ async function runTests() {
         data: null,
         error: { code: '42501', message: 'permission denied for table player_profiles' },
       },
-      chat_moderation_config: { data: [{ created_at: '2026-01-01' }], error: null },
     },
     rpcResponses: {
       check_player_registration_available: { data: { emailAvailable: true }, error: null },
@@ -102,7 +148,36 @@ async function runTests() {
   assert.equal(serviceStatus.checks['rpc:admin_get_players_directory'].exists, true);
   assert.equal(serviceStatus.checks['rpc:admin_get_players_directory'].code, 'P0001');
 
-  console.log('4. Testing /api/world/db-status detects genuine missing table (42P01)...');
+  console.log('4. Testing /api/world/db-status succeeds on actual schema (no created_at on player_presence/chat_moderation_config) & catches genuine missing columns (42703)...');
+  assert.equal(serviceStatus.checks.player_presence.exists, true);
+  assert.equal(serviceStatus.checks.chat_moderation_config.exists, true);
+
+  const missingColClient = createMockWorldSupabaseClient({
+    tableSchemas: {
+      ...ACTUAL_WORLD_TABLE_COLUMNS,
+      player_presence: ['player_id', 'is_online', 'updated_at'],
+      chat_moderation_config: ['id', 'heartbeat_timeout_minutes', 'updated_at'],
+    },
+    rpcResponses: {
+      check_player_registration_available: { data: { emailAvailable: true }, error: null },
+      admin_get_players_directory: { data: [], error: null },
+    },
+  });
+
+  const missingColStatus = await evaluateWorldDbStatus({
+    client: missingColClient,
+    verificationMode: 'service_role',
+    supabaseUrl: 'https://demo-proj.supabase.co',
+  });
+  assert.equal(missingColStatus.migrationRequired, true);
+  assert.equal(missingColStatus.checks.player_presence.exists, false);
+  assert.equal(missingColStatus.checks.player_presence.code, '42703');
+  assert.ok(missingColStatus.checks.player_presence.error?.includes('last_heartbeat_at'));
+  assert.equal(missingColStatus.checks.chat_moderation_config.exists, false);
+  assert.equal(missingColStatus.checks.chat_moderation_config.code, '42703');
+  assert.ok(missingColStatus.checks.chat_moderation_config.error?.includes('discovery_radius'));
+
+  console.log('5. Testing /api/world/db-status detects genuine missing table (42P01)...');
   const missingTableClient = createMockWorldSupabaseClient({
     tableResponses: {
       player_profiles: {
@@ -121,7 +196,7 @@ async function runTests() {
   assert.equal(missingStatus.checks.player_profiles.exists, false);
   assert.equal(missingStatus.checks.player_profiles.code, '42P01');
 
-  console.log('5. Testing formatWorldSupabaseError preserves real DB errors...');
+  console.log('6. Testing formatWorldSupabaseError preserves real DB errors...');
   const preservedWorldErr = formatWorldSupabaseError({
     code: 'P0001',
     message: 'Admin privileges required',
@@ -131,7 +206,7 @@ async function runTests() {
   assert.ok(preservedWorldErr.includes('Admin privileges required'));
   assert.ok(preservedWorldErr.includes('admin_users'));
 
-  console.log('6. Testing public /api/cars PII stripping, status filtering, and error preservation...');
+  console.log('7. Testing public /api/cars PII stripping, status filtering, and error preservation...');
   const mockPublicCarsClient = {
     from(table: string) {
       assert.equal(table, 'cars');
@@ -245,7 +320,7 @@ async function runTests() {
     formatCarQueryError('Inventory failed', { code: '42501', message: 'denied' }).includes('[42501]')
   );
 
-  console.log('7. Verifying SQL fixes isolate current_dealer_id()/is_active_admin() away from anon...');
+  console.log('8. Verifying SQL fixes isolate current_dealer_id()/is_active_admin() away from anon...');
   const sqlContent = fs.readFileSync(
     path.join(process.cwd(), 'src/db/public-cars-and-dealers-fix.sql'),
     'utf8'

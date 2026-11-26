@@ -1383,6 +1383,18 @@ var WORLD_REQUIRED_TABLES = [
   "player_admin_audit_logs",
   "chat_moderation_config"
 ];
+var WORLD_TABLE_CHECK_COLUMNS = {
+  player_profiles: "created_at, chat_status",
+  player_presence: "player_id, is_online, last_heartbeat_at, updated_at",
+  chat_invitations: "created_at",
+  chat_conversations: "created_at",
+  chat_messages: "created_at",
+  player_blocks: "created_at",
+  player_reports: "created_at",
+  moderation_incidents: "created_at, severity",
+  player_admin_audit_logs: "created_at",
+  chat_moderation_config: "id, discovery_radius, heartbeat_timeout_minutes, updated_at"
+};
 var AUTH_ONLY_WORLD_RPCS = /* @__PURE__ */ new Set([
   "admin_get_players_directory",
   "admin_get_player_detail",
@@ -1424,7 +1436,7 @@ async function evaluateWorldDbStatus(params) {
   const checks = {};
   const checkOneTable = async (t) => {
     try {
-      const cols = t === "player_profiles" ? "created_at, chat_status" : "created_at";
+      const cols = WORLD_TABLE_CHECK_COLUMNS[t];
       const result = await Promise.race([
         client.from(t).select(cols).limit(1),
         new Promise(
