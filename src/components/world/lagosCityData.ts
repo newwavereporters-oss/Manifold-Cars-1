@@ -40,6 +40,7 @@ export interface CityLandmark {
     | 'LASU'
     | 'MARINA'
     | 'AIRPORT'
+    | 'SEAPORT'
     | 'MILE2'
     | 'IYANOBA';
   x: number;
@@ -59,6 +60,7 @@ export interface CityLandmark {
     | 'district'
     | 'epe'
     | 'airport'
+    | 'port'
     | 'train';
 }
 
@@ -187,6 +189,26 @@ export const WORLD_BOUNDS = {
   bridgeDeckHeight: 6.0,
   bridgeHalfWidth: 14.0,
 };
+
+/**
+ * Sealed Murtala Muhammed International Airport (MMIA) airside perimeter bounds.
+ * Zero vehicles (player or AI) may spawn inside or cross into this zone.
+ */
+export const MMIA_RESTRICTED_ZONE = {
+  minX: 165 * WORLD_XZ_SCALE,
+  maxX: 600 * WORLD_XZ_SCALE,
+  minZ: -1420 * WORLD_XZ_SCALE,
+  maxZ: -960 * WORLD_XZ_SCALE,
+} as const;
+
+export function isInsideRestrictedAirport(x: number, z: number, pad = 0): boolean {
+  return (
+    x >= MMIA_RESTRICTED_ZONE.minX - pad &&
+    x <= MMIA_RESTRICTED_ZONE.maxX + pad &&
+    z >= MMIA_RESTRICTED_ZONE.minZ - pad &&
+    z <= MMIA_RESTRICTED_ZONE.maxZ + pad
+  );
+}
 
 // =========================================================================
 // UNIFIED ELEVATED BRIDGE / FLYOVER / RAMP SPANS (SINGLE SOURCE OF TRUTH)
@@ -811,6 +833,43 @@ export function enforceBridgeAndWaterBarriers(
     };
   }
 
+  // 5. Airtight Murtala Muhammed International Airport (MMIA) Perimeter Security Clamp
+  // Strictly prevents any player vehicle from entering, spawning, or glitching airside.
+  const mmiaMargin = carHalfWidth + 1.4;
+  if (isInsideRestrictedAirport(cs.x, cs.z, mmiaMargin)) {
+    const pushLeft = cs.x - (MMIA_RESTRICTED_ZONE.minX - mmiaMargin);
+    const pushRight = MMIA_RESTRICTED_ZONE.maxX + mmiaMargin - cs.x;
+    const pushTop = cs.z - (MMIA_RESTRICTED_ZONE.minZ - mmiaMargin);
+    const pushBottom = MMIA_RESTRICTED_ZONE.maxZ + mmiaMargin - cs.z;
+    const minPush = Math.min(pushLeft, pushRight, pushTop, pushBottom);
+    const impactVel = Math.abs(cs.speed);
+    let normalX = 0;
+    let normalZ = 0;
+    if (minPush === pushBottom) {
+      cs.z = MMIA_RESTRICTED_ZONE.maxZ + mmiaMargin;
+      normalZ = 1;
+    } else if (minPush === pushLeft) {
+      cs.x = MMIA_RESTRICTED_ZONE.minX - mmiaMargin;
+      normalX = -1;
+    } else if (minPush === pushRight) {
+      cs.x = MMIA_RESTRICTED_ZONE.maxX + mmiaMargin;
+      normalX = 1;
+    } else {
+      cs.z = MMIA_RESTRICTED_ZONE.minZ - mmiaMargin;
+      normalZ = -1;
+    }
+    cs.speed = -cs.speed * 0.3;
+    return {
+      hit: true,
+      impactVelocity: impactVel,
+      normalX,
+      normalZ,
+      hitX: cs.x,
+      hitZ: cs.z,
+      kind: 'BOUNDARY',
+    };
+  }
+
   return null;
 }
 
@@ -925,7 +984,7 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     name: 'Expressway Turn 1',
     roadName: 'Surulere Expressway',
     district: 'Lagos Island',
-    neighbors: ['N_RACE_START', 'N_SURULERE_EXPRESS_N'],
+    neighbors: ['N_RACE_START', 'N_SURULERE_EXPRESS_N', 'N_PORT_QUAY_E'],
     speedLimit: 75,
   },
   N_EAST_AVE_1: {
@@ -1017,7 +1076,7 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     name: 'Surulere Bypass Junction',
     roadName: 'Surulere Expressway',
     district: 'Lagos Island',
-    neighbors: ['N_WEST_AVE_1', 'N_SURULERE_EXPRESS_N', 'N_DEPOT_WEST'],
+    neighbors: ['N_WEST_AVE_1', 'N_SURULERE_EXPRESS_N', 'N_DEPOT_WEST', 'N_PORT_ACCESS_E'],
     speedLimit: 70,
   },
   N_SURULERE_EXPRESS_N: {
@@ -1057,8 +1116,87 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     name: 'Depot Warehouse Loop',
     roadName: 'Depot Loop',
     district: 'Lagos Island',
-    neighbors: ['N_SURULERE_MID', 'N_DEPOT_JCT', 'N_MARINA_TAIL'],
+    neighbors: ['N_SURULERE_MID', 'N_DEPOT_JCT', 'N_MARINA_TAIL', 'N_PORT_SOUTH'],
     speedLimit: 45,
+  },
+
+  // === APAPA COMMERCIAL SEAPORT & CONTAINER TERMINAL ACCESS CORRIDORS ===
+  N_PORT_ACCESS_E: {
+    id: 'N_PORT_ACCESS_E',
+    x: -180,
+    z: 0,
+    name: 'Apapa Port Gate Interchange',
+    roadName: 'Apapa Port Access Blvd',
+    district: 'Apapa Seaport',
+    neighbors: ['N_SURULERE_MID', 'N_PORT_QUAY_E', 'N_PORT_YARD_MID', 'N_PORT_SOUTH'],
+    speedLimit: 60,
+    isDualCarriageway: true,
+  },
+  N_PORT_QUAY_E: {
+    id: 'N_PORT_QUAY_E',
+    x: -180,
+    z: -130,
+    name: 'Apapa East Quay Berth Junction',
+    roadName: 'Seaport Quay Boulevard',
+    district: 'Apapa Seaport',
+    neighbors: ['N_WEST_CORNER_N', 'N_PORT_ACCESS_E', 'N_PORT_QUAY_MID'],
+    speedLimit: 55,
+    isDualCarriageway: true,
+  },
+  N_PORT_QUAY_MID: {
+    id: 'N_PORT_QUAY_MID',
+    x: -275,
+    z: -130,
+    name: 'Deepwater Cargo Terminal & STS Cranes',
+    roadName: 'Seaport Quay Boulevard',
+    district: 'Apapa Seaport',
+    neighbors: ['N_PORT_QUAY_E', 'N_PORT_QUAY_W'],
+    speedLimit: 45,
+    isDualCarriageway: true,
+  },
+  N_PORT_QUAY_W: {
+    id: 'N_PORT_QUAY_W',
+    x: -365,
+    z: -130,
+    name: 'West Berth Maritime Turnaround',
+    roadName: 'Seaport Quay Boulevard',
+    district: 'Apapa Seaport',
+    neighbors: ['N_PORT_QUAY_MID', 'N_PORT_YARD_W'],
+    speedLimit: 45,
+    isDualCarriageway: true,
+  },
+  N_PORT_YARD_W: {
+    id: 'N_PORT_YARD_W',
+    x: -365,
+    z: 0,
+    name: 'West Container Yard Haulage Rd',
+    roadName: 'Tin Can Logistics Way',
+    district: 'Apapa Seaport',
+    neighbors: ['N_PORT_QUAY_W', 'N_PORT_YARD_MID'],
+    speedLimit: 50,
+    isDualCarriageway: true,
+  },
+  N_PORT_YARD_MID: {
+    id: 'N_PORT_YARD_MID',
+    x: -275,
+    z: 0,
+    name: 'Apapa Customs & Truck Staging Plaza',
+    roadName: 'Apapa Port Access Blvd',
+    district: 'Apapa Seaport',
+    neighbors: ['N_PORT_YARD_W', 'N_PORT_ACCESS_E'],
+    speedLimit: 50,
+    isDualCarriageway: true,
+  },
+  N_PORT_SOUTH: {
+    id: 'N_PORT_SOUTH',
+    x: -180,
+    z: 100,
+    name: 'Apapa Bonded Depot Connector',
+    roadName: 'Dockyard Link Road',
+    district: 'Apapa Seaport',
+    neighbors: ['N_PORT_ACCESS_E', 'N_DEPOT_WEST'],
+    speedLimit: 55,
+    isDualCarriageway: true,
   },
 
   // === MARINA FINANCIAL DISTRICT & BLUE LINE RAIL TERMINUS ===
@@ -1859,7 +1997,8 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     speedLimit: 35,
   },
 
-  // === MURTALA MUHAMMED INTERNATIONAL AIRPORT (MMIA - MAINLAND CLOSE TO IKEJA) ===
+  // === MURTALA MUHAMMED INTERNATIONAL AIRPORT (OUTSIDE PUBLIC DROP-OFF LOOP ONLY) ===
+  // Perimeter airside compound (x: 165..600, z: -1420..-960) is sealed to all vehicles.
   N_MMIA_LINK: {
     id: 'N_MMIA_LINK',
     x: 120,
@@ -1875,76 +2014,34 @@ export const LAGOS_ROAD_NODES: Record<string, RoadNode> = {
     id: 'N_MMIA_GATE1_EXT',
     x: 240,
     z: -880,
-    name: 'MMIA Main Gate Approach',
-    roadName: 'MMIA Terminal Access',
+    name: 'MMIA Public Drop-Off East',
+    roadName: 'MMIA Terminal Drop-Off Blvd',
     district: 'Murtala Muhammed Airport',
-    neighbors: ['N_MMIA_LINK', 'N_MMIA_GATE1'],
-    speedLimit: 65,
+    neighbors: ['N_MMIA_LINK', 'N_MMIA_DROPOFF'],
+    speedLimit: 55,
     isDualCarriageway: true,
   },
-  N_MMIA_GATE1: {
-    id: 'N_MMIA_GATE1',
+  N_MMIA_DROPOFF: {
+    id: 'N_MMIA_DROPOFF',
     x: 240,
-    z: -960,
-    name: 'MMIA South Security Gate 1',
-    roadName: 'MMIA Terminal Boulevard',
+    z: -934,
+    name: 'MMIA Gate 1 Pedestrian Security Drop-Off',
+    roadName: 'MMIA Passenger Drop-Off Curb',
     district: 'Murtala Muhammed Airport',
-    neighbors: ['N_MMIA_GATE1_EXT', 'N_MMIA_TERMINAL'],
-    speedLimit: 45,
+    neighbors: ['N_MMIA_GATE1_EXT', 'N_MMIA_WEST_RD'],
+    speedLimit: 40,
     isDualCarriageway: true,
   },
   N_MMIA_WEST_RD: {
     id: 'N_MMIA_WEST_RD',
     x: 120,
-    z: -1080,
-    name: 'MMIA West Executive Perimeter Road',
-    roadName: 'Private Aviation Approach',
+    z: -934,
+    name: 'MMIA West Drop-Off Loop',
+    roadName: 'Airport Perimeter Access Rd',
     district: 'Murtala Muhammed Airport',
-    neighbors: ['N_MMIA_LINK', 'N_MMIA_GATE2'],
-    speedLimit: 60,
+    neighbors: ['N_MMIA_LINK', 'N_MMIA_DROPOFF'],
+    speedLimit: 55,
     isDualCarriageway: true,
-  },
-  N_MMIA_GATE2: {
-    id: 'N_MMIA_GATE2',
-    x: 165,
-    z: -1080,
-    name: 'MMIA Executive Gate 2 (Private Jets)',
-    roadName: 'MMIA Executive Drive',
-    district: 'Murtala Muhammed Airport',
-    neighbors: ['N_MMIA_WEST_RD', 'N_MMIA_PRIVATE_JETS'],
-    speedLimit: 45,
-    isDualCarriageway: true,
-  },
-  N_MMIA_TERMINAL: {
-    id: 'N_MMIA_TERMINAL',
-    x: 240,
-    z: -1030,
-    name: 'MMIA International Terminal Forecourt',
-    roadName: 'Terminal Concourse Drive',
-    district: 'Murtala Muhammed Airport',
-    neighbors: ['N_MMIA_GATE1', 'N_MMIA_PRIVATE_JETS', 'N_MMIA_APRON'],
-    speedLimit: 40,
-    isDualCarriageway: true,
-  },
-  N_MMIA_PRIVATE_JETS: {
-    id: 'N_MMIA_PRIVATE_JETS',
-    x: 240,
-    z: -1120,
-    name: 'MMIA Private Jet & Exec Apron',
-    roadName: 'Private Aviation Apron Rd',
-    district: 'Murtala Muhammed Airport',
-    neighbors: ['N_MMIA_GATE2', 'N_MMIA_TERMINAL'],
-    speedLimit: 35,
-  },
-  N_MMIA_APRON: {
-    id: 'N_MMIA_APRON',
-    x: 345,
-    z: -1030,
-    name: 'MMIA Hangar & Airside Service Rd',
-    roadName: 'Airside Hangar Road',
-    district: 'Murtala Muhammed Airport',
-    neighbors: ['N_MMIA_TERMINAL'],
-    speedLimit: 35,
   },
 
   // === MILE 2 RAIL INTERCHANGE & IYANOBA LOW-RISE MAINLAND TOWN ===
@@ -2529,14 +2626,26 @@ export const CITY_LANDMARKS: CityLandmark[] = [
   {
     id: 'MMIA_AIRPORT',
     name: 'Murtala Muhammed International Airport',
-    subTitle: '2 Gates • ATC Tower • Hangars • Private Jets & Runway',
+    subTitle: 'Pedestrian Security Gate · Restricted Access · No Vehicle Entry',
     district: 'AIRPORT',
     x: 240,
-    z: -1030,
-    radius: 22,
-    description: 'Wide international airport near Ikeja with two perimeter drive-in gates, visible ATC tower, airliner hangars, private jet apron, and active runway.',
+    z: -934,
+    radius: 20,
+    description: 'Airport passenger drop-off plaza outside Gate 1. Pedestrian security turnstiles only — the entire airside perimeter is sealed to all vehicles.',
     color: '#38BDF8',
     iconType: 'airport',
+  },
+  {
+    id: 'APAPA_SEAPORT',
+    name: 'Apapa Commercial Seaport & Container Terminal',
+    subTitle: 'Moored Cargo Vessel • STS Gantry Cranes • Maersk / MSC / CMA CGM',
+    district: 'SEAPORT',
+    x: -275,
+    z: -130,
+    radius: 22,
+    description: 'Deepwater commercial maritime port featuring cargo ship berth, animated STS container offloading cranes, Customs complex, and multi-tier container stacks.',
+    color: '#F97316',
+    iconType: 'port',
   },
   {
     id: 'MILE2_STATION',
@@ -2748,6 +2857,7 @@ function findNearestNodeId(pos: { x: number; z: number }, currentY = 0): string 
   const onSouthLand = pos.z >= WORLD_BOUNDS.lagoonSouthZ - 10;
 
   for (const [id, node] of Object.entries(LAGOS_ROAD_NODES)) {
+    if (isInsideRestrictedAirport(node.x, node.z, 0)) continue;
     const nodeY = node.y ?? 0;
 
     // Prevent snapping straight across Lagos Lagoon unless actually on TMB corridor

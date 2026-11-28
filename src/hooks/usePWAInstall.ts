@@ -7,11 +7,36 @@ export interface BeforeInstallPromptEvent extends Event {
 
 export type InstallPromptResult = 'accepted' | 'dismissed' | 'ios' | 'unavailable';
 
+const SESSION_DISMISS_KEY = 'manifold_pwa_dismissed_session';
+
 interface PWAInstallSnapshot {
   deferredPrompt: BeforeInstallPromptEvent | null;
   isInstalled: boolean;
   isIOS: boolean;
   showIOSGuide: boolean;
+  dismissedForSession: boolean;
+}
+
+function readSessionDismissed(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem(SESSION_DISMISS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeSessionDismissed(value: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (value) {
+      window.sessionStorage.setItem(SESSION_DISMISS_KEY, '1');
+    } else {
+      window.sessionStorage.removeItem(SESSION_DISMISS_KEY);
+    }
+  } catch {
+    // Ignore storage quota or private-mode errors
+  }
 }
 
 export function detectStandalone(): boolean {
@@ -37,6 +62,7 @@ const SERVER_SNAPSHOT: PWAInstallSnapshot = {
   isInstalled: false,
   isIOS: false,
   showIOSGuide: false,
+  dismissedForSession: false,
 };
 
 let storeState: PWAInstallSnapshot = SERVER_SNAPSHOT;
@@ -53,7 +79,8 @@ function updateStore(patch: Partial<PWAInstallSnapshot>) {
     next.deferredPrompt === storeState.deferredPrompt &&
     next.isInstalled === storeState.isInstalled &&
     next.isIOS === storeState.isIOS &&
-    next.showIOSGuide === storeState.showIOSGuide
+    next.showIOSGuide === storeState.showIOSGuide &&
+    next.dismissedForSession === storeState.dismissedForSession
   ) {
     return;
   }
@@ -70,6 +97,7 @@ function ensureInitialized() {
     isInstalled: detectStandalone(),
     isIOS: detectIOS(),
     showIOSGuide: false,
+    dismissedForSession: readSessionDismissed(),
   };
 
   const handleBeforeInstallPrompt = (e: Event) => {
@@ -80,10 +108,12 @@ function ensureInitialized() {
   };
 
   const handleAppInstalled = () => {
+    writeSessionDismissed(false);
     updateStore({
       isInstalled: true,
       deferredPrompt: null,
       showIOSGuide: false,
+      dismissedForSession: false,
     });
   };
 
@@ -134,6 +164,11 @@ export function usePWAInstall() {
     updateStore({ showIOSGuide: open });
   }, []);
 
+  const dismissInstall = useCallback(() => {
+    writeSessionDismissed(true);
+    updateStore({ dismissedForSession: true, showIOSGuide: false });
+  }, []);
+
   const promptInstall = useCallback(async (): Promise<InstallPromptResult> => {
     const current = getSnapshot();
     if (current.isInstalled) return 'unavailable';
@@ -144,11 +179,16 @@ export function usePWAInstall() {
       await promptEvent.prompt();
       const choice = await promptEvent.userChoice;
       if (choice.outcome === 'accepted') {
+        writeSessionDismissed(false);
         updateStore({
           isInstalled: true,
           deferredPrompt: null,
           showIOSGuide: false,
+          dismissedForSession: false,
         });
+      } else if (choice.outcome === 'dismissed') {
+        writeSessionDismissed(true);
+        updateStore({ dismissedForSession: true });
       }
       return choice.outcome;
     }
@@ -169,7 +209,9 @@ export function usePWAInstall() {
     canInstall,
     hasNativePrompt: Boolean(snapshot.deferredPrompt),
     showIOSGuide: snapshot.showIOSGuide,
+    dismissedForSession: snapshot.dismissedForSession,
     setShowIOSGuide,
+    dismissInstall,
     promptInstall,
   };
 }

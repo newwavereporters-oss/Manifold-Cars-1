@@ -36,6 +36,7 @@ import { FavoritesDrawer } from './components/FavoritesDrawer';
 import { AdvancedSearchModal } from './components/AdvancedSearchModal';
 import { NotFoundView } from './components/NotFoundView';
 import { AiAutomotiveAssistant } from './components/ai/AiAutomotiveAssistant';
+import { PWAInstallButton } from './components/pwa/PWAInstallButton';
 import {
   normalizeBrowserLocation,
   parseManifoldRoute,
@@ -524,6 +525,11 @@ export function App() {
           <AboutPage navigate={navigate} onOpenInquiry={() => handleOpenInquiry()} />
         )}
       </main>
+
+      {/* Floating Install MANIFOLD CTA (Public Marketplace Surfaces, excludes /3d-world, Admin & Dealer) */}
+      {currentRoute !== '/3d-world' && routeState.isKnownRoute && (
+        <PWAInstallButton variant="floating" />
+      )}
 
       {/* AI Automotive Concierge Assistant (Non-3D Public Marketplace Surfaces) */}
       {currentRoute !== '/3d-world' && routeState.isKnownRoute && (

@@ -625,90 +625,109 @@ export function buildAirportMarinaAndRail(ctx: AirportAndRailContext): AirportAn
       });
     }
 
-    // Perimeter Security Fencing (InstancedMesh + Colliders) with TWO Big Drivable Gates
-    // Gate 1 (Main Terminal): South Fence z = maxZ (-960*S), open around x = 240*S +/- 18
-    // Gate 2 (Executive Jets): West Fence x = minX (165*S), open around z = -1080*S +/- 18
+    // Perimeter Security Fencing (InstancedMesh + Colliders) with STRICTLY ONE Pedestrian-Only Gate
+    // Gate 2 REMOVED (West perimeter fence sealed continuously).
+    // Gate 1 (South Fence z = maxZ = -960*S, x = 240*S): Pedestrian turnstile & bollard checkpoint ONLY — ZERO vehicle access!
     const gate1X = 240 * S;
-    const gate2Z = -1080 * S;
-    const gateHalfGap = 18.0;
+    const gateHalfGap = 15.0;
 
-    const buildGateArch = (
-      x: number,
-      z: number,
-      yaw: number,
-      title: string,
-      subtitle: string,
-      tag: string
-    ) => {
+    // 1. Single Pedestrian-Only Gate 1 Security Checkpoint & Restricted Signage
+    {
       const g = new THREE.Group();
-      g.position.set(x, 0, z);
-      g.rotation.y = yaw;
+      g.position.set(gate1X, 0, maxZ);
 
       const pL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.2, 9.6, 2.4)), steelDarkMat);
-      pL.position.set(-18.5, 4.8, 0);
+      pL.position.set(-gateHalfGap - 1.1, 4.8, 0);
       pL.castShadow = true;
       const pR = pL.clone();
-      pR.position.x = 18.5;
+      pR.position.x = gateHalfGap + 1.1;
 
-      const beam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(39.4, 2.2, 2.4)), blueLineMat);
+      const beam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(gateHalfGap * 2 + 4.4, 2.4, 2.4)), blueLineMat);
       beam.position.set(0, 9.2, 0);
       beam.castShadow = true;
 
-      const signTex = texPack.createSignTexture(title, subtitle, {
-        bg: '#071A2B',
-        border: '#38BDF8',
-        accent: '#FACC15',
-      });
+      // High-contrast restricted-access airport signage (front & back)
+      const signTex = texPack.createSignTexture(
+        'AIRPORT — RESTRICTED ACCESS',
+        'PASSENGERS ONLY · NO VEHICLE ENTRY',
+        {
+          bg: '#7F1D1D',
+          border: '#FACC15',
+          accent: '#FEF08A',
+          text: '#FFFFFF',
+        }
+      );
       const signF = new THREE.Mesh(
-        trackGeo(new THREE.PlaneGeometry(24, 2.2)),
+        trackGeo(new THREE.PlaneGeometry(25.0, 2.5)),
         trackMat(new THREE.MeshBasicMaterial({ map: signTex }))
       );
-      signF.position.set(0, 9.2, 1.25);
+      signF.position.set(0, 9.2, 1.26);
       const signB = signF.clone();
-      signB.position.z = -1.25;
+      signB.position.z = -1.26;
       signB.rotation.y = Math.PI;
 
-      // Gatehouse guard booth
-      const booth = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(3.4, 3.2, 3.4)), whiteGlossMat);
-      booth.position.set(-22.2, 1.6, 0);
+      // Security Guard Booth
+      const booth = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(3.8, 3.4, 3.6)), whiteGlossMat);
+      booth.position.set(-gateHalfGap - 4.2, 1.7, 1.2);
+      const boothRoof = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(4.4, 0.4, 4.2)), blueLineMat);
+      boothRoof.position.set(-gateHalfGap - 4.2, 3.5, 1.2);
 
-      g.add(pL, pR, beam, signF, signB, booth);
+      // Paved Pedestrian Walkway Plaza connecting exterior Drop-Off Curb to Terminal Concourse
+      const pedWalkMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.85 }));
+      const pedPlaza = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(gateHalfGap * 2, 0.14, 34)), pedWalkMat);
+      pedPlaza.position.set(0, 0.06, 5.5);
+      pedPlaza.receiveShadow = true;
+
+      // Red/Yellow Warning Threshold Line + Continuous Security Bollard Barrier + Pedestrian Turnstiles
+      const warnMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xef233c, roughness: 0.45 }));
+      const bollardYellowMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.35, metalness: 0.25 }));
+
+      const thresholdBar = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(gateHalfGap * 2, 0.12, 1.2)), warnMat);
+      thresholdBar.position.set(0, 0.14, 1.8);
+
+      const turnstileCanopy = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(10.5, 0.25, 3.4)), steelDarkMat);
+      turnstileCanopy.position.set(0, 2.9, 0);
+      [-4.8, 4.8].forEach((tx) => {
+        const tCol = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.12, 0.12, 2.9, 8)), steelSilverMat);
+        tCol.position.set(tx, 1.45, 0);
+        g.add(tCol);
+      });
+
+      // Tightly spaced anti-ram steel bollards (1.45m spacing — pedestrians walk between, zero cars can enter)
+      for (let bx = -gateHalfGap + 0.8; bx <= gateHalfGap - 0.8; bx += 1.45) {
+        const bollard = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.18, 0.2, 1.25, 8)), steelDarkMat);
+        bollard.position.set(bx, 0.65, 0);
+        const cap = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.19, 0.19, 0.22, 8)), bollardYellowMat);
+        cap.position.set(bx, 1.22, 0);
+        g.add(bollard, cap);
+      }
+
+      // Pedestrian Turnstile Lane Dividers inside central canopy
+      [-3.0, -1.0, 1.0, 3.0].forEach((tx) => {
+        const gateRail = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.16, 1.05, 1.8)), steelSilverMat);
+        gateRail.position.set(tx, 0.62, -1.1);
+        g.add(gateRail);
+      });
+
+      g.add(pL, pR, beam, signF, signB, booth, boothRoof, pedPlaza, thresholdBar, turnstileCanopy);
       cityGroup.add(g);
 
-      const cosY = Math.cos(yaw);
-      const sinY = Math.sin(yaw);
-      addBarricade(`${tag}_L`, x - 18.5 * cosY, 0, z + 18.5 * sinY, 1.2, 1.2, yaw, 'GANTRY_PILLAR');
-      addBarricade(`${tag}_R`, x + 18.5 * cosY, 0, z - 18.5 * sinY, 1.2, 1.2, yaw, 'GANTRY_PILLAR');
-    };
+      // Pillars + Full-Width Solid Vehicle Blocker Collider spanning Gate 1 opening (ZERO vehicle penetration)
+      addBarricade('MMIA_GATE1_L', gate1X - (gateHalfGap + 1.1), 0, maxZ, 1.3, 1.4, 0, 'GANTRY_PILLAR');
+      addBarricade('MMIA_GATE1_R', gate1X + (gateHalfGap + 1.1), 0, maxZ, 1.3, 1.4, 0, 'GANTRY_PILLAR');
+      addBarricade('MMIA_GATE1_VEHICLE_BLOCKER', gate1X, 0, maxZ, gateHalfGap + 0.8, 1.6, 0, 'WALL');
+    }
 
-    buildGateArch(
-      gate1X,
-      maxZ,
-      0,
-      'MURTALA MUHAMMED INTL AIRPORT',
-      'GATE 1 • MAIN TERMINAL & DEPARTURES',
-      'MMIA_GATE1'
-    );
-    buildGateArch(
-      minX,
-      gate2Z,
-      Math.PI / 2,
-      'MMIA EXECUTIVE AVIATION',
-      'GATE 2 • PRIVATE JETS & HANGARS',
-      'MMIA_GATE2'
-    );
-
-    // Instanced Perimeter Fence Posts + Panels
+    // 2. Continuous Sealed Perimeter Fence (South split ONLY by pedestrian Gate 1; West/North/East continuous!)
     const fenceSegments: { ax: number; az: number; bx: number; bz: number }[] = [
-      // South wall (split by Gate 1)
-      { ax: minX, az: maxZ, bx: gate1X - gateHalfGap, bz: maxZ },
-      { ax: gate1X + gateHalfGap, az: maxZ, bx: maxX, bz: maxZ },
-      // West wall (split by Gate 2)
-      { ax: minX, az: minZ, bx: minX, bz: gate2Z - gateHalfGap },
-      { ax: minX, az: gate2Z + gateHalfGap, bx: minX, bz: maxZ },
-      // North wall & East wall
-      { ax: minX, az: minZ, bx: maxX, bz: minZ },
-      { ax: maxX, az: minZ, bx: maxX, bz: maxZ },
+      // South wall (split ONLY by pedestrian Gate 1; corner overlap +1.0m)
+      { ax: minX - 0.8, az: maxZ, bx: gate1X - gateHalfGap, bz: maxZ },
+      { ax: gate1X + gateHalfGap, az: maxZ, bx: maxX + 0.8, bz: maxZ },
+      // West wall (Gate 2 REMOVED — continuous unbroken perimeter fence!)
+      { ax: minX, az: minZ - 0.8, bx: minX, bz: maxZ + 0.8 },
+      // North wall & East wall (continuous with corner overlaps)
+      { ax: minX - 0.8, az: minZ, bx: maxX + 0.8, bz: minZ },
+      { ax: maxX, az: minZ - 0.8, bx: maxX, bz: maxZ + 0.8 },
     ];
 
     const fencePosts: { x: number; z: number }[] = [];
@@ -728,8 +747,8 @@ export function buildAirportMarinaAndRail(ctx: AirportAndRailContext): AirportAn
         midX,
         0,
         midZ,
-        Math.abs(dx) > Math.abs(dz) ? len / 2 : 0.65,
-        Math.abs(dx) > Math.abs(dz) ? 0.65 : len / 2,
+        Math.abs(dx) > Math.abs(dz) ? len / 2 + 0.6 : 0.9,
+        Math.abs(dx) > Math.abs(dz) ? 0.9 : len / 2 + 0.6,
         0,
         'WALL'
       );

@@ -138,29 +138,34 @@ runTest('PWAInstallButton uses red MANIFOLD styling, exact Install MANIFOLD labe
   const offlineSrc = fs.readFileSync(path.resolve('src/components/pwa/OfflineIndicator.tsx'), 'utf8');
   const headerSrc = fs.readFileSync(path.resolve('src/components/Header.tsx'), 'utf8');
   const heroSrc = fs.readFileSync(path.resolve('src/components/Hero.tsx'), 'utf8');
+  const appSrc = fs.readFileSync(path.resolve('src/App.tsx'), 'utf8');
 
-  // Exact button label & red white-text styling across variants
+  // Exact button label & red white-text styling across all 4 variants (floating, header, drawer, compact)
   const labelMatches = buttonSrc.match(/<span>Install MANIFOLD<\/span>/g) ?? [];
-  assert.equal(labelMatches.length, 3, 'All 3 variants (header, drawer, compact) must use exact label Install MANIFOLD');
+  assert.equal(labelMatches.length, 4, 'All 4 variants (floating, header, drawer, compact) must use exact label Install MANIFOLD');
   assert.equal(buttonSrc.includes('bg-[#EF233C] hover:bg-[#d91b32] active:scale-[0.98] text-white'), true);
   assert.equal(buttonSrc.includes('App Installed'), true, 'Drawer variant must render subtle App Installed status when standalone');
   assert.equal(buttonSrc.includes('if (!canInstall) return null'), true, 'Unavailable browsers must not render broken/inactive button');
+  assert.equal(buttonSrc.includes('if (dismissedForSession) return null'), true, 'Floating variant must stay hidden once dismissed in current session');
   assert.equal(buttonSrc.includes('Add to Home Screen'), true, 'iOS Safari guide must reference Share -> Add to Home Screen');
   assert.equal(buttonSrc.includes('<strong>Share</strong>'), true);
 
-  // Shared external store prevents missed beforeinstallprompt and duplicate prompts
+  // Shared external store prevents missed beforeinstallprompt and duplicate prompts + persists session dismissal
   assert.equal(hookSrc.includes('useSyncExternalStore'), true);
   assert.equal(hookSrc.includes("window.addEventListener('beforeinstallprompt'"), true);
   assert.equal(hookSrc.includes('e.preventDefault()'), true);
   assert.equal(hookSrc.includes('await promptEvent.prompt()'), true);
+  assert.equal(hookSrc.includes('manifold_pwa_dismissed_session'), true);
+  assert.equal(hookSrc.includes('dismissInstall'), true);
 
   // Global IOSInstallModal mounted inside OfflineIndicator so closing mobile drawer cannot unmount it
   assert.equal(offlineSrc.includes('<IOSInstallModal />'), true);
 
-  // Desktop Header + Mobile Drawer + Compact Mobile Homepage placement
+  // Desktop Header + Mobile Drawer + Compact Mobile Homepage + Floating Public Marketplace placement
   assert.equal(headerSrc.includes('<PWAInstallButton variant="header" />'), true);
   assert.equal(headerSrc.includes('variant="drawer"'), true);
   assert.equal(heroSrc.includes('<PWAInstallButton variant="compact" />'), true);
+  assert.equal(appSrc.includes('<PWAInstallButton variant="floating" />'), true);
 });
 
 console.log(`ALL ${passed} STEERING & PWA TESTS PASSED`);

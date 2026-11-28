@@ -12,6 +12,7 @@ import {
   COASTAL_KM_MARKERS,
   WORLD_XZ_SCALE,
   WORLD_BOUNDS,
+  isInsideRestrictedAirport,
 } from './lagosCityData';
 import type { LagosTexturePack } from './lagosTextures';
 import {
@@ -25,6 +26,7 @@ import {
   buildAirportMarinaAndRail,
   AirportAndRailController,
 } from '../../three/airportAndRailBuilder';
+import { buildApapaSeaport } from '../../three/seaportBuilder';
 
 export interface RegionBuildContext {
   cityGroup: THREE.Group;
@@ -324,7 +326,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
   addHighwayGantry(-355 * S, 0, -855 * S, Math.PI * 0.43, 'EGBEDA COMMERCIAL AVE', '◀ IGANDO • AKESAN • LASU CAMPUS', 33.6);
   addHighwayGantry(-615 * S, 0, -755 * S, Math.PI * 0.36, 'AKESAN & IGANDO EXPRESS', '◀ LASU MAIN GATE   |   EGBEDA ▶', 33.6);
   addHighwayGantry(55 * S, 0, 185 * S, Math.PI / 2, 'MARINA FINANCIAL DISTRICT', 'UBA • WEMA • UAC TOWERS   |   BLUE LINE RAIL ▼', 33.6);
-  addHighwayGantry(70 * S, 0, -880 * S, Math.PI / 2, 'MURTALA MUHAMMED INTL AIRPORT ▲', 'GATE 1 TERMINAL   |   GATE 2 PRIVATE JETS', 33.6);
+  addHighwayGantry(70 * S, 0, -880 * S, Math.PI / 2, 'MMIA PASSENGER DROP-OFF ▲', 'GATE 1 PEDESTRIAN CHECKPOINT · NO VEHICLE ENTRY', 33.6);
   addHighwayGantry(-355 * S, 0, -630 * S, Math.PI / 2, 'MILE 2 INTERCHANGE & RAIL', 'BLUE LINE STATION   |   FESTAC • LASU • IYANOBA', 33.6);
   addHighwayGantry(-1095 * S, 0, -640 * S, Math.PI / 2, 'IYANOBA TERMINUS & TOWN', 'BLUE LINE END STATION   |   DANFO & OKADA HUB', 33.6);
 
@@ -340,7 +342,7 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
   addRoadsideSign(-16 * S, -622 * S, 0, 'IYANA-OWORO', 'MAINLAND GATEWAY');
   addRoadsideSign(-246 * S, -624 * S, 0, 'OSHODI', 'TRANSIT TERMINAL');
   addRoadsideSign(-16 * S, -862 * S, 0, 'IKEJA', 'CENTRAL BUSINESS DISTRICT');
-  addRoadsideSign(165 * S, -864 * S, 0, 'MMIA AIRPORT', 'GATE 1 TERMINAL ▶  |  GATE 2 EXEC JETS ▲');
+  addRoadsideSign(165 * S, -864 * S, 0, 'MMIA GATE 1 DROP-OFF', 'PASSENGERS ONLY · NO VEHICLES PAST GATE 1');
   addRoadsideSign(-245 * S, -864 * S, 0, 'IYANA IPAJA', '◀ EGBEDA   |   OSHODI ▼');
   addRoadsideSign(-425 * S, -824 * S, 0, 'EGBEDA', '◀ IGANDO • LASU');
   addRoadsideSign(-565 * S, -772 * S, 0, 'IGANDO', '◀ AKESAN • LASU');
@@ -1695,6 +1697,8 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
         return false;
       if (x > WORLD_BOUNDS.epeBayMinX - 8 && z < WORLD_BOUNDS.coastalLandNorthZ + 4) return false;
       if (z > WORLD_BOUNDS.southOceanZ - 12) return false;
+      if (isInsideRestrictedAirport(x, z, 8)) return false;
+      if (x >= -405 * S && x <= -155 * S && z >= -170 * S && z <= 68 * S) return false;
       if (distToNearestRoad(x, z) < 18.5) return false;
       for (let i = 0; i < allCollidableBuildings.length; i++) {
         const b = allCollidableBuildings[i];
@@ -1895,5 +1899,24 @@ export function buildExpandedLagosRegions(ctx: RegionBuildContext): AirportAndRa
     S,
   });
 
-  return airportAndRailCtrl;
+  // =========================================================================
+  // 12. APAPA COMMERCIAL SEAPORT & CONTAINER TERMINAL
+  // =========================================================================
+  const seaportCtrl = buildApapaSeaport({
+    cityGroup,
+    texPack,
+    trackGeo,
+    trackMat,
+    allCollidableBuildings,
+    buildCompositeBuilding,
+    addBarricade,
+    S,
+  });
+
+  return {
+    update: (delta: number, timeSec: number) => {
+      airportAndRailCtrl.update(delta, timeSec);
+      seaportCtrl.update(delta, timeSec);
+    },
+  };
 }

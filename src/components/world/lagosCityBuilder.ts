@@ -20,6 +20,7 @@ import {
   RoadProfile,
   WORLD_XZ_SCALE,
   WORLD_BOUNDS,
+  isInsideRestrictedAirport,
 } from './lagosCityData';
 import { createLagosTexturePack } from './lagosTextures';
 import { buildExpandedLagosRegions } from './lagosRegionBuilders';
@@ -1593,7 +1594,7 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
     }
   }
 
-  // Distant Outer Horizon Skyline Silhouette (scaled outward beyond Lagoon & Epe/Mainland road corridors)
+  // Distant Outer Horizon Skyline Silhouette (verified strictly clear of all roads, buildings, MMIA & Seaport)
   {
     const skylineMat = trackMat(
       new THREE.MeshStandardMaterial({
@@ -1603,21 +1604,32 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       })
     );
     const skylineConfigs: [number, number, number, number, number][] = [
-      // Victoria Island / Ikoyi distant horizon south
-      [160 * S, 215 * S, 36, 32, 62],
-      [60 * S, 220 * S, 38, 30, 56],
-      [-45 * S, 225 * S, 36, 30, 64],
-      [-155 * S, 215 * S, 34, 32, 48],
-      // Mainland far western & northern skyline beyond Ikeja/LASU
-      [-235 * S, -90 * S, 32, 32, 54],
-      [-235 * S, 60 * S, 32, 30, 46],
+      // Victoria Island / Ikoyi distant horizon south (safely off N_MARINA_E -> N_COASTAL_VI_START corridor)
+      [105 * S, 248 * S, 36, 30, 58],
+      [15 * S, 250 * S, 38, 30, 56],
+      [-75 * S, 248 * S, 36, 30, 62],
+      [-155 * S, 245 * S, 34, 30, 48],
+      // Mainland far western & northern skyline beyond Ikeja/LASU/Iyanoba
       [-1035 * S, -720 * S, 36, 36, 48],
-      [110 * S, -980 * S, 40, 36, 68],
+      [95 * S, -995 * S, 38, 34, 64],
       [-120 * S, -995 * S, 38, 34, 62],
       [-360 * S, -980 * S, 34, 34, 52],
     ];
 
     skylineConfigs.forEach(([sx, sz, w, d, h]) => {
+      const halfSpan = Math.max(w, d) / 2;
+      if (edgeDistToRoad(sx, sz) < halfSpan + 8.0) return;
+      if (isInsideRestrictedAirport(sx, sz, halfSpan + 12)) return;
+      if (sx >= -405 * S && sx <= -150 * S && sz >= -170 * S && sz <= 70 * S) return;
+      for (let i = 0; i < allCollidableBuildings.length; i++) {
+        const b = allCollidableBuildings[i];
+        if (
+          Math.abs(sx - b.x) < w / 2 + b.width / 2 + 4 &&
+          Math.abs(sz - b.z) < d / 2 + b.depth / 2 + 4
+        ) {
+          return;
+        }
+      }
       const mesh = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(w, h, d)), skylineMat);
       mesh.position.set(sx, h / 2 - 0.1, sz);
       cityGroup.add(mesh);
@@ -2067,6 +2079,8 @@ export function buildLagosCityDistrict(maxAnisotropy: number = 4): LagosCityResu
       const jx = gx + (rand() - 0.5) * 9;
       const jz = gz + (rand() - 0.5) * 9;
       if (jz < WORLD_BOUNDS.lagoonSouthZ + 7) continue;
+      if (isInsideRestrictedAirport(jx, jz, 8)) continue;
+      if (jx <= -155 * S && jz >= -170 * S && jz <= 68 * S) continue;
       const roadDist = distToNearestRoad(jx, jz);
       if (roadDist < 17.8) continue;
       if (isInsideAnyBuilding(jx, jz, 3.5)) continue;

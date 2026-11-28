@@ -40,6 +40,7 @@ interface CityMapModalProps {
 type RegionFilter =
   | 'ALL'
   | 'ISLAND'
+  | 'SEAPORT'
   | 'MARINA'
   | 'OBALENDE_IKOYI'
   | 'LEKKI_AJAH_EPE'
@@ -129,6 +130,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
   const filteredLandmarks = useMemo(() => {
     return CITY_LANDMARKS.filter((lm: CityLandmark) => {
       if (regionFilter === 'ALL') return true;
+      if (regionFilter === 'SEAPORT') return lm.district === 'SEAPORT';
       if (regionFilter === 'MARINA') return lm.district === 'MARINA';
       if (regionFilter === 'AIRPORT') return lm.district === 'AIRPORT';
       if (regionFilter === 'OBALENDE_IKOYI') {
@@ -161,6 +163,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
         lm.district === 'COMMERCIAL_ROW' ||
         lm.district === 'SURULERE_EXPRESS' ||
         lm.district === 'LOGISTICS_DEPOT' ||
+        lm.district === 'SEAPORT' ||
         lm.district === 'MARKETPLACE' ||
         lm.district === 'MARINA'
       );
@@ -263,7 +266,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 MANIFOLD Lagos Metro GPS Map
               </h2>
               <p className="text-[10px] sm:text-[11px] text-gray-400 truncate">
-                Lagos Island · TMB · Adekunle · Obalende · Ikoyi · Ikoyi Link Bridge · Lekki · Ikate · Eleganza · VGC · Ajah · Epe · LASU
+                Lagos Island · Apapa Seaport · TMB · Adekunle · Obalende · Ikoyi · Lekki · Ajah · Epe · MMIA Drop-Off · LASU
               </p>
             </div>
           </div>
@@ -456,12 +459,13 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 );
               })()}
 
-              {/* Murtala Muhammed International Airport Compound & Runway Overlay */}
+              {/* Murtala Muhammed International Airport Sealed Compound & Gate 1 Drop-Off Overlay */}
               {(() => {
                 const a1 = worldToSvg(165 * S, -1420 * S);
                 const a2 = worldToSvg(600 * S, -960 * S);
                 const rw1 = worldToSvg(465 * S, -1395 * S);
                 const rw2 = worldToSvg(465 * S, -980 * S);
+                const g1 = worldToSvg(240 * S, -960 * S);
                 return (
                   <g>
                     <rect
@@ -470,11 +474,11 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                       width={a2.x - a1.x}
                       height={a2.y - a1.y}
                       rx="6"
-                      fill="#1e293b"
-                      fillOpacity="0.45"
-                      stroke="#38bdf8"
-                      strokeOpacity="0.4"
-                      strokeWidth="1.2"
+                      fill="#7f1d1d"
+                      fillOpacity="0.24"
+                      stroke="#ef4444"
+                      strokeOpacity="0.55"
+                      strokeWidth="1.4"
                       strokeDasharray="4 3"
                     />
                     <line
@@ -485,6 +489,51 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                       stroke="#94a3b8"
                       strokeWidth="4.5"
                       strokeDasharray="6 3"
+                    />
+                    <circle cx={g1.x} cy={g1.y} r="3.4" fill="#f59e0b" stroke="#111827" strokeWidth="1" />
+                  </g>
+                );
+              })()}
+
+              {/* Apapa Commercial Seaport Container Terminal, Quay & Moored Cargo Vessel */}
+              {(() => {
+                const y1 = worldToSvg(-355 * S, -110 * S);
+                const y2 = worldToSvg(-195 * S, 55 * S);
+                const q1 = worldToSvg(-385 * S, -165 * S);
+                const q2 = worldToSvg(-170 * S, -140 * S);
+                const shipCenter = worldToSvg(-275 * S, -187 * S);
+                return (
+                  <g>
+                    <rect
+                      x={q1.x}
+                      y={q1.y}
+                      width={q2.x - q1.x}
+                      height={q2.y - q1.y}
+                      rx="2"
+                      fill="#475569"
+                      fillOpacity="0.55"
+                      stroke="#f59e0b"
+                      strokeOpacity="0.55"
+                      strokeWidth="1"
+                    />
+                    <rect
+                      x={y1.x}
+                      y={y1.y}
+                      width={y2.x - y1.x}
+                      height={y2.y - y1.y}
+                      rx="4"
+                      fill="#ea580c"
+                      fillOpacity="0.16"
+                      stroke="#f97316"
+                      strokeOpacity="0.55"
+                      strokeWidth="1.2"
+                      strokeDasharray="4 2"
+                    />
+                    <polygon
+                      points={`${shipCenter.x - 17},${shipCenter.y - 2.6} ${shipCenter.x + 14},${shipCenter.y - 2.6} ${shipCenter.x + 19},${shipCenter.y} ${shipCenter.x + 14},${shipCenter.y + 2.6} ${shipCenter.x - 17},${shipCenter.y + 2.6}`}
+                      fill="#e11d48"
+                      stroke="#f8fafc"
+                      strokeWidth="0.9"
                     />
                   </g>
                 );
@@ -518,6 +567,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
               {/* District Labels */}
               {[
                 { x: 0, z: 45, label: 'LAGOS ISLAND' },
+                { x: -275, z: -65, label: 'APAPA SEAPORT & CONTAINERS' },
                 { x: 55, z: 220, label: 'MARINA (UBA · WEMA · UAC)' },
                 { x: -135, z: 220, label: 'MARINA STATION' },
                 { x: 160, z: -152, label: 'ADEKUNLE' },
@@ -540,7 +590,7 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 { x: -260, z: -612, label: 'OSHODI' },
                 { x: -455, z: -600, label: 'MILE 2' },
                 { x: -65, z: -918, label: 'IKEJA CBD' },
-                { x: 380, z: -1190, label: 'MURTALA MUHAMMED INTL AIRPORT' },
+                { x: 380, z: -1190, label: 'MMIA (RESTRICTED · DROP-OFF ONLY)' },
                 { x: -260, z: -918, label: 'IYANA IPAJA' },
                 { x: -410, z: -875, label: 'EGBEDA' },
                 { x: -550, z: -828, label: 'IGANDO' },
@@ -779,11 +829,12 @@ export const CityMapModal: React.FC<CityMapModalProps> = ({
                 [
                   { id: 'ALL', label: 'All' },
                   { id: 'ISLAND', label: 'Island' },
+                  { id: 'SEAPORT', label: 'Seaport' },
                   { id: 'MARINA', label: 'Marina' },
                   { id: 'OBALENDE_IKOYI', label: 'Obalende & Ikoyi' },
                   { id: 'LEKKI_AJAH_EPE', label: 'Lekki · Ajah · Epe' },
                   { id: 'MAINLAND', label: 'Mainland' },
-                  { id: 'AIRPORT', label: 'MMIA Airport' },
+                  { id: 'AIRPORT', label: 'MMIA Drop-Off' },
                   { id: 'LASU', label: 'LASU · Mile 2 · Iyanoba' },
                 ] as { id: RegionFilter; label: string }[]
               ).map((tab) => (

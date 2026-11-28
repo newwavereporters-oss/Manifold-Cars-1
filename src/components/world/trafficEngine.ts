@@ -12,6 +12,7 @@ import {
   getRoadSegmentProfile,
 } from './lagosCityData';
 import { getVehicleTextureBank } from '../../three/vehicleTextures';
+import { ContainerBrand, getContainerTextureBank } from '../../three/containerTextures';
 import {
   applyVehicleDent,
   createVehicleContactShadowMesh,
@@ -24,6 +25,7 @@ export type TrafficVehicleType =
   | 'CITY_SEDAN'
   | 'URBAN_SUV'
   | 'DELIVERY_VAN'
+  | 'CONTAINER_TRUCK'
   | 'OKADA';
 
 export interface TrafficCar {
@@ -126,9 +128,12 @@ export class TrafficEngine {
 
   private bodyGeos: Record<TrafficVehicleType, THREE.BufferGeometry>;
   private glassGeos: Record<TrafficVehicleType, THREE.BufferGeometry>;
+  private containerBrandMats: Record<ContainerBrand, THREE.MeshStandardMaterial[]>;
+  private containerTruckCount = 0;
 
   constructor() {
     const texBank = getVehicleTextureBank();
+    const containerBank = getContainerTextureBank();
 
     this.tireMat = new THREE.MeshStandardMaterial({ color: 0x11151d, roughness: 0.88, metalness: 0.04 });
     this.rimMat = new THREE.MeshStandardMaterial({ color: 0xdbe4ef, roughness: 0.18, metalness: 0.88 });
@@ -203,6 +208,36 @@ export class TrafficEngine {
       this.reverseMat,
       this.plateMat
     );
+
+    // Prebuild cached 5-brand shipping container material arrays (MAERSK, EVERGREEN, MSC, CMA CGM, Hapag-Lloyd)
+    const cBump = containerBank?.corrugationBump ?? null;
+    this.containerBrandMats = {} as Record<ContainerBrand, THREE.MeshStandardMaterial[]>;
+    (['MAERSK', 'EVERGREEN', 'MSC', 'CMA_CGM', 'HAPAG_LLOYD'] as ContainerBrand[]).forEach((brand) => {
+      const entry = containerBank?.brands[brand];
+      const sideMat = new THREE.MeshStandardMaterial({
+        color: entry ? 0xffffff : 0x38a3d0,
+        map: entry?.sideMap ?? null,
+        bumpMap: cBump,
+        bumpScale: 0.04,
+        roughness: 0.56,
+        metalness: 0.32,
+      });
+      const roofMat = new THREE.MeshStandardMaterial({
+        color: entry?.baseHex ?? 0x38a3d0,
+        bumpMap: cBump,
+        bumpScale: 0.03,
+        roughness: 0.62,
+        metalness: 0.28,
+      });
+      const endMat = new THREE.MeshStandardMaterial({
+        color: entry ? 0xffffff : 0x38a3d0,
+        map: entry?.endMap ?? null,
+        roughness: 0.52,
+        metalness: 0.35,
+      });
+      this.sharedMats.push(sideMat, roofMat, endMat);
+      this.containerBrandMats[brand] = [sideMat, sideMat, roofMat, roofMat, endMat, endMat];
+    });
 
     // Detailed Wheel Assembly Geos (shared across all traffic vehicles)
     this.wheelTireGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.26, 20);
@@ -310,6 +345,18 @@ export class TrafficEngine {
         2.02,
         0.045
       ),
+      CONTAINER_TRUCK: createExtrudedCarShell(
+        [
+          [-6.78, 0.48],
+          [-6.74, 1.62], // Tall semi-tractor grille & hood
+          [-5.48, 1.72], // Hood cowl
+          [-4.88, 2.92], // Raked cab windshield
+          [-3.72, 2.92], // Sleeper cab roof
+          [-3.58, 0.58], // Cab back wall (ahead of 40ft container trailer)
+        ],
+        2.36,
+        0.05
+      ),
       OKADA: createExtrudedCarShell(
         [
           [-0.78, 0.34],
@@ -373,6 +420,16 @@ export class TrafficEngine {
           [-1.1, 1.02],
         ],
         1.88,
+        0.015
+      ),
+      CONTAINER_TRUCK: createExtrudedCarShell(
+        [
+          [-5.42, 1.76],
+          [-4.92, 2.76],
+          [-3.86, 2.76],
+          [-3.86, 1.76],
+        ],
+        2.2,
         0.015
       ),
       OKADA: createExtrudedCarShell(
@@ -466,13 +523,38 @@ export class TrafficEngine {
       { from: 'N_MARINA_TAIL', to: 'N_DEPOT_WEST', type: 'CITY_SEDAN', progress: 0.6, lane: 0 },
       { from: 'N_EAST_RING_S', to: 'N_MARINA_CENTRAL', type: 'URBAN_SUV', progress: 0.4, lane: 0 },
 
-      // Murtala Muhammed International Airport (MMIA) Approach, Terminal & Private Jets
+      // Murtala Muhammed International Airport (MMIA) Public Drop-Off Loop ONLY (Outside Restricted Gate 1)
       { from: 'N_IKEJA', to: 'N_MMIA_LINK', type: 'URBAN_SUV', progress: 0.4, lane: 0 },
       { from: 'N_MMIA_LINK', to: 'N_MMIA_GATE1_EXT', type: 'COASTER_BUS', progress: 0.5, lane: 1 },
-      { from: 'N_MMIA_GATE1_EXT', to: 'N_MMIA_GATE1', type: 'CITY_SEDAN', progress: 0.45, lane: 0 },
-      { from: 'N_MMIA_GATE1', to: 'N_MMIA_TERMINAL', type: 'URBAN_SUV', progress: 0.55, lane: 0 },
-      { from: 'N_MMIA_WEST_RD', to: 'N_MMIA_GATE2', type: 'CITY_SEDAN', progress: 0.5, lane: 0 },
-      { from: 'N_MMIA_GATE2', to: 'N_MMIA_PRIVATE_JETS', type: 'URBAN_SUV', progress: 0.45, lane: 0 },
+      { from: 'N_MMIA_GATE1_EXT', to: 'N_MMIA_DROPOFF', type: 'CITY_SEDAN', progress: 0.45, lane: 0 },
+      { from: 'N_MMIA_DROPOFF', to: 'N_MMIA_WEST_RD', type: 'URBAN_SUV', progress: 0.5, lane: 0 },
+      { from: 'N_MMIA_WEST_RD', to: 'N_MMIA_LINK', type: 'CITY_SEDAN', progress: 0.45, lane: 0 },
+
+      // Apapa Commercial Seaport 40-ft Branded Container Drayage Semis & Logistics Traffic
+      { from: 'N_PORT_QUAY_W', to: 'N_PORT_QUAY_MID', type: 'CONTAINER_TRUCK', progress: 0.35, lane: 1 },
+      { from: 'N_PORT_QUAY_E', to: 'N_PORT_ACCESS_E', type: 'CONTAINER_TRUCK', progress: 0.52, lane: 1 },
+      { from: 'N_PORT_YARD_W', to: 'N_PORT_YARD_MID', type: 'CONTAINER_TRUCK', progress: 0.45, lane: 1 },
+      { from: 'N_PORT_ACCESS_E', to: 'N_SURULERE_MID', type: 'CONTAINER_TRUCK', progress: 0.4, lane: 1 },
+      { from: 'N_PORT_SOUTH', to: 'N_DEPOT_WEST', type: 'CONTAINER_TRUCK', progress: 0.55, lane: 1 },
+      { from: 'N_MARINA_TAIL', to: 'N_MARINA_WEST', type: 'CONTAINER_TRUCK', progress: 0.48, lane: 1 },
+      { from: 'N_TMB_SOUTH', to: 'N_TMB_MID_S', type: 'CONTAINER_TRUCK', progress: 0.72, lane: 1 },
+      { from: 'N_COASTAL_LEKKI', to: 'N_COASTAL_AJAH', type: 'CONTAINER_TRUCK', progress: 0.25, lane: 1 },
+      { from: 'N_PORT_QUAY_MID', to: 'N_PORT_QUAY_E', type: 'DELIVERY_VAN', progress: 0.38, lane: 0 },
+      { from: 'N_PORT_YARD_MID', to: 'N_PORT_ACCESS_E', type: 'URBAN_SUV', progress: 0.35, lane: 0 },
+
+      // Balanced Extra City Traffic Across Island, Lekki, Mainland & Coastal Corridors
+      { from: 'N_SURULERE_EXPRESS_S', to: 'N_SURULERE_MID', type: 'CITY_SEDAN', progress: 0.45, lane: 0 },
+      { from: 'N_EAST_RING_N', to: 'N_EAST_RING_S', type: 'URBAN_SUV', progress: 0.5, lane: 0 },
+      { from: 'N_IKOYI_CENTER', to: 'N_IKOYI_BRIDGE_W', type: 'CITY_SEDAN', progress: 0.55, lane: 0 },
+      { from: 'N_LEKKI_PHASE1', to: 'N_LEKKI_LINK_E', type: 'URBAN_SUV', progress: 0.35, lane: 0 },
+      { from: 'N_AJAH_E_APPROACH', to: 'N_AJAH_FLYOVER', type: 'DANFO_BUS', progress: 0.22, lane: 1 },
+      { from: 'N_EPE_BRIDGE_W', to: 'N_EPE_BRIDGE_MID', type: 'DELIVERY_VAN', progress: 0.74, lane: 1 },
+      { from: 'N_IYANA_OWORO', to: 'N_TMB_NORTH', type: 'COASTER_BUS', progress: 0.42, lane: 1 },
+      { from: 'N_ALAUSA_LINK', to: 'N_IKEJA_WEST', type: 'CITY_SEDAN', progress: 0.48, lane: 0 },
+      { from: 'N_MILE2_W', to: 'N_LASU_GATE', type: 'CITY_SEDAN', progress: 0.28, lane: 0 },
+      { from: 'N_COASTAL_VI_START', to: 'N_COASTAL_IKOYI_S', type: 'CITY_SEDAN', progress: 0.72, lane: 0 },
+      { from: 'N_COASTAL_AJAH', to: 'N_COASTAL_ELEKO', type: 'COASTER_BUS', progress: 0.76, lane: 1 },
+      { from: 'N_COASTAL_EPE_MID', to: 'N_COASTAL_EPE_END', type: 'OKADA', progress: 0.5, lane: 0 },
 
       // Mile 2 & Iyanoba Corridor (Yellow Danfos, Coaster Buses, Small Cars & Okadas)
       { from: 'N_OSHODI', to: 'N_MILE2', type: 'DANFO_BUS', progress: 0.3, lane: 1 },
@@ -501,6 +583,7 @@ export class TrafficEngine {
     ];
 
     const okadaPalette = [0xdc2626, 0x0284c7, 0x16a34a, 0x1e293b];
+    const truckPalette = [0xdc2626, 0x1e3a8a, 0x0f766e, 0xf8fafc, 0x334155, 0xd97706];
     routeSeeds.forEach((seed, i) => {
       if (!LAGOS_ROAD_NODES[seed.from] || !LAGOS_ROAD_NODES[seed.to]) return;
       const customColor =
@@ -510,6 +593,8 @@ export class TrafficEngine {
           ? 0xf8fafc
           : seed.type === 'OKADA'
           ? okadaPalette[i % okadaPalette.length]
+          : seed.type === 'CONTAINER_TRUCK'
+          ? truckPalette[i % truckPalette.length]
           : seed.type === 'URBAN_SUV'
           ? suvPalette[i % suvPalette.length]
           : sedanPalette[i % sedanPalette.length];
@@ -577,9 +662,18 @@ export class TrafficEngine {
     isDarkCar: boolean
   ) {
     if (type === 'OKADA') return;
-    const seatY = type === 'CITY_SEDAN' ? 0.56 : type === 'COASTER_BUS' ? 0.92 : 0.74;
+    const seatY =
+      type === 'CONTAINER_TRUCK'
+        ? 1.55
+        : type === 'CITY_SEDAN'
+        ? 0.56
+        : type === 'COASTER_BUS'
+        ? 0.92
+        : 0.74;
     const frontZ =
-      type === 'COASTER_BUS'
+      type === 'CONTAINER_TRUCK'
+        ? 4.45
+        : type === 'COASTER_BUS'
         ? 2.05
         : type === 'DANFO_BUS'
         ? 1.15
@@ -605,7 +699,7 @@ export class TrafficEngine {
       backF.rotation.x = -0.18;
       group.add(baseF, backF);
 
-      if (type !== 'DELIVERY_VAN') {
+      if (type !== 'DELIVERY_VAN' && type !== 'CONTAINER_TRUCK') {
         const baseR = new THREE.Mesh(this.seatBaseGeo, this.interiorMat);
         baseR.position.set(sx, seatY, rearZ);
         const backR = new THREE.Mesh(this.seatBackGeo, this.interiorMat);
@@ -615,7 +709,7 @@ export class TrafficEngine {
       }
     });
 
-    if (isDarkCar && type !== 'DANFO_BUS') {
+    if (isDarkCar && type !== 'DANFO_BUS' && type !== 'CONTAINER_TRUCK') {
       // Subtle B-pillar frame between side windows
       [-0.81, 0.81].forEach((px) => {
         const bp = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.46, 0.1), this.darkTrimMat);
@@ -657,6 +751,10 @@ export class TrafficEngine {
       length = 5.1;
       width = 2.08;
       height = 2.2;
+    } else if (type === 'CONTAINER_TRUCK') {
+      length = 13.6;
+      width = 2.42;
+      height = 3.65;
     } else if (type === 'OKADA') {
       length = 1.9;
       width = 0.72;
@@ -777,17 +875,23 @@ export class TrafficEngine {
       this.ownedGeos.push(grilleGeo, grilleBarGeo, exhaustGeo);
 
       const grille = markDeformable(new THREE.Mesh(grilleGeo, this.darkTrimMat), 0.8);
-      grille.position.set(0, type === 'CITY_SEDAN' ? 0.5 : 0.62, length / 2 - 0.01);
+      grille.position.set(
+        0,
+        type === 'CONTAINER_TRUCK' ? 1.02 : type === 'CITY_SEDAN' ? 0.5 : 0.62,
+        length / 2 - 0.01
+      );
       const grilleBar = new THREE.Mesh(grilleBarGeo, this.chromeMat);
       grilleBar.position.copy(grille.position);
       group.add(bumperF, bumperR, grille, grilleBar);
 
-      const exOffsets = type === 'CITY_SEDAN' || type === 'URBAN_SUV' ? [-0.54, 0.54] : [-0.52];
-      exOffsets.forEach((ex) => {
-        const tip = new THREE.Mesh(exhaustGeo, this.chromeMat);
-        tip.position.set(ex, 0.25, -length / 2 - 0.03);
-        group.add(tip);
-      });
+      if (type !== 'CONTAINER_TRUCK') {
+        const exOffsets = type === 'CITY_SEDAN' || type === 'URBAN_SUV' ? [-0.54, 0.54] : [-0.52];
+        exOffsets.forEach((ex) => {
+          const tip = new THREE.Mesh(exhaustGeo, this.chromeMat);
+          tip.position.set(ex, 0.25, -length / 2 - 0.03);
+          group.add(tip);
+        });
+      }
 
       // Wing mirrors with chrome reflective backs & painted door handles
       const mirrorGeo = new THREE.BoxGeometry(0.15, 0.09, 0.1);
@@ -800,8 +904,20 @@ export class TrafficEngine {
         const mirror = new THREE.Mesh(mirrorGeo, mirrorMat);
         mirror.position.set(
           side * (width / 2 + 0.05),
-          type === 'CITY_SEDAN' ? 0.92 : type === 'COASTER_BUS' ? 1.35 : 1.15,
-          type === 'COASTER_BUS' ? 2.65 : type === 'DANFO_BUS' ? 1.55 : 0.65
+          type === 'CONTAINER_TRUCK'
+            ? 2.15
+            : type === 'CITY_SEDAN'
+            ? 0.92
+            : type === 'COASTER_BUS'
+            ? 1.35
+            : 1.15,
+          type === 'CONTAINER_TRUCK'
+            ? 5.05
+            : type === 'COASTER_BUS'
+            ? 2.65
+            : type === 'DANFO_BUS'
+            ? 1.55
+            : 0.65
         );
         const face = new THREE.Mesh(mirrorFaceGeo, this.chromeMat);
         face.position.set(mirror.position.x, mirror.position.y, mirror.position.z - 0.045);
@@ -810,8 +926,14 @@ export class TrafficEngine {
         const hFront = new THREE.Mesh(handleGeo, this.chromeMat);
         hFront.position.set(
           side * (width / 2 - 0.01),
-          type === 'CITY_SEDAN' ? 0.74 : 0.95,
-          type === 'COASTER_BUS' ? 1.8 : type === 'DANFO_BUS' ? 0.95 : 0.15
+          type === 'CONTAINER_TRUCK' ? 1.52 : type === 'CITY_SEDAN' ? 0.74 : 0.95,
+          type === 'CONTAINER_TRUCK'
+            ? 4.35
+            : type === 'COASTER_BUS'
+            ? 1.8
+            : type === 'DANFO_BUS'
+            ? 0.95
+            : 0.15
         );
         group.add(hFront);
         if (type === 'CITY_SEDAN' || type === 'URBAN_SUV') {
@@ -891,24 +1013,72 @@ export class TrafficEngine {
         group.add(doorFrame);
       }
 
-      // 4 Realistic 5-Spoke Wheels with Arch Flares
-      const wheelScale =
-        type === 'COASTER_BUS' ? 1.12 : type === 'URBAN_SUV' || type === 'DELIVERY_VAN' ? 1.07 : 0.96;
-      wheelRadius = 0.35 * wheelScale;
-      const wheelX = width / 2 - 0.06;
-      const wheelZF = type === 'COASTER_BUS' ? 2.15 : type === 'DANFO_BUS' ? 1.45 : length * 0.31;
-      const wheelZR = type === 'COASTER_BUS' ? -2.05 : -length * 0.31;
-      const useDarkRims = type === 'URBAN_SUV';
+      // 40-ft Port Drayage Semi-Truck: Skeletal Flatbed, Twin Chrome Stacks, Fuel Tanks & Branded Container
+      if (type === 'CONTAINER_TRUCK') {
+        const brands: ContainerBrand[] = ['MAERSK', 'EVERGREEN', 'MSC', 'CMA_CGM', 'HAPAG_LLOYD'];
+        const brand = brands[this.containerTruckCount++ % brands.length];
 
-      wheels = [
-        this.addTrafficWheel(group, -wheelX, wheelRadius, wheelZF, wheelScale, useDarkRims),
-        this.addTrafficWheel(group, wheelX, wheelRadius, wheelZF, wheelScale, useDarkRims),
-        this.addTrafficWheel(group, -wheelX, wheelRadius, wheelZR, wheelScale, useDarkRims),
-        this.addTrafficWheel(group, wheelX, wheelRadius, wheelZR, wheelScale, useDarkRims),
-      ];
+        const frameGeo = new THREE.BoxGeometry(2.3, 0.24, 10.6);
+        const tankGeo = new THREE.CylinderGeometry(0.24, 0.24, 1.25, 10);
+        tankGeo.rotateX(Math.PI / 2);
+        const stackGeo = new THREE.CylinderGeometry(0.06, 0.075, 2.45, 8);
+        const containerGeo = new THREE.BoxGeometry(2.4, 2.58, 11.2);
+        this.ownedGeos.push(frameGeo, tankGeo, stackGeo, containerGeo);
+
+        const chassisBeam = new THREE.Mesh(frameGeo, this.darkTrimMat);
+        chassisBeam.position.set(0, 0.84, -1.35);
+        chassisBeam.castShadow = true;
+
+        [-1, 1].forEach((side) => {
+          const fuelTank = new THREE.Mesh(tankGeo, this.chromeMat);
+          fuelTank.position.set(side * 0.96, 0.64, 2.65);
+          const stack = new THREE.Mesh(stackGeo, this.chromeMat);
+          stack.position.set(side * 1.02, 2.18, 3.45);
+          group.add(fuelTank, stack);
+        });
+
+        const containerMesh = markDeformable(
+          new THREE.Mesh(containerGeo, this.containerBrandMats[brand]),
+          0.95
+        );
+        containerMesh.position.set(0, 2.26, -1.08);
+        containerMesh.castShadow = true;
+        containerMesh.receiveShadow = true;
+        group.add(chassisBeam, containerMesh);
+      }
+
+      // Realistic 5-Spoke Wheels with Arch Flares (10 wheels on Container Semi-Trucks, 4 on others)
+      if (type === 'CONTAINER_TRUCK') {
+        const wheelScale = 1.2;
+        wheelRadius = 0.35 * wheelScale;
+        const wheelX = width / 2 - 0.06;
+        const truckAxlesZ = [5.65, 2.45, 1.35, -4.65, -5.75];
+        wheels = [];
+        truckAxlesZ.forEach((az) => {
+          wheels.push(
+            this.addTrafficWheel(group, -wheelX, wheelRadius, az, wheelScale, true),
+            this.addTrafficWheel(group, wheelX, wheelRadius, az, wheelScale, true)
+          );
+        });
+      } else {
+        const wheelScale =
+          type === 'COASTER_BUS' ? 1.12 : type === 'URBAN_SUV' || type === 'DELIVERY_VAN' ? 1.07 : 0.96;
+        wheelRadius = 0.35 * wheelScale;
+        const wheelX = width / 2 - 0.06;
+        const wheelZF = type === 'COASTER_BUS' ? 2.15 : type === 'DANFO_BUS' ? 1.45 : length * 0.31;
+        const wheelZR = type === 'COASTER_BUS' ? -2.05 : -length * 0.31;
+        const useDarkRims = type === 'URBAN_SUV';
+
+        wheels = [
+          this.addTrafficWheel(group, -wheelX, wheelRadius, wheelZF, wheelScale, useDarkRims),
+          this.addTrafficWheel(group, wheelX, wheelRadius, wheelZF, wheelScale, useDarkRims),
+          this.addTrafficWheel(group, -wheelX, wheelRadius, wheelZR, wheelScale, useDarkRims),
+          this.addTrafficWheel(group, wheelX, wheelRadius, wheelZR, wheelScale, useDarkRims),
+        ];
+      }
 
       // Multi-Element Headlight Housings (LED core + DRL bar + clear lens)
-      const headY = type === 'CITY_SEDAN' ? 0.56 : 0.68;
+      const headY = type === 'CONTAINER_TRUCK' ? 0.92 : type === 'CITY_SEDAN' ? 0.56 : 0.68;
       const headCoreGeo = new THREE.BoxGeometry(0.3, 0.1, 0.07);
       const drlGeo = new THREE.BoxGeometry(0.32, 0.025, 0.08);
       const lensGeo = new THREE.BoxGeometry(0.34, 0.14, 0.09);
@@ -926,7 +1096,7 @@ export class TrafficEngine {
       });
 
       // Tail / Brake Lights + Amber Indicators + Reverse Lenses
-      const brakeY = type === 'CITY_SEDAN' ? 0.63 : 0.74;
+      const brakeY = type === 'CONTAINER_TRUCK' ? 0.68 : type === 'CITY_SEDAN' ? 0.63 : 0.74;
       const brakeGeo = new THREE.BoxGeometry(0.34, 0.11, 0.08);
       const amberGeo = new THREE.BoxGeometry(0.16, 0.04, 0.07);
       const revGeo = new THREE.BoxGeometry(0.14, 0.04, 0.07);
@@ -948,7 +1118,9 @@ export class TrafficEngine {
     const toNode = LAGOS_ROAD_NODES[toId];
     const segLen = Math.hypot(toNode.x - fromNode.x, toNode.z - fromNode.z);
     const speed =
-      type === 'COASTER_BUS'
+      type === 'CONTAINER_TRUCK'
+        ? 6.6
+        : type === 'COASTER_BUS'
         ? 7.2
         : type === 'DANFO_BUS'
         ? 7.8
@@ -1105,7 +1277,9 @@ export class TrafficEngine {
           const oDx = other.x - car.x;
           const oDz = other.z - car.z;
           const dOther = Math.hypot(oDx, oDz);
-          if (dOther < 14 && Math.abs(other.y - car.y) < 2.2) {
+          const minGap =
+            car.type === 'CONTAINER_TRUCK' || other.type === 'CONTAINER_TRUCK' ? 21 : 14;
+          if (dOther < minGap && Math.abs(other.y - car.y) < 2.2) {
             const dotFwd = oDx * fwdX + oDz * fwdZ;
             const dotSide = Math.abs(oDx * rightX + oDz * rightZ);
             if (dotFwd > 0 && dotSide < 2.5) {
