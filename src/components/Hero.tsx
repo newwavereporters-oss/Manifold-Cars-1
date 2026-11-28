@@ -1,6 +1,7 @@
 import React from 'react';
 import { Video, ShieldCheck, Headphones, Key, Play } from 'lucide-react';
 import { HeroSearchBox } from './HeroSearchBox';
+import { PWAInstallButton } from './pwa/PWAInstallButton';
 import heroDealershipBanner from '../assets/images/hero_manifold_dealership_1791137893826.jpg';
 import presenterShowcaseImg from '../assets/images/manifold_presenter_showcase_1791137904318.jpg';
 
@@ -95,8 +96,8 @@ export const Hero: React.FC<HeroProps> = ({
               </div>
             </div>
 
-            {/* In-Game 3D World Gateway */}
-            <div className="pt-1">
+            {/* In-Game 3D World Gateway & Mobile Install CTA */}
+            <div className="pt-1 flex flex-wrap items-center gap-3">
               <button
                 onClick={() => navigate('/3d-world')}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-[#EF233C] text-white text-xs font-bold uppercase tracking-wider rounded-xl border border-white/20 hover:border-[#EF233C] transition-all shadow-md group"
@@ -105,6 +106,10 @@ export const Hero: React.FC<HeroProps> = ({
                 <span>Play MANIFOLD WORLD (3D Virtual Showroom)</span>
                 <span className="text-gray-400 group-hover:text-white transition-colors">→</span>
               </button>
+
+              <div className="md:hidden">
+                <PWAInstallButton variant="compact" />
+              </div>
             </div>
           </div>
 

@@ -95,7 +95,7 @@ export const Header: React.FC<HeaderProps> = ({
         style={{ height: 'var(--header-height, 76px)' }}
       >
         <div className="max-w-7xl mx-auto h-full px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-full gap-4">
+          <div className="flex items-center justify-between h-full gap-2 xl:gap-4">
             {/* Brand Wordmark & Tagline Lockup */}
             <div
               onClick={() => handleNavClick('/car-marketplace')}
@@ -116,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Desktop Navigation (Visible on lg: 1024px+) */}
-            <nav className="hidden lg:flex items-center gap-4 xl:gap-6">
+            <nav className="hidden lg:flex items-center gap-2.5 xl:gap-5">
               {navItems.map((item) => {
                 const isActive =
                   currentRoute === item.route ||
@@ -128,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     key={item.label}
                     onClick={() => handleNavClick(item.route)}
-                    className={`text-xs xl:text-sm font-medium tracking-wide transition-colors relative py-1 whitespace-nowrap shrink-0 ${
+                    className={`text-[11px] xl:text-sm font-medium tracking-wide transition-colors relative py-1 whitespace-nowrap shrink-0 ${
                       isActive
                         ? 'text-white font-semibold'
                         : 'text-gray-300 hover:text-white'
@@ -144,13 +144,13 @@ export const Header: React.FC<HeaderProps> = ({
             </nav>
 
             {/* Right Action Zone */}
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 xl:gap-2.5 shrink-0">
               <PWAInstallButton variant="header" />
 
               {/* Search Trigger */}
               <button
                 onClick={onOpenSearch}
-                className="min-w-[40px] min-h-[40px] flex items-center justify-center text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-white/10"
+                className="min-w-[36px] min-h-[36px] xl:min-w-[40px] xl:min-h-[40px] flex items-center justify-center text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-white/10"
                 aria-label="Search cars"
                 title="Search cars"
               >
@@ -160,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Saved Cars / Favorites */}
               <button
                 onClick={onOpenFavorites}
-                className="min-w-[40px] min-h-[40px] flex items-center justify-center text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-white/10 relative"
+                className="min-w-[36px] min-h-[36px] xl:min-w-[40px] xl:min-h-[40px] flex items-center justify-center text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-white/10 relative"
                 aria-label="Saved vehicles"
                 title="Saved vehicles"
               >
@@ -176,7 +176,7 @@ export const Header: React.FC<HeaderProps> = ({
               {showAdmin ? (
                 <button
                   onClick={() => handleNavClick('/admin')}
-                  className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider px-3.5 xl:px-4 py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
+                  className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-[11px] xl:text-xs font-bold uppercase tracking-wider px-2.5 xl:px-4 py-2 xl:py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
                 >
                   <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
                   <span>ADMIN DASHBOARD</span>
@@ -184,7 +184,7 @@ export const Header: React.FC<HeaderProps> = ({
               ) : showDealer ? (
                 <button
                   onClick={() => handleNavClick('/dealer/dashboard')}
-                  className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider px-3.5 xl:px-4 py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
+                  className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-[11px] xl:text-xs font-bold uppercase tracking-wider px-2.5 xl:px-4 py-2 xl:py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
                   <span>DASHBOARD</span>
@@ -192,7 +192,7 @@ export const Header: React.FC<HeaderProps> = ({
               ) : (
                 <button
                   onClick={() => onOpenInquiry()}
-                  className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider px-3.5 xl:px-4 py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
+                  className="hidden sm:inline-flex items-center gap-1.5 xl:gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-[11px] xl:text-xs font-bold uppercase tracking-wider px-2.5 xl:px-4 py-2 xl:py-2.5 rounded shadow-sm hover:shadow-red-500/20 transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap shrink-0"
                 >
                   <PhoneCall className="w-3.5 h-3.5 shrink-0" />
                   <span>Talk to MANIFOLD</span>

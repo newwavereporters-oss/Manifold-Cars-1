@@ -132,4 +132,35 @@ runTest('PWA icons, favicon, offline page, and secure Workbox rules are configur
   assert.equal(indexHtml.includes('name="theme-color"'), true);
 });
 
+runTest('PWAInstallButton uses red MANIFOLD styling, exact Install MANIFOLD label, shared store, iOS guide, and installed/unavailable guards', () => {
+  const buttonSrc = fs.readFileSync(path.resolve('src/components/pwa/PWAInstallButton.tsx'), 'utf8');
+  const hookSrc = fs.readFileSync(path.resolve('src/hooks/usePWAInstall.ts'), 'utf8');
+  const offlineSrc = fs.readFileSync(path.resolve('src/components/pwa/OfflineIndicator.tsx'), 'utf8');
+  const headerSrc = fs.readFileSync(path.resolve('src/components/Header.tsx'), 'utf8');
+  const heroSrc = fs.readFileSync(path.resolve('src/components/Hero.tsx'), 'utf8');
+
+  // Exact button label & red white-text styling across variants
+  const labelMatches = buttonSrc.match(/<span>Install MANIFOLD<\/span>/g) ?? [];
+  assert.equal(labelMatches.length, 3, 'All 3 variants (header, drawer, compact) must use exact label Install MANIFOLD');
+  assert.equal(buttonSrc.includes('bg-[#EF233C] hover:bg-[#d91b32] active:scale-[0.98] text-white'), true);
+  assert.equal(buttonSrc.includes('App Installed'), true, 'Drawer variant must render subtle App Installed status when standalone');
+  assert.equal(buttonSrc.includes('if (!canInstall) return null'), true, 'Unavailable browsers must not render broken/inactive button');
+  assert.equal(buttonSrc.includes('Add to Home Screen'), true, 'iOS Safari guide must reference Share -> Add to Home Screen');
+  assert.equal(buttonSrc.includes('<strong>Share</strong>'), true);
+
+  // Shared external store prevents missed beforeinstallprompt and duplicate prompts
+  assert.equal(hookSrc.includes('useSyncExternalStore'), true);
+  assert.equal(hookSrc.includes("window.addEventListener('beforeinstallprompt'"), true);
+  assert.equal(hookSrc.includes('e.preventDefault()'), true);
+  assert.equal(hookSrc.includes('await promptEvent.prompt()'), true);
+
+  // Global IOSInstallModal mounted inside OfflineIndicator so closing mobile drawer cannot unmount it
+  assert.equal(offlineSrc.includes('<IOSInstallModal />'), true);
+
+  // Desktop Header + Mobile Drawer + Compact Mobile Homepage placement
+  assert.equal(headerSrc.includes('<PWAInstallButton variant="header" />'), true);
+  assert.equal(headerSrc.includes('variant="drawer"'), true);
+  assert.equal(heroSrc.includes('<PWAInstallButton variant="compact" />'), true);
+});
+
 console.log(`ALL ${passed} STEERING & PWA TESTS PASSED`);

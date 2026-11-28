@@ -1,11 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
-interface BeforeInstallPromptEvent extends Event {
+export interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
-function detectStandalone(): boolean {
+export type InstallPromptResult = 'accepted' | 'dismissed' | 'ios' | 'unavailable';
+
+interface PWAInstallSnapshot {
+  deferredPrompt: BeforeInstallPromptEvent | null;
+  isInstalled: boolean;
+  isIOS: boolean;
+  showIOSGuide: boolean;
+}
+
+export function detectStandalone(): boolean {
   if (typeof window === 'undefined') return false;
   const mediaStandalone =
     typeof window.matchMedia === 'function' &&
@@ -14,7 +23,7 @@ function detectStandalone(): boolean {
   return mediaStandalone || iosStandalone;
 }
 
-function detectIOS(): boolean {
+export function detectIOS(): boolean {
   if (typeof window === 'undefined') return false;
   const ua = window.navigator.userAgent || '';
   const isAppleMobile = /iPad|iPhone|iPod/.test(ua);
@@ -23,72 +32,143 @@ function detectIOS(): boolean {
   return isAppleMobile || isIPadOS;
 }
 
+const SERVER_SNAPSHOT: PWAInstallSnapshot = {
+  deferredPrompt: null,
+  isInstalled: false,
+  isIOS: false,
+  showIOSGuide: false,
+};
+
+let storeState: PWAInstallSnapshot = SERVER_SNAPSHOT;
+let initialized = false;
+const listeners = new Set<() => void>();
+
+function emitChange() {
+  listeners.forEach((listener) => listener());
+}
+
+function updateStore(patch: Partial<PWAInstallSnapshot>) {
+  const next: PWAInstallSnapshot = { ...storeState, ...patch };
+  if (
+    next.deferredPrompt === storeState.deferredPrompt &&
+    next.isInstalled === storeState.isInstalled &&
+    next.isIOS === storeState.isIOS &&
+    next.showIOSGuide === storeState.showIOSGuide
+  ) {
+    return;
+  }
+  storeState = next;
+  emitChange();
+}
+
+function ensureInitialized() {
+  if (initialized || typeof window === 'undefined') return;
+  initialized = true;
+
+  storeState = {
+    deferredPrompt: null,
+    isInstalled: detectStandalone(),
+    isIOS: detectIOS(),
+    showIOSGuide: false,
+  };
+
+  const handleBeforeInstallPrompt = (e: Event) => {
+    e.preventDefault();
+    updateStore({
+      deferredPrompt: e as BeforeInstallPromptEvent,
+    });
+  };
+
+  const handleAppInstalled = () => {
+    updateStore({
+      isInstalled: true,
+      deferredPrompt: null,
+      showIOSGuide: false,
+    });
+  };
+
+  const mql =
+    typeof window.matchMedia === 'function'
+      ? window.matchMedia('(display-mode: standalone)')
+      : null;
+
+  const handleDisplayModeChange = () => {
+    if (detectStandalone()) {
+      updateStore({
+        isInstalled: true,
+        deferredPrompt: null,
+        showIOSGuide: false,
+      });
+    }
+  };
+
+  window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  window.addEventListener('appinstalled', handleAppInstalled);
+  mql?.addEventListener?.('change', handleDisplayModeChange);
+}
+
+// Initialize immediately on client module evaluation so early beforeinstallprompt events are never missed.
+ensureInitialized();
+
+function subscribe(listener: () => void): () => void {
+  ensureInitialized();
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function getSnapshot(): PWAInstallSnapshot {
+  ensureInitialized();
+  return storeState;
+}
+
+function getServerSnapshot(): PWAInstallSnapshot {
+  return SERVER_SNAPSHOT;
+}
+
 export function usePWAInstall() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState<boolean>(() => detectStandalone());
-  const [isIOS] = useState<boolean>(() => detectIOS());
-  const [showIOSGuide, setShowIOSGuide] = useState(false);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    };
-
-    const handleAppInstalled = () => {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
-      setShowIOSGuide(false);
-    };
-
-    const mql =
-      typeof window.matchMedia === 'function'
-        ? window.matchMedia('(display-mode: standalone)')
-        : null;
-    const handleDisplayModeChange = () => {
-      if (detectStandalone()) {
-        setIsInstalled(true);
-      }
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
-    mql?.addEventListener?.('change', handleDisplayModeChange);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-      mql?.removeEventListener?.('change', handleDisplayModeChange);
-    };
+  const setShowIOSGuide = useCallback((open: boolean) => {
+    updateStore({ showIOSGuide: open });
   }, []);
 
-  const promptInstall = useCallback(async (): Promise<'accepted' | 'dismissed' | 'ios' | 'unavailable'> => {
-    if (isInstalled) return 'unavailable';
+  const promptInstall = useCallback(async (): Promise<InstallPromptResult> => {
+    const current = getSnapshot();
+    if (current.isInstalled) return 'unavailable';
 
-    if (deferredPrompt) {
-      await deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      setDeferredPrompt(null);
+    if (current.deferredPrompt) {
+      const promptEvent = current.deferredPrompt;
+      updateStore({ deferredPrompt: null });
+      await promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
       if (choice.outcome === 'accepted') {
-        setIsInstalled(true);
+        updateStore({
+          isInstalled: true,
+          deferredPrompt: null,
+          showIOSGuide: false,
+        });
       }
       return choice.outcome;
     }
 
-    if (isIOS) {
-      setShowIOSGuide(true);
+    if (current.isIOS) {
+      updateStore({ showIOSGuide: true });
       return 'ios';
     }
 
     return 'unavailable';
-  }, [deferredPrompt, isIOS, isInstalled]);
+  }, []);
+
+  const canInstall = !snapshot.isInstalled && (Boolean(snapshot.deferredPrompt) || snapshot.isIOS);
 
   return {
-    isInstalled,
-    isIOS,
-    canInstall: !isInstalled && (Boolean(deferredPrompt) || isIOS),
-    hasNativePrompt: Boolean(deferredPrompt),
-    showIOSGuide,
+    isInstalled: snapshot.isInstalled,
+    isIOS: snapshot.isIOS,
+    canInstall,
+    hasNativePrompt: Boolean(snapshot.deferredPrompt),
+    showIOSGuide: snapshot.showIOSGuide,
     setShowIOSGuide,
     promptInstall,
   };

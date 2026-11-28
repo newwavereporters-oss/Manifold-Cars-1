@@ -8177,9 +8177,8 @@ async function encodeAndVerify(inputBuffer, maxWidth, maxHeight, format, quality
   const pipeline = sharp(inputBuffer, {
     failOn: "truncated",
     limitInputPixels: MAX_INPUT_PIXELS,
-    pages: 1,
-    timeoutSeconds: PROCESSING_TIMEOUT_SECONDS
-  }).rotate().resize({
+    pages: 1
+  }).timeout({ seconds: PROCESSING_TIMEOUT_SECONDS }).rotate().resize({
     width: maxWidth,
     height: maxHeight,
     fit: "inside",
@@ -8215,9 +8214,8 @@ async function validateAndReencodeVehicleImage(rawBuffer) {
         metadata = await sharp(rawBuffer, {
           failOn: "truncated",
           limitInputPixels: MAX_INPUT_PIXELS,
-          animated: true,
-          timeoutSeconds: PROCESSING_TIMEOUT_SECONDS
-        }).metadata();
+          animated: true
+        }).timeout({ seconds: PROCESSING_TIMEOUT_SECONDS }).metadata();
       } catch (err) {
         const msg = String(err?.message || "").toLowerCase();
         if (msg.includes("pixel limit") || msg.includes("exceeds image size")) {
