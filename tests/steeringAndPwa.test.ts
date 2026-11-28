@@ -132,21 +132,26 @@ runTest('PWA icons, favicon, offline page, and secure Workbox rules are configur
   assert.equal(indexHtml.includes('name="theme-color"'), true);
 });
 
-runTest('PWAInstallButton uses red MANIFOLD styling, exact Install MANIFOLD label, shared store, iOS guide, and installed/unavailable guards', () => {
+runTest('PWAInstallButton and FloatingInstallButton use red MANIFOLD styling, exact Install MANIFOLD label, shared store, iOS guide, and guards', () => {
   const buttonSrc = fs.readFileSync(path.resolve('src/components/pwa/PWAInstallButton.tsx'), 'utf8');
+  const floatingSrc = fs.readFileSync(path.resolve('src/components/pwa/FloatingInstallButton.tsx'), 'utf8');
   const hookSrc = fs.readFileSync(path.resolve('src/hooks/usePWAInstall.ts'), 'utf8');
   const offlineSrc = fs.readFileSync(path.resolve('src/components/pwa/OfflineIndicator.tsx'), 'utf8');
   const headerSrc = fs.readFileSync(path.resolve('src/components/Header.tsx'), 'utf8');
   const heroSrc = fs.readFileSync(path.resolve('src/components/Hero.tsx'), 'utf8');
   const appSrc = fs.readFileSync(path.resolve('src/App.tsx'), 'utf8');
 
-  // Exact button label & red white-text styling across all 4 variants (floating, header, drawer, compact)
+  // Exact button label & red white-text styling across all variants (header, drawer, compact + FloatingInstallButton)
   const labelMatches = buttonSrc.match(/<span>Install MANIFOLD<\/span>/g) ?? [];
-  assert.equal(labelMatches.length, 4, 'All 4 variants (floating, header, drawer, compact) must use exact label Install MANIFOLD');
+  assert.equal(labelMatches.length, 3, 'PWAInstallButton header/drawer/compact variants must use exact label Install MANIFOLD');
+  assert.equal(floatingSrc.includes('<span>Install MANIFOLD</span>'), true, 'FloatingInstallButton must use exact label Install MANIFOLD');
+  assert.equal(floatingSrc.includes('fixed right-4 sm:right-5 bottom-'), true, 'FloatingInstallButton must use fixed bottom-right positioning');
   assert.equal(buttonSrc.includes('bg-[#EF233C] hover:bg-[#d91b32] active:scale-[0.98] text-white'), true);
+  assert.equal(floatingSrc.includes('bg-[#EF233C] hover:bg-[#d91b32] active:scale-[0.98] text-white'), true);
   assert.equal(buttonSrc.includes('App Installed'), true, 'Drawer variant must render subtle App Installed status when standalone');
   assert.equal(buttonSrc.includes('if (!canInstall) return null'), true, 'Unavailable browsers must not render broken/inactive button');
-  assert.equal(buttonSrc.includes('if (dismissedForSession) return null'), true, 'Floating variant must stay hidden once dismissed in current session');
+  assert.equal(floatingSrc.includes('isInstalled || !canInstall || dismissedForSession'), true, 'FloatingInstallButton must guard installed, unavailable, and session dismissal');
+  assert.equal(floatingSrc.includes('setShowIOSGuide(true)'), true, 'FloatingInstallButton must support opening iOS guidance modal');
   assert.equal(buttonSrc.includes('Add to Home Screen'), true, 'iOS Safari guide must reference Share -> Add to Home Screen');
   assert.equal(buttonSrc.includes('<strong>Share</strong>'), true);
 
@@ -165,7 +170,7 @@ runTest('PWAInstallButton uses red MANIFOLD styling, exact Install MANIFOLD labe
   assert.equal(headerSrc.includes('<PWAInstallButton variant="header" />'), true);
   assert.equal(headerSrc.includes('variant="drawer"'), true);
   assert.equal(heroSrc.includes('<PWAInstallButton variant="compact" />'), true);
-  assert.equal(appSrc.includes('<PWAInstallButton variant="floating" />'), true);
+  assert.equal(appSrc.includes('<FloatingInstallButton />'), true);
 });
 
 console.log(`ALL ${passed} STEERING & PWA TESTS PASSED`);
