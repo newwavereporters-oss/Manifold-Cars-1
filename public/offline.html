@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#071A2B" />
+    <title>Offline — MANIFOLD</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        background: radial-gradient(circle at top, #0f2942 0%, #071a2b 45%, #040d16 100%);
+        color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      .card {
+        width: 100%;
+        max-width: 420px;
+        background: rgba(11, 34, 57, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 20px;
+        padding: 2rem 1.5rem;
+        text-align: center;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1.25rem;
+      }
+      .brand img {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        border: 1px solid rgba(239, 35, 60, 0.4);
+      }
+      .wordmark {
+        text-align: left;
+      }
+      .wordmark strong {
+        display: block;
+        font-size: 1.25rem;
+        letter-spacing: -0.02em;
+      }
+      .wordmark span {
+        display: block;
+        font-size: 0.65rem;
+        letter-spacing: 0.22em;
+        color: #94a3b8;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 0 0 0.6rem;
+        font-size: 1.3rem;
+        font-weight: 800;
+      }
+      p {
+        margin: 0 0 1.4rem;
+        font-size: 0.9rem;
+        line-height: 1.55;
+        color: #cbd5e1;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+      }
+      button,
+      a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0.75rem 1.1rem;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+        border: none;
+      }
+      .primary {
+        background: #ef233c;
+        color: #ffffff;
+      }
+      .secondary {
+        background: rgba(255, 255, 255, 0.08);
+        color: #e2e8f0;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="brand">
+        <img src="/icons/icon-192.png" alt="MANIFOLD Red M" />
+        <div class="wordmark">
+          <strong>MANIFOLD</strong>
+          <span>Find &middot; Verify &middot; Drive</span>
+        </div>
+      </div>
+      <h1>You are currently offline</h1>
+      <p>
+        Live vehicle inventory, dealer enquiries, authentication, and 3D World multiplayer require an active internet connection.
+      </p>
+      <div class="actions">
+        <button type="button" class="primary" onclick="window.location.reload()">
+          Retry Connection
+        </button>
+        <a href="/" class="secondary">Return to Home</a>
+      </div>
+    </main>
+  </body>
+</html>

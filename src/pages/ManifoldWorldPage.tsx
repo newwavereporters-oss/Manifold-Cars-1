@@ -228,13 +228,14 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
     speed: 0,
   });
 
-  // Virtual Touch Input
+  // Virtual Touch & Steering Wheel Input
   const [virtualInputState, setVirtualInputState] = useState<VirtualDrivingInput>({
     forward: false,
     backward: false,
     left: false,
     right: false,
     handbrake: false,
+    steerAxis: 0,
   });
 
   const handleVirtualInput = useCallback((input: VirtualDrivingInput) => {

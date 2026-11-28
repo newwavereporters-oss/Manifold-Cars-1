@@ -3,6 +3,7 @@ import { Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowRight, AlertCircle, Loader2,
 import { useAuth } from '../../context/AuthContext';
 import { useRole } from '../../context/RoleContext';
 import { supabase } from '../../lib/supabase';
+import { ManifoldBrandMark } from '../../components/ManifoldBrandMark';
 
 interface AdminLoginPageProps {
   navigate: (route: string) => void;
@@ -54,6 +55,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ navigate }) => {
           onClick={() => navigate('/car-marketplace')}
           className="cursor-pointer inline-flex flex-col items-center group mb-4"
         >
+          <ManifoldBrandMark size="lg" className="mb-2.5" />
           <div className="flex items-center gap-1.5">
             <span className="text-3xl font-extrabold tracking-tight text-white font-display">
               MANIFOLD

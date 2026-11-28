@@ -81,6 +81,7 @@ import { checkIsSupabaseConfigured } from '../../lib/supabase';
 import { CarForm } from '../../components/admin/CarForm';
 import { MediaVideoModal } from '../../components/admin/MediaVideoModal';
 import { SupabaseSettingsModal } from '../../components/admin/SupabaseSettingsModal';
+import { ManifoldBrandMark } from '../../components/ManifoldBrandMark';
 
 export type AdminTabType =
   | 'inventory'
@@ -812,22 +813,25 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       {/* Top Header Navigation */}
       <header className="bg-[#071A2B] text-white border-b border-white/10 sticky top-0 z-30 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div
               onClick={() => navigate('/')}
-              className="cursor-pointer flex items-center gap-1.5 group"
+              className="cursor-pointer flex items-center gap-2 group shrink-0"
             >
-              <span className="text-xl font-extrabold tracking-tight text-white font-display">
-                MANIFOLD
-              </span>
-              <span className="w-2 h-2 rounded-full bg-[#EF233C]" />
+              <ManifoldBrandMark size="xs" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-lg sm:text-xl font-extrabold tracking-tight text-white font-display">
+                  MANIFOLD
+                </span>
+                <span className="w-2 h-2 rounded-full bg-[#EF233C]" />
+              </div>
             </div>
-            <span className="text-gray-500">/</span>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-200">
+            <span className="text-gray-500 hidden sm:inline">/</span>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="hidden sm:inline text-xs font-bold uppercase tracking-wider text-gray-200 truncate">
                 Operations Portal
               </span>
-              <span className="text-[10px] font-extrabold bg-[#EF233C] text-white px-2 py-0.5 rounded tracking-widest uppercase">
+              <span className="text-[10px] font-extrabold bg-[#EF233C] text-white px-2 py-0.5 rounded tracking-widest uppercase shrink-0">
                 ADMIN
               </span>
             </div>

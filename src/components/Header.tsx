@@ -13,6 +13,8 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useDealerAuth } from '../context/DealerAuthContext';
 import { useRole } from '../context/RoleContext';
+import { ManifoldBrandMark } from './ManifoldBrandMark';
+import { PWAInstallButton } from './pwa/PWAInstallButton';
 
 interface HeaderProps {
   currentRoute: string;
@@ -97,17 +99,20 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Brand Wordmark & Tagline Lockup */}
             <div
               onClick={() => handleNavClick('/car-marketplace')}
-              className="cursor-pointer group flex flex-col justify-center shrink-0"
+              className="cursor-pointer group flex items-center gap-2.5 shrink-0"
             >
-              <div className="flex items-center gap-1.5">
-                <span className="text-xl sm:text-2xl font-extrabold tracking-tight text-white font-display">
-                  MANIFOLD
+              <ManifoldBrandMark size="sm" />
+              <div className="flex flex-col justify-center">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xl sm:text-2xl font-extrabold tracking-tight text-white font-display">
+                    MANIFOLD
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-[#EF233C]" />
+                </div>
+                <span className="text-[8px] sm:text-[9px] font-medium tracking-[0.22em] text-gray-300 uppercase transition-colors group-hover:text-white">
+                  FIND · VERIFY · DRIVE
                 </span>
-                <span className="w-2 h-2 rounded-full bg-[#EF233C]" />
               </div>
-              <span className="text-[8px] sm:text-[9px] font-medium tracking-[0.22em] text-gray-300 uppercase transition-colors group-hover:text-white">
-                FIND · VERIFY · DRIVE
-              </span>
             </div>
 
             {/* Desktop Navigation (Visible on lg: 1024px+) */}
@@ -140,10 +145,12 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Right Action Zone */}
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <PWAInstallButton variant="header" />
+
               {/* Search Trigger */}
               <button
                 onClick={onOpenSearch}
-                className="p-2 text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-white/10"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-white/10"
                 aria-label="Search cars"
                 title="Search cars"
               >
@@ -153,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Saved Cars / Favorites */}
               <button
                 onClick={onOpenFavorites}
-                className="p-2 text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-white/10 relative"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-white/10 relative"
                 aria-label="Saved vehicles"
                 title="Saved vehicles"
               >
@@ -195,7 +202,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Mobile / Tablet Menu Hamburger (Visible below lg: 1024px) */}
               <button
                 onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden p-2 text-gray-300 hover:text-white rounded-lg hover:bg-white/10"
+                className="lg:hidden min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-300 hover:text-white rounded-lg hover:bg-white/10"
                 aria-label="Open navigation menu"
               >
                 <Menu className="w-6 h-6" />
@@ -212,21 +219,24 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="w-screen max-w-sm bg-[#071A2B] text-white shadow-2xl flex flex-col justify-between border-l border-white/10">
               {/* Drawer Header */}
               <div className="p-5 flex items-center justify-between border-b border-white/10">
-                <div className="flex flex-col">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xl font-extrabold tracking-tight text-white font-display">
-                      MANIFOLD
+                <div className="flex items-center gap-2.5">
+                  <ManifoldBrandMark size="sm" />
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xl font-extrabold tracking-tight text-white font-display">
+                        MANIFOLD
+                      </span>
+                      <span className="w-2 h-2 rounded-full bg-[#EF233C]" />
+                    </div>
+                    <span className="text-[8px] font-medium tracking-[0.2em] text-gray-400 uppercase">
+                      FIND · VERIFY · DRIVE
                     </span>
-                    <span className="w-2 h-2 rounded-full bg-[#EF233C]" />
                   </div>
-                  <span className="text-[8px] font-medium tracking-[0.2em] text-gray-400 uppercase">
-                    FIND · VERIFY · DRIVE
-                  </span>
                 </div>
 
                 <button
                   onClick={() => setMobileMenuOpen(false)}
-                  className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/10 transition"
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-white rounded-lg hover:bg-white/10 transition"
                   aria-label="Close menu"
                 >
                   <X className="w-6 h-6" />
@@ -276,12 +286,17 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* Drawer Bottom Actions */}
               <div className="p-5 border-t border-white/10 bg-[#0B2239]/80 space-y-3">
+                <PWAInstallButton
+                  variant="drawer"
+                  onTriggered={() => setMobileMenuOpen(false)}
+                />
+
                 <button
                   onClick={() => {
                     setMobileMenuOpen(false);
                     onOpenInquiry();
                   }}
-                  className="w-full flex items-center justify-center gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider py-3.5 px-4 rounded shadow transition-all whitespace-nowrap active:scale-98"
+                  className="w-full min-h-[44px] flex items-center justify-center gap-2 bg-[#EF233C] hover:bg-[#d91b32] text-white text-xs font-bold uppercase tracking-wider py-3.5 px-4 rounded shadow transition-all whitespace-nowrap active:scale-98"
                 >
                   <PhoneCall className="w-4 h-4 shrink-0" />
                   <span>Talk to MANIFOLD</span>

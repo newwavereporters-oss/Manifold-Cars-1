@@ -90,6 +90,7 @@ export interface WorldCanvasProps {
     left: boolean;
     right: boolean;
     handbrake: boolean;
+    steerAxis?: number;
   };
   isEngineRunning?: boolean;
   driveMode?: AudioDriveMode;
@@ -1654,8 +1655,24 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         cs.isDrifting = false;
       }
 
-      // Smooth, full-lock exponential steering (standstill/city full lock + highway stability)
-      const steerInput: -1 | 0 | 1 = input.left && !input.right ? 1 : input.right && !input.left ? -1 : 0;
+      // Smooth, full-lock exponential steering (analog steering wheel + keyboard priority)
+      const keyboardLeft = Boolean(!isRaceCountdown && (keys.current['a'] || keys.current['arrowleft']));
+      const keyboardRight = Boolean(!isRaceCountdown && (keys.current['d'] || keys.current['arrowright']));
+      const keyboardSteer = keyboardLeft && !keyboardRight ? 1 : keyboardRight && !keyboardLeft ? -1 : 0;
+      const virtualSteerAxis =
+        !isRaceCountdown && typeof currentVirtual?.steerAxis === 'number'
+          ? Math.max(-1, Math.min(1, currentVirtual.steerAxis))
+          : 0;
+      const steerInput =
+        keyboardSteer !== 0
+          ? keyboardSteer
+          : Math.abs(virtualSteerAxis) > 0.005
+          ? virtualSteerAxis
+          : input.left && !input.right
+          ? 1
+          : input.right && !input.left
+          ? -1
+          : 0;
       const targetSteer = computeTargetSteerAngle({
         steerInput,
         maxSteer: baseSpec.maxSteer,

@@ -1,10 +1,10 @@
 import React, { useRef, useEffect, useCallback } from 'react';
-import { Volume2 } from 'lucide-react';
 import { CameraViewMode } from './WorldCanvas';
 import { TransmissionGear, TRANSMISSION_GEAR_ORDER } from './worldModels';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
+import { SteeringWheelControl } from './SteeringWheelControl';
 
-type VirtualControlKey = 'forward' | 'backward' | 'left' | 'right';
+type PedalControlKey = 'forward' | 'backward';
 
 export interface VirtualDrivingInput {
   forward: boolean;
@@ -12,6 +12,7 @@ export interface VirtualDrivingInput {
   left: boolean;
   right: boolean;
   handbrake: boolean;
+  steerAxis?: number;
 }
 
 export interface MobileTouchControlsProps {
@@ -26,6 +27,7 @@ export interface MobileTouchControlsProps {
   onHornUp?: () => void;
   speedKmh?: number;
   disabled?: boolean;
+  showPedals?: boolean;
 }
 
 const EMPTY_INPUT: VirtualDrivingInput = {
@@ -34,6 +36,7 @@ const EMPTY_INPUT: VirtualDrivingInput = {
   left: false,
   right: false,
   handbrake: false,
+  steerAxis: 0,
 };
 
 const GEAR_PEDAL_HINTS: Record<TransmissionGear, string> = {
@@ -54,6 +57,7 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
   onHornDown,
   onHornUp,
   disabled = false,
+  showPedals = true,
 }) => {
   const onVirtualInputRef = useRef(onVirtualInput);
   onVirtualInputRef.current = onVirtualInput;
@@ -61,23 +65,23 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
   const onHornUpRef = useRef(onHornUp);
   onHornUpRef.current = onHornUp;
 
-  // Per-control active pointer IDs guarantee true simultaneous multi-touch without cross-talk or stuck inputs
-  const activePointersRef = useRef<Record<VirtualControlKey, Set<number>>>({
+  // Per-pedal active pointer IDs guarantee true simultaneous multi-touch alongside SteeringWheelControl
+  const activePointersRef = useRef<Record<PedalControlKey, Set<number>>>({
     forward: new Set(),
     backward: new Set(),
-    left: new Set(),
-    right: new Set(),
   });
-
+  const steerAxisRef = useRef<number>(0);
   const activeKeysRef = useRef<VirtualDrivingInput>({ ...EMPTY_INPUT });
 
   const emitSnapshot = useCallback(() => {
+    const steerAxis = steerAxisRef.current;
     const next: VirtualDrivingInput = {
       forward: activePointersRef.current.forward.size > 0,
       backward: activePointersRef.current.backward.size > 0,
-      left: activePointersRef.current.left.size > 0,
-      right: activePointersRef.current.right.size > 0,
+      left: steerAxis > 0.08,
+      right: steerAxis < -0.08,
       handbrake: false,
+      steerAxis,
     };
 
     const prev = activeKeysRef.current;
@@ -86,7 +90,8 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
       prev.backward === next.backward &&
       prev.left === next.left &&
       prev.right === next.right &&
-      prev.handbrake === next.handbrake
+      prev.handbrake === next.handbrake &&
+      Math.abs((prev.steerAxis ?? 0) - (next.steerAxis ?? 0)) < 0.002
     ) {
       return;
     }
@@ -95,11 +100,19 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
   }, []);
 
   const releaseAllControls = useCallback(() => {
-    (Object.keys(activePointersRef.current) as VirtualControlKey[]).forEach((k) => {
+    (Object.keys(activePointersRef.current) as PedalControlKey[]).forEach((k) => {
       activePointersRef.current[k].clear();
     });
+    steerAxisRef.current = 0;
     const prev = activeKeysRef.current;
-    if (prev.forward || prev.backward || prev.left || prev.right || prev.handbrake) {
+    if (
+      prev.forward ||
+      prev.backward ||
+      prev.left ||
+      prev.right ||
+      prev.handbrake ||
+      Math.abs(prev.steerAxis ?? 0) > 0
+    ) {
       activeKeysRef.current = { ...EMPTY_INPUT };
       onVirtualInputRef.current({ ...EMPTY_INPUT });
     }
@@ -113,7 +126,7 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
     };
     const handleWindowPointerEnd = (ev: PointerEvent) => {
       let changed = false;
-      (Object.keys(activePointersRef.current) as VirtualControlKey[]).forEach((k) => {
+      (Object.keys(activePointersRef.current) as PedalControlKey[]).forEach((k) => {
         if (activePointersRef.current[k].delete(ev.pointerId)) {
           changed = true;
         }
@@ -139,6 +152,14 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
     releaseAllControls();
   }, [cameraMode, disabled, releaseAllControls]);
 
+  const handleSteeringAxisChange = useCallback(
+    (axis: number) => {
+      steerAxisRef.current = axis;
+      emitSnapshot();
+    },
+    [emitSnapshot]
+  );
+
   const triggerHaptic = (duration = 14) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       try {
@@ -147,7 +168,7 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
     }
   };
 
-  const bindPointerControl = (key: VirtualControlKey) => ({
+  const bindPointerControl = (key: PedalControlKey) => ({
     onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
       if (disabled) return;
       e.preventDefault();
@@ -198,8 +219,6 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
 
   if (disabled) return null;
 
-  const isLeftActive = virtualInputState.left;
-  const isRightActive = virtualInputState.right;
   const isForwardActive = virtualInputState.forward;
   const isBackwardActive = virtualInputState.backward;
   const pedalHint = GEAR_PEDAL_HINTS[selectedGear] || 'DRIVE';
@@ -209,93 +228,22 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
       className="fixed inset-x-0 bottom-0 z-30 pointer-events-none select-none touch-none pb-[max(0.6rem,env(safe-area-inset-bottom))] [@media(max-height:480px)]:pb-2 pl-[max(0.65rem,env(safe-area-inset-left))] pr-[max(0.65rem,env(safe-area-inset-right))]"
       aria-label="Driving Controls"
     >
-      <div className="flex items-end justify-between w-full max-w-5xl mx-auto gap-2">
-        {/* LEFT THUMB ZONE: HORN + DIRECTIONS (LEFT / RIGHT) */}
+      <div className="flex items-end justify-between w-full max-w-6xl mx-auto gap-2">
+        {/* LEFT ZONE: INTERACTIVE STEERING WHEEL WITH INTEGRATED CENTER HORN HUB */}
         <div
-          className="pointer-events-auto flex flex-col items-start gap-1.5 sm:gap-2"
+          className="pointer-events-auto flex flex-col items-start"
           onPointerDown={(e) => e.stopPropagation()}
         >
-          {onHornDown && onHornUp && (
-            <button
-              type="button"
-              onPointerDown={(e) => {
-                if (disabled) return;
-                e.preventDefault();
-                e.stopPropagation();
-                try {
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                } catch {}
-                triggerHaptic(18);
-                engineAudio.init();
-                onHornDown();
-              }}
-              onPointerUp={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onHornUp();
-              }}
-              onPointerCancel={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onHornUp();
-              }}
-              onLostPointerCapture={() => onHornUp()}
-              onContextMenu={(e) => e.preventDefault()}
-              style={{
-                touchAction: 'none',
-                userSelect: 'none',
-                WebkitUserSelect: 'none',
-              }}
-              className={`h-[40px] sm:h-[42px] [@media(max-height:480px)]:h-[34px] px-3.5 rounded-xl border-2 flex items-center gap-1.5 shadow-xl transition-transform duration-75 cursor-pointer ${
-                hornActive
-                  ? 'bg-yellow-400 border-yellow-200 text-slate-950 scale-95'
-                  : 'bg-[#071A2B]/94 border-amber-400/45 text-amber-300'
-              }`}
-              aria-label="Car Horn"
-            >
-              <Volume2 className="w-4 h-4" />
-              <span className="text-[10px] font-mono font-black tracking-wider uppercase">
-                Horn
-              </span>
-            </button>
-          )}
-
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              {...bindPointerControl('left')}
-              className={`w-[64px] h-[64px] sm:w-20 sm:h-20 [@media(max-height:480px)]:w-[58px] [@media(max-height:480px)]:h-[58px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
-                isLeftActive
-                  ? 'bg-[#EF233C] border-red-300 text-white scale-95 ring-4 ring-[#EF233C]/30'
-                  : 'bg-[#071A2B]/94 border-white/25 text-white'
-              }`}
-              aria-label="Steer Left"
-            >
-              <span className="text-xl sm:text-2xl leading-none font-black">◀</span>
-              <span className="text-[9px] font-mono opacity-80 mt-0.5 tracking-wider font-bold">
-                LEFT
-              </span>
-            </button>
-
-            <button
-              type="button"
-              {...bindPointerControl('right')}
-              className={`w-[64px] h-[64px] sm:w-20 sm:h-20 [@media(max-height:480px)]:w-[58px] [@media(max-height:480px)]:h-[58px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
-                isRightActive
-                  ? 'bg-[#EF233C] border-red-300 text-white scale-95 ring-4 ring-[#EF233C]/30'
-                  : 'bg-[#071A2B]/94 border-white/25 text-white'
-              }`}
-              aria-label="Steer Right"
-            >
-              <span className="text-xl sm:text-2xl leading-none font-black">▶</span>
-              <span className="text-[9px] font-mono opacity-80 mt-0.5 tracking-wider font-bold">
-                RIGHT
-              </span>
-            </button>
-          </div>
+          <SteeringWheelControl
+            onSteerAxisChange={handleSteeringAxisChange}
+            hornActive={hornActive}
+            onHornDown={onHornDown}
+            onHornUp={onHornUp}
+            disabled={disabled}
+          />
         </div>
 
-        {/* RIGHT THUMB ZONE: TRANSMISSION GEAR STRIP + PEDALS */}
+        {/* RIGHT ZONE: TRANSMISSION GEAR STRIP + OPTIONAL ON-SCREEN PEDALS */}
         <div
           className="pointer-events-auto flex flex-col items-end gap-1.5 sm:gap-2"
           onPointerDown={(e) => e.stopPropagation()}
@@ -340,47 +288,49 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
             })}
           </div>
 
-          <div className="flex items-end gap-2 sm:gap-3">
-            <button
-              type="button"
-              {...bindPointerControl('backward')}
-              className={`w-[62px] h-[72px] sm:w-18 sm:h-24 [@media(max-height:480px)]:h-[62px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
-                isBackwardActive
-                  ? 'bg-red-600 border-red-300 text-white scale-95 ring-4 ring-red-500/35'
-                  : 'bg-[#071A2B]/94 border-white/25 text-red-400'
-              }`}
-              aria-label="Brake"
-            >
-              <span className="text-lg sm:text-xl leading-none font-black">▼</span>
-              <span className="text-[10px] sm:text-[11px] font-mono mt-0.5 font-black tracking-wider">
-                BRAKE
-              </span>
-              <span className="text-[8px] font-mono opacity-65 [@media(max-height:480px)]:hidden">STOP</span>
-            </button>
+          {showPedals && (
+            <div className="flex items-end gap-2 sm:gap-3">
+              <button
+                type="button"
+                {...bindPointerControl('backward')}
+                className={`w-[62px] h-[72px] sm:w-18 sm:h-24 [@media(max-height:480px)]:h-[62px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl cursor-pointer ${
+                  isBackwardActive
+                    ? 'bg-red-600 border-red-300 text-white scale-95 ring-4 ring-red-500/35'
+                    : 'bg-[#071A2B]/94 border-white/25 text-red-400'
+                }`}
+                aria-label="Brake"
+              >
+                <span className="text-lg sm:text-xl leading-none font-black">▼</span>
+                <span className="text-[10px] sm:text-[11px] font-mono mt-0.5 font-black tracking-wider">
+                  BRAKE
+                </span>
+                <span className="text-[8px] font-mono opacity-65 [@media(max-height:480px)]:hidden">STOP</span>
+              </button>
 
-            <button
-              type="button"
-              {...bindPointerControl('forward')}
-              className={`w-[72px] h-[84px] sm:w-20 sm:h-28 [@media(max-height:480px)]:h-[72px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl ${
-                selectedGear === 'P'
-                  ? 'bg-slate-800/94 border-slate-500/50 text-slate-400 opacity-80'
-                  : isForwardActive
-                  ? 'bg-emerald-500 border-emerald-200 text-slate-950 scale-95 ring-4 ring-emerald-400/40'
-                  : 'bg-gradient-to-t from-[#071A2B] via-[#0d2a44] to-[#133859] border-emerald-400/70 text-emerald-300'
-              }`}
-              aria-label={selectedGear === 'R' ? 'Reverse Throttle' : 'Gas Throttle'}
-            >
-              <span className="text-xl sm:text-2xl leading-none font-black">
-                {selectedGear === 'R' ? '▼' : '▲'}
-              </span>
-              <span className="text-xs sm:text-sm font-mono mt-0.5 font-black tracking-widest text-white">
-                {selectedGear === 'P' ? 'PARK' : selectedGear === 'R' ? 'REV' : 'GAS'}
-              </span>
-              <span className="text-[8px] font-mono text-emerald-300 font-bold">
-                {pedalHint}
-              </span>
-            </button>
-          </div>
+              <button
+                type="button"
+                {...bindPointerControl('forward')}
+                className={`w-[72px] h-[84px] sm:w-20 sm:h-28 [@media(max-height:480px)]:h-[72px] rounded-2xl border-2 transition-transform duration-75 flex flex-col items-center justify-center shadow-2xl cursor-pointer ${
+                  selectedGear === 'P'
+                    ? 'bg-slate-800/94 border-slate-500/50 text-slate-400 opacity-80'
+                    : isForwardActive
+                    ? 'bg-emerald-500 border-emerald-200 text-slate-950 scale-95 ring-4 ring-emerald-400/40'
+                    : 'bg-gradient-to-t from-[#071A2B] via-[#0d2a44] to-[#133859] border-emerald-400/70 text-emerald-300'
+                }`}
+                aria-label={selectedGear === 'R' ? 'Reverse Throttle' : 'Gas Throttle'}
+              >
+                <span className="text-xl sm:text-2xl leading-none font-black">
+                  {selectedGear === 'R' ? '▼' : '▲'}
+                </span>
+                <span className="text-xs sm:text-sm font-mono mt-0.5 font-black tracking-widest text-white">
+                  {selectedGear === 'P' ? 'PARK' : selectedGear === 'R' ? 'REV' : 'GAS'}
+                </span>
+                <span className="text-[8px] font-mono text-emerald-300 font-bold">
+                  {pedalHint}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

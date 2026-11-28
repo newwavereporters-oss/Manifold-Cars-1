@@ -1,0 +1,135 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  MAX_STEERING_WHEEL_DEG,
+  clampSteeringWheelDeg,
+  mapWheelAngleToSteerAxis,
+  stepVisualWheelReturn,
+  unwrapPointerAngleDelta,
+} from '../src/components/world/steeringWheelMath';
+import {
+  VEHICLE_SPEC_PROFILES,
+  computeTargetSteerAngle,
+} from '../src/components/world/worldModels';
+
+let passed = 0;
+
+function runTest(name: string, fn: () => void) {
+  try {
+    fn();
+    passed += 1;
+    console.log(`PASS: ${name}`);
+  } catch (err) {
+    console.error(`FAIL: ${name}`);
+    throw err;
+  }
+}
+
+runTest('Steering wheel angle clamps within realistic lock bounds and unwraps +/-180 deg cleanly', () => {
+  assert.equal(clampSteeringWheelDeg(250), MAX_STEERING_WHEEL_DEG);
+  assert.equal(clampSteeringWheelDeg(-250), -MAX_STEERING_WHEEL_DEG);
+  assert.equal(clampSteeringWheelDeg(Number.NaN), 0);
+
+  // Crossing +179 -> -179 clockwise is +2 deg, NOT -358 deg
+  assert.equal(unwrapPointerAngleDelta(179, -179), 2);
+  // Crossing -179 -> +179 counter-clockwise is -2 deg, NOT +358 deg
+  assert.equal(unwrapPointerAngleDelta(-179, 179), -2);
+});
+
+runTest('Steering wheel maps clockwise/right and counter-clockwise/left proportionally with deadzone', () => {
+  assert.equal(mapWheelAngleToSteerAxis(0), 0);
+  assert.equal(mapWheelAngleToSteerAxis(1.5), 0);
+  assert.equal(mapWheelAngleToSteerAxis(-1.5), 0);
+
+  // Clockwise (+deg) -> right turn => negative steerAxis in WorldCanvas convention
+  const fullRightAxis = mapWheelAngleToSteerAxis(MAX_STEERING_WHEEL_DEG);
+  assert.equal(fullRightAxis, -1);
+
+  // Counter-clockwise (-deg) -> left turn => positive steerAxis in WorldCanvas convention
+  const fullLeftAxis = mapWheelAngleToSteerAxis(-MAX_STEERING_WHEEL_DEG);
+  assert.equal(fullLeftAxis, 1);
+
+  const halfRightAxis = mapWheelAngleToSteerAxis(MAX_STEERING_WHEEL_DEG * 0.5);
+  assert.ok(halfRightAxis < -0.35 && halfRightAxis > -0.65, `Expected proportional half-right axis, got ${halfRightAxis}`);
+
+  const coupe = VEHICLE_SPEC_PROFILES.SPORTS_COUPE;
+  const fullSteer = computeTargetSteerAngle({
+    steerInput: fullLeftAxis,
+    maxSteer: coupe.maxSteer,
+    speed: 5,
+    effectiveMaxSpeed: 48,
+  });
+  const halfSteer = computeTargetSteerAngle({
+    steerInput: -halfRightAxis,
+    maxSteer: coupe.maxSteer,
+    speed: 5,
+    effectiveMaxSpeed: 48,
+  });
+  assert.ok(halfSteer > 0 && halfSteer < fullSteer, 'Analog steering wheel produces proportional wheel angle');
+});
+
+runTest('Released steering wheel returns smoothly toward center without overshoot', () => {
+  let deg = 120;
+  for (let i = 0; i < 40; i++) {
+    const next = stepVisualWheelReturn(deg, 0.033);
+    assert.ok(next >= 0 && next <= deg, `Expected monotonic return toward 0: prev=${deg}, next=${next}`);
+    deg = next;
+  }
+  assert.equal(deg, 0, 'Wheel should settle cleanly back to 0 deg');
+});
+
+runTest('SteeringWheelControl and MobileTouchControls replace arrow buttons cleanly without Toyota/GR marks', () => {
+  const touchControlsSrc = fs.readFileSync(
+    path.resolve('src/components/world/MobileTouchControls.tsx'),
+    'utf8'
+  );
+  const wheelSrc = fs.readFileSync(
+    path.resolve('src/components/world/SteeringWheelControl.tsx'),
+    'utf8'
+  );
+
+  assert.equal(touchControlsSrc.includes('◀'), false, 'Old left arrow button should be removed');
+  assert.equal(touchControlsSrc.includes('▶'), false, 'Old right arrow button should be removed');
+  assert.equal(touchControlsSrc.includes('SteeringWheelControl'), true, 'MobileTouchControls must render SteeringWheelControl');
+
+  assert.equal(/toyota/i.test(wheelSrc), false, 'SteeringWheelControl must not contain Toyota branding');
+  assert.equal(/\bgr\b/i.test(wheelSrc), false, 'SteeringWheelControl must not contain GR branding');
+  assert.equal(wheelSrc.includes('e.stopPropagation()'), true, 'Center horn must isolate pointer events from wheel drag');
+  assert.equal(wheelSrc.includes('MANIFOLD'), true, 'Steering wheel should display MANIFOLD identity');
+});
+
+runTest('PWA icons, favicon, offline page, and secure Workbox rules are configured', () => {
+  const requiredAssets = [
+    'public/favicon.ico',
+    'public/apple-touch-icon.png',
+    'public/offline.html',
+    'public/icons/icon-16.png',
+    'public/icons/icon-32.png',
+    'public/icons/icon-48.png',
+    'public/icons/icon-192.png',
+    'public/icons/icon-512.png',
+    'public/icons/maskable-icon-192.png',
+    'public/icons/maskable-icon-512.png',
+  ];
+
+  for (const rel of requiredAssets) {
+    const abs = path.resolve(rel);
+    assert.equal(fs.existsSync(abs), true, `Missing required PWA asset: ${rel}`);
+    assert.ok(fs.statSync(abs).size > 0, `PWA asset must not be empty: ${rel}`);
+  }
+
+  const viteCfg = fs.readFileSync(path.resolve('vite.config.ts'), 'utf8');
+  assert.equal(viteCfg.includes('VitePWA'), true);
+  assert.equal(viteCfg.includes("display: 'standalone'"), true);
+  assert.equal(viteCfg.includes("purpose: 'maskable'"), true);
+  assert.equal(viteCfg.includes("handler: 'NetworkOnly'"), true, 'Private APIs & Supabase must stay NetworkOnly');
+  assert.equal(viteCfg.includes('supabase'), true);
+
+  const indexHtml = fs.readFileSync(path.resolve('index.html'), 'utf8');
+  assert.equal(indexHtml.includes('/favicon.ico'), true);
+  assert.equal(indexHtml.includes('/apple-touch-icon.png'), true);
+  assert.equal(indexHtml.includes('name="theme-color"'), true);
+});
+
+console.log(`ALL ${passed} STEERING & PWA TESTS PASSED`);

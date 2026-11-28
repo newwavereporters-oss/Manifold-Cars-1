@@ -27,6 +27,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { resolveDealerApprovalState } from '../../services/dealerOnboardingService';
+import { ManifoldBrandMark } from '../ManifoldBrandMark';
 
 interface DealerLayoutProps {
   children: React.ReactNode;
@@ -98,7 +99,8 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
           <div className="flex items-center gap-4">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 text-gray-300 hover:text-white rounded-lg hover:bg-white/5"
+              className="lg:hidden min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-300 hover:text-white rounded-lg hover:bg-white/5"
+              aria-label="Toggle dealer menu"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -107,6 +109,7 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
               onClick={() => navigate('/dealer/dashboard')}
               className="cursor-pointer flex items-center gap-2 group"
             >
+              <ManifoldBrandMark size="xs" />
               <div className="flex items-center gap-1.5">
                 <span className="text-xl font-extrabold tracking-tight text-white font-display">
                   MANIFOLD
@@ -322,15 +325,19 @@ export const DealerLayout: React.FC<DealerLayoutProps> = ({
             />
             <div className="fixed inset-y-0 left-0 w-72 bg-white shadow-2xl p-4 flex flex-col z-50">
               <div className="flex items-center justify-between pb-4 border-b border-gray-100 mb-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-lg font-extrabold tracking-tight text-[#071A2B] font-display">
-                    MANIFOLD
-                  </span>
-                  <span className="w-2 h-2 rounded-full bg-[#EF233C]" />
+                <div className="flex items-center gap-2">
+                  <ManifoldBrandMark size="xs" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-lg font-extrabold tracking-tight text-[#071A2B] font-display">
+                      MANIFOLD
+                    </span>
+                    <span className="w-2 h-2 rounded-full bg-[#EF233C]" />
+                  </div>
                 </div>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
-                  className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                  className="min-w-[40px] min-h-[40px] flex items-center justify-center text-gray-400 hover:text-gray-600 rounded-lg"
+                  aria-label="Close dealer menu"
                 >
                   <X className="w-5 h-5" />
                 </button>

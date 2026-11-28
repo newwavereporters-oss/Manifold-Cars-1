@@ -517,7 +517,7 @@ export const CarDetailPage: React.FC<CarDetailPageProps> = ({
                   <button
                     type="button"
                     onClick={() => navigate(`/dealers/${dealerPermalinkSlug}`)}
-                    className="inline-flex items-center gap-1 font-bold text-white underline decoration-[#EF233C]/70 hover:text-[#EF233C] transition cursor-pointer"
+                    className="inline-flex items-center gap-1 font-bold text-white underline decoration-[#EF233C]/70 hover:text-[#EF233C] transition cursor-pointer whitespace-normal text-left"
                   >
                     <span>{car.dealer.name}</span>
                     <ExternalLink className="w-3 h-3 shrink-0" />

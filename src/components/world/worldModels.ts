@@ -750,13 +750,14 @@ export function createWorldEnvironment(): {
  * then smoothly eases at high highway speeds to prevent twitchy oversteer.
  */
 export function computeTargetSteerAngle(params: {
-  steerInput: -1 | 0 | 1;
+  steerInput: number;
   maxSteer: number;
   speed: number;
   effectiveMaxSpeed: number;
 }): number {
   const { steerInput, maxSteer, speed, effectiveMaxSpeed } = params;
-  if (steerInput === 0) return 0;
+  const clampedInput = Math.max(-1, Math.min(1, Number.isFinite(steerInput) ? steerInput : 0));
+  if (Math.abs(clampedInput) < 1e-4) return 0;
 
   const absSpeed = Math.abs(speed);
   const fullLockThreshold = Math.max(6, effectiveMaxSpeed * 0.25);
@@ -770,7 +771,7 @@ export function computeTargetSteerAngle(params: {
     speedSteerFactor = 1.0 - smoothT * 0.56;
   }
 
-  return steerInput * maxSteer * speedSteerFactor;
+  return clampedInput * maxSteer * speedSteerFactor;
 }
 
 /**

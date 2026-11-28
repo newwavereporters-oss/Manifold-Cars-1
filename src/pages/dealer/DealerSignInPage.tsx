@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Lock, Mail, ArrowRight, AlertCircle, Loader2, ShieldCheck, ArrowLeft, ShieldAlert, LogOut, Gamepad2 } from 'lucide-react';
 import { useDealerAuth } from '../../context/DealerAuthContext';
 import { useRole } from '../../context/RoleContext';
+import { ManifoldBrandMark } from '../../components/ManifoldBrandMark';
 
 interface DealerSignInPageProps {
   navigate: (route: string) => void;
@@ -82,6 +83,7 @@ export const DealerSignInPage: React.FC<DealerSignInPageProps> = ({ navigate }) 
           onClick={() => navigate('/car-marketplace')}
           className="cursor-pointer inline-flex flex-col items-center group mb-4"
         >
+          <ManifoldBrandMark size="lg" className="mb-2.5" />
           <div className="flex items-center gap-1.5">
             <span className="text-3xl font-extrabold tracking-tight text-white font-display">
               MANIFOLD

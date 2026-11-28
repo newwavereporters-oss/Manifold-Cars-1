@@ -2,6 +2,7 @@ import React from 'react';
 import { Youtube, Instagram, Facebook, Twitter, Phone, Mail, MapPin } from 'lucide-react';
 import footerCityscapeBg from '../assets/images/Cinematic Luxury SUV Cityscape at Sunset.png';
 import { useRole } from '../context/RoleContext';
+import { ManifoldBrandMark } from './ManifoldBrandMark';
 
 interface FooterProps {
   navigate: (route: string) => void;
@@ -51,17 +52,20 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
           <div className="lg:col-span-2 space-y-4">
             <div
               onClick={() => handleNav('/car-marketplace')}
-              className="cursor-pointer inline-flex flex-col group"
+              className="cursor-pointer inline-flex items-center gap-2.5 group"
             >
-              <div className="flex items-center gap-1.5">
-                <span className="text-2xl font-extrabold tracking-tight text-white font-display">
-                  MANIFOLD
+              <ManifoldBrandMark size="md" />
+              <div className="flex flex-col">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-2xl font-extrabold tracking-tight text-white font-display">
+                    MANIFOLD
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-[#EF233C]" />
+                </div>
+                <span className="text-[9px] font-medium tracking-[0.25em] text-gray-400 uppercase">
+                  FIND · VERIFY · DRIVE
                 </span>
-                <span className="w-2 h-2 rounded-full bg-[#EF233C]" />
               </div>
-              <span className="text-[9px] font-medium tracking-[0.25em] text-gray-400 uppercase">
-                FIND · VERIFY · DRIVE
-              </span>
             </div>
 
             <p className="text-sm text-gray-400 max-w-sm leading-relaxed">
@@ -290,9 +294,9 @@ export const Footer: React.FC<FooterProps> = ({ navigate, onFilterBrand, onOpenA
         </div>
 
         {/* Bottom Bar */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-gray-400 gap-4">
+        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-gray-400 gap-4 text-center sm:text-left">
           <p>© 2026 MANIFOLD. All rights reserved. Nigeria's Automotive Concierge.</p>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-x-5 gap-y-2">
             <button
               onClick={() => handleNav('/about')}
               className="hover:text-white transition-colors"
