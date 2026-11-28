@@ -3,6 +3,7 @@ import { CameraViewMode } from './WorldCanvas';
 import { TransmissionGear, TRANSMISSION_GEAR_ORDER } from './worldModels';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
 import { SteeringWheelControl } from './SteeringWheelControl';
+import { unifiedDrivingInput } from './unifiedDrivingInput';
 
 type PedalControlKey = 'forward' | 'backward';
 
@@ -70,28 +71,32 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
     forward: new Set(),
     backward: new Set(),
   });
-  const steerAxisRef = useRef<number>(0);
   const activeKeysRef = useRef<VirtualDrivingInput>({ ...EMPTY_INPUT });
 
   const emitSnapshot = useCallback(() => {
-    const steerAxis = steerAxisRef.current;
-    const next: VirtualDrivingInput = {
-      forward: activePointersRef.current.forward.size > 0,
-      backward: activePointersRef.current.backward.size > 0,
-      left: steerAxis > 0.08,
-      right: steerAxis < -0.08,
+    const forward = activePointersRef.current.forward.size > 0;
+    const backward = activePointersRef.current.backward.size > 0;
+
+    unifiedDrivingInput.setAllPedals({
+      forward,
+      backward,
       handbrake: false,
-      steerAxis,
+    });
+
+    const next: VirtualDrivingInput = {
+      forward,
+      backward,
+      left: false,
+      right: false,
+      handbrake: false,
+      steerAxis: 0,
     };
 
     const prev = activeKeysRef.current;
     if (
       prev.forward === next.forward &&
       prev.backward === next.backward &&
-      prev.left === next.left &&
-      prev.right === next.right &&
-      prev.handbrake === next.handbrake &&
-      Math.abs((prev.steerAxis ?? 0) - (next.steerAxis ?? 0)) < 0.002
+      prev.handbrake === next.handbrake
     ) {
       return;
     }
@@ -103,16 +108,13 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
     (Object.keys(activePointersRef.current) as PedalControlKey[]).forEach((k) => {
       activePointersRef.current[k].clear();
     });
-    steerAxisRef.current = 0;
+    unifiedDrivingInput.setAllPedals({
+      forward: false,
+      backward: false,
+      handbrake: false,
+    });
     const prev = activeKeysRef.current;
-    if (
-      prev.forward ||
-      prev.backward ||
-      prev.left ||
-      prev.right ||
-      prev.handbrake ||
-      Math.abs(prev.steerAxis ?? 0) > 0
-    ) {
+    if (prev.forward || prev.backward || prev.handbrake) {
       activeKeysRef.current = { ...EMPTY_INPUT };
       onVirtualInputRef.current({ ...EMPTY_INPUT });
     }
@@ -151,14 +153,6 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
   useEffect(() => {
     releaseAllControls();
   }, [cameraMode, disabled, releaseAllControls]);
-
-  const handleSteeringAxisChange = useCallback(
-    (axis: number) => {
-      steerAxisRef.current = axis;
-      emitSnapshot();
-    },
-    [emitSnapshot]
-  );
 
   const triggerHaptic = (duration = 14) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
@@ -235,7 +229,6 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
           onPointerDown={(e) => e.stopPropagation()}
         >
           <SteeringWheelControl
-            onSteerAxisChange={handleSteeringAxisChange}
             hornActive={hornActive}
             onHornDown={onHornDown}
             onHornUp={onHornUp}

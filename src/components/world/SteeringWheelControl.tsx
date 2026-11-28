@@ -4,17 +4,16 @@ import { engineAudio } from '../../utils/engineAudio';
 import {
   MAX_STEERING_WHEEL_DEG,
   clampSteeringWheelDeg,
-  mapWheelAngleToSteerAxis,
-  stepVisualWheelReturn,
   unwrapPointerAngleDelta,
 } from './steeringWheelMath';
+import { unifiedDrivingInput } from './unifiedDrivingInput';
 
 export interface SteeringWheelControlProps {
-  onSteerAxisChange: (axis: number) => void;
+  onSteerAxisChange?: (axis: number) => void;
   hornActive?: boolean;
   onHornDown?: () => void;
   onHornUp?: () => void;
-  /** Optional keyboard steer indicator (-1 right, 0 center, +1 left) reflected visually when not dragging */
+  /** Optional external steer override (-1 right, 0 center, +1 left) */
   externalSteerHint?: number;
   disabled?: boolean;
   sizeClassName?: string;
@@ -31,9 +30,10 @@ export const SteeringWheelControl: React.FC<SteeringWheelControlProps> = ({
 }) => {
   const wheelContainerRef = useRef<HTMLDivElement | null>(null);
   const activeDragPointerIdRef = useRef<number | null>(null);
+  const activeDragPointerTypeRef = useRef<string | null>(null);
   const activeHornPointerIdRef = useRef<number | null>(null);
-  const lastRawPointerDegRef = useRef<number>(0);
-  const wheelAngleRef = useRef<number>(0);
+  const lastRawPointerDegRef = useRef<number | null>(null);
+  const lastClientXRef = useRef<number>(0);
   const lastEmittedAxisRef = useRef<number>(0);
 
   const onSteerAxisChangeRef = useRef(onSteerAxisChange);
@@ -42,83 +42,178 @@ export const SteeringWheelControl: React.FC<SteeringWheelControlProps> = ({
   const onHornUpRef = useRef(onHornUp);
   onHornUpRef.current = onHornUp;
 
-  const [displayAngleDeg, setDisplayAngleDeg] = useState<number>(0);
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [keyboardSteerHint, setKeyboardSteerHint] = useState<number>(0);
+  const initialSnap = unifiedDrivingInput.getSnapshot();
+  const [displayAngleDeg, setDisplayAngleDeg] = useState<number>(initialSnap.wheelAngleDeg);
+  const [isDragging, setIsDragging] = useState<boolean>(initialSnap.isWheelDragging);
 
-  useEffect(() => {
-    if (disabled) {
-      setKeyboardSteerHint(0);
-      return;
-    }
-    const pressed = new Set<string>();
-    const syncHint = () => {
-      const left = pressed.has('a') || pressed.has('arrowleft');
-      const right = pressed.has('d') || pressed.has('arrowright');
-      setKeyboardSteerHint(left && !right ? 1 : right && !left ? -1 : 0);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
-      ) {
-        return;
+  const computePointerDegFromCenter = useCallback(
+    (clientX: number, clientY: number): { rawDeg: number | null; dist: number } => {
+      const el = wheelContainerRef.current;
+      if (!el) return { rawDeg: null, dist: 0 };
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = clientX - cx;
+      const dy = clientY - cy;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 14) {
+        return { rawDeg: null, dist };
       }
-      const k = e.key.toLowerCase();
-      if (k === 'a' || k === 'd' || k === 'arrowleft' || k === 'arrowright') {
-        pressed.add(k);
-        syncHint();
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (pressed.delete(k)) syncHint();
-    };
-    const onBlur = () => {
-      pressed.clear();
-      setKeyboardSteerHint(0);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', onBlur);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('blur', onBlur);
-    };
-  }, [disabled]);
+      return {
+        rawDeg: (Math.atan2(dy, dx) * 180) / Math.PI,
+        dist,
+      };
+    },
+    []
+  );
 
-  const effectiveVisualHint = externalSteerHint !== 0 ? externalSteerHint : keyboardSteerHint;
+  const finishWheelDrag = useCallback((pointerId?: number) => {
+    if (activeDragPointerIdRef.current === null) return;
+    if (pointerId !== undefined && activeDragPointerIdRef.current !== pointerId) return;
 
-  const emitSteerAxis = useCallback((deg: number) => {
-    const axis = mapWheelAngleToSteerAxis(deg, MAX_STEERING_WHEEL_DEG);
-    if (Math.abs(axis - lastEmittedAxisRef.current) > 0.002 || (axis === 0 && lastEmittedAxisRef.current !== 0)) {
-      lastEmittedAxisRef.current = axis;
-      onSteerAxisChangeRef.current(axis);
+    const pid = activeDragPointerIdRef.current;
+    const el = wheelContainerRef.current;
+    if (el) {
+      try {
+        if (el.hasPointerCapture(pid)) {
+          el.releasePointerCapture(pid);
+        }
+      } catch {}
     }
+
+    activeDragPointerIdRef.current = null;
+    activeDragPointerTypeRef.current = null;
+    lastRawPointerDegRef.current = null;
+    unifiedDrivingInput.endWheelDrag(pid);
   }, []);
 
   const resetWheelAndHorn = useCallback(() => {
-    activeDragPointerIdRef.current = null;
-    setIsDragging(false);
-    if (lastEmittedAxisRef.current !== 0) {
-      lastEmittedAxisRef.current = 0;
-      onSteerAxisChangeRef.current(0);
-    }
+    finishWheelDrag();
     if (activeHornPointerIdRef.current !== null) {
       activeHornPointerIdRef.current = null;
       onHornUpRef.current?.();
     }
+  }, [finishWheelDrag]);
+
+  // Subscribe to single unified driving state so wheel visual & physics never diverge
+  useEffect(() => {
+    const applySnapshot = (snap: ReturnType<typeof unifiedDrivingInput.getSnapshot>) => {
+      setDisplayAngleDeg((prev) =>
+        Math.abs(prev - snap.wheelAngleDeg) > 0.02 || (snap.wheelAngleDeg === 0 && prev !== 0)
+          ? snap.wheelAngleDeg
+          : prev
+      );
+      setIsDragging((prev) => (prev !== snap.isWheelDragging ? snap.isWheelDragging : prev));
+
+      if (
+        Math.abs(snap.steerAxis - lastEmittedAxisRef.current) > 0.002 ||
+        (snap.steerAxis === 0 && lastEmittedAxisRef.current !== 0)
+      ) {
+        lastEmittedAxisRef.current = snap.steerAxis;
+        onSteerAxisChangeRef.current?.(snap.steerAxis);
+      }
+    };
+
+    applySnapshot(unifiedDrivingInput.getSnapshot());
+    return unifiedDrivingInput.subscribe(applySnapshot);
   }, []);
+
+  // Optional external steer hint sync (only when caller explicitly drives externalSteerHint)
+  useEffect(() => {
+    if (disabled || externalSteerHint === 0) return;
+    const snap = unifiedDrivingInput.getSnapshot();
+    if (!snap.isWheelDragging && !snap.keyboard.left && !snap.keyboard.right) {
+      const targetDeg = clampSteeringWheelDeg(-externalSteerHint * MAX_STEERING_WHEEL_DEG);
+      setDisplayAngleDeg(targetDeg);
+    }
+  }, [disabled, externalSteerHint]);
+
+  // Fallback RAF stepper strictly when WorldCanvas animation loop is not stepping
+  useEffect(() => {
+    if (disabled) return;
+    let rafId = 0;
+    let lastTs = performance.now();
+
+    const tick = (now: number) => {
+      const dt = Math.max(0.001, Math.min(0.05, (now - lastTs) / 1000));
+      lastTs = now;
+
+      if (!unifiedDrivingInput.hasRecentExternalStep(now)) {
+        const snap = unifiedDrivingInput.getSnapshot();
+        const needsStep =
+          !snap.isWheelDragging &&
+          (Math.abs(snap.wheelAngleDeg) > 0.01 || snap.keyboard.left || snap.keyboard.right);
+        if (needsStep) {
+          unifiedDrivingInput.step(dt, false);
+        }
+      }
+      rafId = window.requestAnimationFrame(tick);
+    };
+
+    rafId = window.requestAnimationFrame(tick);
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+    };
+  }, [disabled]);
+
+  // Window-level pointer move/end listeners guarantee smooth desktop mouse dragging even outside wheel bounds
+  useEffect(() => {
+    if (disabled) return;
+
+    const handleWindowPointerMove = (e: PointerEvent) => {
+      if (activeDragPointerIdRef.current !== e.pointerId) return;
+
+      // Safety check: if mouse button was released outside viewport without pointerup, finish drag cleanly
+      if (e.pointerType === 'mouse' && (e.buttons & 1) === 0) {
+        finishWheelDrag(e.pointerId);
+        return;
+      }
+
+      if (e.cancelable) e.preventDefault();
+
+      const { rawDeg } = computePointerDegFromCenter(e.clientX, e.clientY);
+      const horizontalDelta = (e.clientX - lastClientXRef.current) * 1.1;
+      lastClientXRef.current = e.clientX;
+
+      let deltaDeg = 0;
+      if (rawDeg !== null) {
+        if (lastRawPointerDegRef.current !== null) {
+          deltaDeg = unwrapPointerAngleDelta(lastRawPointerDegRef.current, rawDeg);
+        } else {
+          // Smooth transition when emerging from inner center zone without 180-degree snap
+          deltaDeg = horizontalDelta;
+        }
+        lastRawPointerDegRef.current = rawDeg;
+      } else {
+        // Inside inner center radius: fall back smoothly to horizontal delta without losing drag
+        lastRawPointerDegRef.current = null;
+        deltaDeg = horizontalDelta;
+      }
+
+      const currentDeg = unifiedDrivingInput.getSnapshot().wheelAngleDeg;
+      const nextAngle = clampSteeringWheelDeg(currentDeg + deltaDeg, MAX_STEERING_WHEEL_DEG);
+      unifiedDrivingInput.updateWheelDragAngle(nextAngle, e.pointerId);
+    };
+
+    const handleWindowPointerUp = (e: PointerEvent) => {
+      if (activeDragPointerIdRef.current === e.pointerId) {
+        finishWheelDrag(e.pointerId);
+      }
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove, { passive: false });
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerUp);
+    };
+  }, [disabled, computePointerDegFromCenter, finishWheelDrag]);
 
   useEffect(() => {
     if (disabled) {
-      wheelAngleRef.current = 0;
-      setDisplayAngleDeg(0);
       resetWheelAndHorn();
     }
   }, [disabled, resetWheelAndHorn]);
@@ -136,63 +231,6 @@ export const SteeringWheelControl: React.FC<SteeringWheelControlProps> = ({
     };
   }, [resetWheelAndHorn]);
 
-  // Smooth spring-like return toward center (or keyboard feedback tilt) when user is not dragging
-  useEffect(() => {
-    if (isDragging || disabled) return;
-
-    const keyboardTargetDeg =
-      Math.abs(effectiveVisualHint) > 0.05
-        ? clampSteeringWheelDeg(-effectiveVisualHint * 92, MAX_STEERING_WHEEL_DEG)
-        : 0;
-
-    if (Math.abs(wheelAngleRef.current - keyboardTargetDeg) < 0.25) {
-      if (wheelAngleRef.current !== keyboardTargetDeg) {
-        wheelAngleRef.current = keyboardTargetDeg;
-        setDisplayAngleDeg(keyboardTargetDeg);
-      }
-      return;
-    }
-
-    let rafId = 0;
-    let lastTs = performance.now();
-
-    const tick = (now: number) => {
-      const dt = Math.max(0.001, Math.min(0.05, (now - lastTs) / 1000));
-      lastTs = now;
-
-      if (keyboardTargetDeg === 0) {
-        wheelAngleRef.current = stepVisualWheelReturn(wheelAngleRef.current, dt);
-      } else {
-        const alpha = 1 - Math.exp(-10 * dt);
-        const next = wheelAngleRef.current + (keyboardTargetDeg - wheelAngleRef.current) * alpha;
-        wheelAngleRef.current = Math.abs(next - keyboardTargetDeg) < 0.25 ? keyboardTargetDeg : next;
-      }
-
-      setDisplayAngleDeg(wheelAngleRef.current);
-
-      if (Math.abs(wheelAngleRef.current - keyboardTargetDeg) >= 0.25) {
-        rafId = window.requestAnimationFrame(tick);
-      }
-    };
-
-    rafId = window.requestAnimationFrame(tick);
-    return () => {
-      if (rafId) window.cancelAnimationFrame(rafId);
-    };
-  }, [isDragging, disabled, effectiveVisualHint]);
-
-  const computePointerDegFromCenter = (clientX: number, clientY: number): number | null => {
-    const el = wheelContainerRef.current;
-    if (!el) return null;
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = clientX - cx;
-    const dy = clientY - cy;
-    if (Math.hypot(dx, dy) < 10) return null;
-    return (Math.atan2(dy, dx) * 180) / Math.PI;
-  };
-
   const triggerHaptic = (ms = 12) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       try {
@@ -203,64 +241,37 @@ export const SteeringWheelControl: React.FC<SteeringWheelControlProps> = ({
 
   const handleWheelPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (disabled) return;
-    if (activeDragPointerIdRef.current !== null) return;
-    const rawDeg = computePointerDegFromCenter(e.clientX, e.clientY);
-    if (rawDeg === null) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    // For mouse, replace any stale drag ID so desktop mouse drag never locks up; for touch, track single wheel finger
+    if (activeDragPointerIdRef.current !== null && e.pointerType !== 'mouse') {
+      return;
+    }
 
     e.preventDefault();
     e.stopPropagation();
 
+    const { rawDeg } = computePointerDegFromCenter(e.clientX, e.clientY);
     activeDragPointerIdRef.current = e.pointerId;
+    activeDragPointerTypeRef.current = e.pointerType;
+    lastClientXRef.current = e.clientX;
     lastRawPointerDegRef.current = rawDeg;
-    setIsDragging(true);
+
+    unifiedDrivingInput.beginWheelDrag(e.pointerId, e.pointerType);
     engineAudio.init();
     triggerHaptic(10);
 
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {}
-  };
-
-  const handleWheelPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (disabled || activeDragPointerIdRef.current !== e.pointerId) return;
-    const rawDeg = computePointerDegFromCenter(e.clientX, e.clientY);
-    if (rawDeg === null) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    const delta = unwrapPointerAngleDelta(lastRawPointerDegRef.current, rawDeg);
-    lastRawPointerDegRef.current = rawDeg;
-
-    const nextAngle = clampSteeringWheelDeg(
-      wheelAngleRef.current + delta,
-      MAX_STEERING_WHEEL_DEG
-    );
-    wheelAngleRef.current = nextAngle;
-    setDisplayAngleDeg(nextAngle);
-    emitSteerAxis(nextAngle);
-  };
-
-  const endWheelDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activeDragPointerIdRef.current !== e.pointerId) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    try {
-      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      }
-    } catch {}
-
-    activeDragPointerIdRef.current = null;
-    setIsDragging(false);
-    // Release steering output immediately so Three.js physics smoothly self-centers without lag
-    lastEmittedAxisRef.current = 0;
-    onSteerAxisChangeRef.current(0);
+    // Use pointer capture on touch for multi-touch pedal isolation; desktop mouse uses window listeners directly
+    if (e.pointerType !== 'mouse') {
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {}
+    }
   };
 
   const handleHornPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (disabled) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     activeHornPointerIdRef.current = e.pointerId;
@@ -316,12 +327,9 @@ export const SteeringWheelControl: React.FC<SteeringWheelControlProps> = ({
       <div
         ref={wheelContainerRef}
         onPointerDown={handleWheelPointerDown}
-        onPointerMove={handleWheelPointerMove}
-        onPointerUp={endWheelDrag}
-        onPointerCancel={endWheelDrag}
-        onLostPointerCapture={endWheelDrag}
         onTouchStart={(e) => e.stopPropagation()}
         onContextMenu={(e) => e.preventDefault()}
+        data-dragging={isDragging ? 'true' : 'false'}
         role="slider"
         aria-label="Steering Wheel"
         aria-valuemin={-MAX_STEERING_WHEEL_DEG}

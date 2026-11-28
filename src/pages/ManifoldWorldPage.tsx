@@ -248,6 +248,7 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
   const [isDealerLoungeOpen, setIsDealerLoungeOpen] = useState(false);
   const [isCityMapOpen, setIsCityMapOpen] = useState(false);
   const [isMissionDrawerOpen, setIsMissionDrawerOpen] = useState(false);
+  const [isHudOverlayOpen, setIsHudOverlayOpen] = useState(false);
   const [inspectingCar, setInspectingCar] = useState<Car | null>(null);
   const [resetVehicleTrigger, setResetVehicleTrigger] = useState<number>(0);
 
@@ -1424,56 +1425,81 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
       )}
 
       {/* 3D WebGL Canvas Layer (Full driving inside GAME; desktop aerial preview before onboarding) */}
-      {shouldRenderWorldCanvas && (
-        <WorldCanvas
-          key={worldRetryKey}
-          customization={customization}
-          cameraMode={cameraMode}
-          timeOfDay={timeOfDay}
-          qualityMode={qualityMode}
-          isCityMapOpen={isCityMapOpen}
-          presentationMode={worldStage !== 'GAME'}
-          remotePlayers={worldStage === 'GAME' ? remotePlayers : []}
-          onProjectedRemotePlayers={worldStage === 'GAME' ? handleProjectedPlayers : undefined}
-          onZoneChange={(zone) => setActiveZone(zone)}
-          onSpeedChange={(speed, revs, g) => {
-            setSpeedKmh(speed);
-            setRpm(revs);
-            setGear(g);
-          }}
-          onSpeedTrapTrigger={handleSpeedTrap}
-          onInspectCar={handleInspectShowroomCar}
-          onEnterMarketplace={() => setIsMarketplaceModalOpen(true)}
-          onOpenCustomizer={() => setIsCustomizerOpen(true)}
-          onOpenDealerLounge={() => setIsDealerLoungeOpen(true)}
-          onCarPositionUpdate={handleCarPositionUpdate}
-          onMotionSample={handleMotionSample}
-          onInitStageChange={setInitStage}
-          onContextLost={setWebglContextLost}
-          isCustomizerOpen={isCustomizerOpen}
-          virtualInput={virtualInputState}
-          isEngineRunning={isEngineRunning}
-          driveMode={driveMode}
-          selectedGear={selectedGear}
-          onSelectGear={setSelectedGear}
-          headlightState={headlightState}
-          turnSignal={turnSignal}
-          hazardLights={hazardLights}
-          hornActive={hornActive}
-          onAwardCredits={handleAwardCredits}
-          activeDestination={activeDestination}
-          activeMissionTarget={activeMissionTarget}
-          activeMissionSession={missionSession}
-          onMissionUpdate={handleMissionUpdate}
-          onRaceCheckpointPassed={handleRaceCheckpointPassed}
-          onTrafficPositionsUpdate={setTrafficPositions}
-          onRivalPositionsUpdate={setRivalPositions}
-          resetVehicleTrigger={resetVehicleTrigger}
-          coastalRaceCommand={coastalRaceCommand}
-          onCoastalRaceUpdate={setCoastalRaceState}
-          onStartCoastalRace={() => void handleStartCoastalRace()}
-        />
-      )}
+      {shouldRenderWorldCanvas && (() => {
+        const isMissionOverlayOpen = Boolean(
+          missionSession &&
+            missionSession.state !== 'ACTIVE' &&
+            missionSession.state !== 'COUNTDOWN'
+        );
+        const isDrivingBlocked = Boolean(
+          worldStage !== 'GAME' ||
+            initStage.progress < 100 ||
+            webglContextLost ||
+            isHudOverlayOpen ||
+            isCustomizerOpen ||
+            isMarketplaceModalOpen ||
+            isDealerLoungeOpen ||
+            isCityMapOpen ||
+            isMissionDrawerOpen ||
+            isMusicLibraryOpen ||
+            inspectingCar ||
+            isNearbyPanelOpen ||
+            isBlockedPanelOpen ||
+            isMissionOverlayOpen ||
+            coastalRaceState?.phase === 'FINISHED'
+        );
+        return (
+          <WorldCanvas
+            key={worldRetryKey}
+            customization={customization}
+            cameraMode={cameraMode}
+            timeOfDay={timeOfDay}
+            qualityMode={qualityMode}
+            isCityMapOpen={isCityMapOpen}
+            presentationMode={worldStage !== 'GAME'}
+            drivingDisabled={isDrivingBlocked}
+            remotePlayers={worldStage === 'GAME' ? remotePlayers : []}
+            onProjectedRemotePlayers={worldStage === 'GAME' ? handleProjectedPlayers : undefined}
+            onZoneChange={(zone) => setActiveZone(zone)}
+            onSpeedChange={(speed, revs, g) => {
+              setSpeedKmh(speed);
+              setRpm(revs);
+              setGear(g);
+            }}
+            onSpeedTrapTrigger={handleSpeedTrap}
+            onInspectCar={handleInspectShowroomCar}
+            onEnterMarketplace={() => setIsMarketplaceModalOpen(true)}
+            onOpenCustomizer={() => setIsCustomizerOpen(true)}
+            onOpenDealerLounge={() => setIsDealerLoungeOpen(true)}
+            onCarPositionUpdate={handleCarPositionUpdate}
+            onMotionSample={handleMotionSample}
+            onInitStageChange={setInitStage}
+            onContextLost={setWebglContextLost}
+            isCustomizerOpen={isCustomizerOpen}
+            virtualInput={virtualInputState}
+            isEngineRunning={isEngineRunning}
+            driveMode={driveMode}
+            selectedGear={selectedGear}
+            onSelectGear={setSelectedGear}
+            headlightState={headlightState}
+            turnSignal={turnSignal}
+            hazardLights={hazardLights}
+            hornActive={hornActive}
+            onAwardCredits={handleAwardCredits}
+            activeDestination={activeDestination}
+            activeMissionTarget={activeMissionTarget}
+            activeMissionSession={missionSession}
+            onMissionUpdate={handleMissionUpdate}
+            onRaceCheckpointPassed={handleRaceCheckpointPassed}
+            onTrafficPositionsUpdate={setTrafficPositions}
+            onRivalPositionsUpdate={setRivalPositions}
+            resetVehicleTrigger={resetVehicleTrigger}
+            coastalRaceCommand={coastalRaceCommand}
+            onCoastalRaceUpdate={setCoastalRaceState}
+            onStartCoastalRace={() => void handleStartCoastalRace()}
+          />
+        );
+      })()}
 
       {/* Staged 3D Engine Loader / WebGL Context Recovery inside GAME */}
       {worldStage === 'GAME' && (initStage.progress < 100 || webglContextLost) && (
@@ -1740,6 +1766,24 @@ export const ManifoldWorldPage: React.FC<ManifoldWorldPageProps> = ({
             coastalRaceState={coastalRaceState}
             onStartCoastalRace={() => void handleStartCoastalRace()}
             onExitCoastalRace={handleExitCoastalRace}
+            onOverlayOpenChange={setIsHudOverlayOpen}
+            drivingDisabled={Boolean(
+              initStage.progress < 100 ||
+                webglContextLost ||
+                isCustomizerOpen ||
+                isMarketplaceModalOpen ||
+                isDealerLoungeOpen ||
+                isCityMapOpen ||
+                isMissionDrawerOpen ||
+                isMusicLibraryOpen ||
+                inspectingCar ||
+                isNearbyPanelOpen ||
+                isBlockedPanelOpen ||
+                (missionSession &&
+                  missionSession.state !== 'ACTIVE' &&
+                  missionSession.state !== 'COUNTDOWN') ||
+                coastalRaceState?.phase === 'FINISHED'
+            )}
           />
 
           <MissionHUDOverlay

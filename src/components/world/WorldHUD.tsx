@@ -132,6 +132,8 @@ interface WorldHUDProps {
   coastalRaceState?: CoastalRaceState | null;
   onStartCoastalRace?: () => void;
   onExitCoastalRace?: () => void;
+  drivingDisabled?: boolean;
+  onOverlayOpenChange?: (open: boolean) => void;
 }
 
 export const WorldHUD: React.FC<WorldHUDProps> = ({
@@ -201,6 +203,8 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   coastalRaceState = null,
   onStartCoastalRace,
   onExitCoastalRace,
+  drivingDisabled = false,
+  onOverlayOpenChange,
 }) => {
   const [isMuted, setIsMuted] = useState(() => engineAudio.getMuted());
   const [masterVolume, setMasterVolume] = useState(() =>
@@ -208,6 +212,11 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
   );
   const [showControlsHelp, setShowControlsHelp] = useState(false);
   const [showGameMenu, setShowGameMenu] = useState(false);
+
+  React.useEffect(() => {
+    onOverlayOpenChange?.(showGameMenu || showControlsHelp);
+  }, [showGameMenu, showControlsHelp, onOverlayOpenChange]);
+
   const [touchControlsEnabled, setTouchControlsEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return (
@@ -947,7 +956,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
               <span className="text-gray-300 text-[11px]">Braking &amp; Reverse Gear</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
-              <span className="font-bold text-[#EF233C] block mb-0.5">A / D or Steering Wheel</span>
+              <span className="font-bold text-[#EF233C] block mb-0.5">A / D · ← / → · Wheel</span>
               <span className="text-gray-300 text-[11px]">Drag Wheel or Press Keys · Hub / H = Horn</span>
             </div>
             <div className="bg-white/5 p-2.5 rounded-xl border border-white/5">
@@ -1163,7 +1172,7 @@ export const WorldHUD: React.FC<WorldHUDProps> = ({
         hornActive={hornActive}
         onHornDown={onHornDown}
         onHornUp={onHornUp}
-        disabled={showGameMenu || showControlsHelp}
+        disabled={drivingDisabled || showGameMenu || showControlsHelp}
         showPedals={touchControlsEnabled}
       />
     </div>

@@ -15,6 +15,11 @@ import {
   computeTargetSteerAngle,
   stepSteeringAngle,
 } from './worldModels';
+import {
+  isEditableInputTarget,
+  isScrollPreventableDrivingKey,
+  unifiedDrivingInput,
+} from './unifiedDrivingInput';
 import { animateVehicleModel } from '../../three/VehicleModelFactory';
 import { engineAudio, AudioDriveMode } from '../../utils/engineAudio';
 import { resolveSafeCameraPosition, isTargetOccludedByBuildings } from '../../utils/cameraCollision';
@@ -120,6 +125,7 @@ export interface WorldCanvasProps {
   coastalRaceCommand?: { action: 'START' | 'EXIT'; seq: number } | null;
   onCoastalRaceUpdate?: (state: CoastalRaceState | null) => void;
   onStartCoastalRace?: () => void;
+  drivingDisabled?: boolean;
 }
 
 export const WorldCanvas: React.FC<WorldCanvasProps> = ({
@@ -164,6 +170,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   coastalRaceCommand,
   onCoastalRaceUpdate,
   onStartCoastalRace,
+  drivingDisabled = false,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -254,6 +261,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
   const isCustomizerOpenRef = useRef(isCustomizerOpen);
   isCustomizerOpenRef.current = isCustomizerOpen;
+
+  const drivingDisabledRef = useRef(drivingDisabled);
+  drivingDisabledRef.current = drivingDisabled;
 
   // Chase & Drone Camera State Refs (zero re-render smooth framing + interactive drone inspection)
   const chaseCamRef = useRef({
@@ -822,38 +832,69 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     }
   }, [hornActive]);
 
-  // Keyboard Listeners (guarded when typing in chat/auth inputs or in presentationMode)
+  // Clear held driving & steering inputs whenever driving becomes disabled or presentation mode activates
   useEffect(() => {
-    const isEditableFocused = (target: EventTarget | null) => {
-      const el = (target as HTMLElement | null) || (document.activeElement as HTMLElement | null);
-      if (!el) return false;
-      const tag = el.tagName?.toUpperCase();
-      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(el.isContentEditable);
-    };
+    if (presentationMode || drivingDisabled) {
+      keys.current = {};
+      unifiedDrivingInput.clearAllInputs(true);
+      if (lastHornState.current) {
+        lastHornState.current = false;
+        engineAudio.playHorn(false);
+      }
+    }
+  }, [presentationMode, drivingDisabled]);
+
+  // Keyboard Listeners (guarded when typing in chat/auth inputs, modals, or in presentationMode)
+  useEffect(() => {
+    const isEditableFocused = (target: EventTarget | null) =>
+      isEditableInputTarget(target) || isEditableInputTarget(document.activeElement);
 
     const clearHeldKeys = () => {
       keys.current = {};
+      unifiedDrivingInput.clearAllInputs(true);
       if (lastHornState.current) {
         lastHornState.current = false;
         engineAudio.playHorn(false);
       }
     };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (presentationModeRef.current || isEditableFocused(e.target)) {
+    const handleVisibility = () => {
+      if (document.hidden) {
         clearHeldKeys();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        presentationModeRef.current ||
+        drivingDisabledRef.current ||
+        isEditableFocused(e.target)
+      ) {
+        if (isEditableFocused(e.target)) {
+          unifiedDrivingInput.clearKeyboardKeys();
+        }
         return;
       }
+
+      if (isScrollPreventableDrivingKey(e.key, e.code)) {
+        e.preventDefault();
+      }
+
       engineAudio.init();
       const k = e.key.toLowerCase();
       keys.current[k] = true;
       keys.current[e.code] = true;
 
-      // Horn on 'h'
+      // Sync Arrow / WASD / Space into unified driving controller
+      unifiedDrivingInput.setKeyboardKey(e.key, true, e.code);
+
+      // Horn on 'h' (strictly separate from steering)
       if (k === 'h' && !lastHornState.current) {
         lastHornState.current = true;
         engineAudio.playHorn(true);
       }
+
+      if (e.repeat) return;
 
       // Proximity Action on 'E'
       if (k === 'e' && activeZoneRef.current) {
@@ -934,6 +975,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       keys.current[k] = false;
       keys.current[e.code] = false;
 
+      unifiedDrivingInput.setKeyboardKey(e.key, false, e.code);
+
       if (k === 'h' && lastHornState.current) {
         lastHornState.current = false;
         engineAudio.playHorn(false);
@@ -943,11 +986,14 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', clearHeldKeys);
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', clearHeldKeys);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearHeldKeys();
     };
   }, [onEnterMarketplace, onInspectCar, onOpenCustomizer, onOpenDealerLounge]);
 
@@ -1519,19 +1565,25 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
 
       if (playerCarGroupRef.current) playerCarGroupRef.current.visible = true;
 
-      // Input Resolution (Keyboard + Touch), locked during Race Countdown
+      // Input Resolution (Unified Steering Wheel + Keyboard + Touch Pedals), locked during Race Countdown or modal block
       const isRaceCountdown =
         activeMissionSessionRef.current?.state === 'COUNTDOWN' ||
         coastalRaceSessionRef.current?.phase === 'COUNTDOWN';
+      const isDrivingBlockedNow = Boolean(isRaceCountdown || drivingDisabledRef.current);
+      if (drivingDisabledRef.current) {
+        unifiedDrivingInput.clearAllInputs(true);
+      }
+      const unifiedSnap = unifiedDrivingInput.step(delta, true);
+      const resolvedInput = unifiedSnap.resolved;
       const currentVirtual = virtualInputRef.current;
-      const input = isRaceCountdown
+      const input = isDrivingBlockedNow
         ? { forward: false, backward: false, left: false, right: false, handbrake: false }
         : {
-            forward: Boolean(keys.current['w'] || keys.current['arrowup'] || currentVirtual?.forward),
-            backward: Boolean(keys.current['s'] || keys.current['arrowdown'] || currentVirtual?.backward),
-            left: Boolean(keys.current['a'] || keys.current['arrowleft'] || currentVirtual?.left),
-            right: Boolean(keys.current['d'] || keys.current['arrowright'] || currentVirtual?.right),
-            handbrake: Boolean(keys.current[' '] || keys.current['space'] || currentVirtual?.handbrake),
+            forward: Boolean(resolvedInput.forward || currentVirtual?.forward),
+            backward: Boolean(resolvedInput.backward || currentVirtual?.backward),
+            left: Boolean(resolvedInput.left || currentVirtual?.left),
+            right: Boolean(resolvedInput.right || currentVirtual?.right),
+            handbrake: Boolean(resolvedInput.handbrake || currentVirtual?.handbrake),
           };
 
       const cs = carState.current;
@@ -1655,17 +1707,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         cs.isDrifting = false;
       }
 
-      // Smooth, full-lock exponential steering (analog steering wheel + keyboard priority)
-      const keyboardLeft = Boolean(!isRaceCountdown && (keys.current['a'] || keys.current['arrowleft']));
-      const keyboardRight = Boolean(!isRaceCountdown && (keys.current['d'] || keys.current['arrowright']));
-      const keyboardSteer = keyboardLeft && !keyboardRight ? 1 : keyboardRight && !keyboardLeft ? -1 : 0;
+      // Smooth, full-lock exponential steering from single unified state (wheel drag priority + keyboard sync)
+      const unifiedSteerAxis = !isDrivingBlockedNow ? resolvedInput.steerAxis : 0;
       const virtualSteerAxis =
-        !isRaceCountdown && typeof currentVirtual?.steerAxis === 'number'
+        !isDrivingBlockedNow && typeof currentVirtual?.steerAxis === 'number'
           ? Math.max(-1, Math.min(1, currentVirtual.steerAxis))
           : 0;
       const steerInput =
-        keyboardSteer !== 0
-          ? keyboardSteer
+        Math.abs(unifiedSteerAxis) > 0.001
+          ? unifiedSteerAxis
           : Math.abs(virtualSteerAxis) > 0.005
           ? virtualSteerAxis
           : input.left && !input.right
