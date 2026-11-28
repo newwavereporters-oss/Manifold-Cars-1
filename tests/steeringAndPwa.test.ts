@@ -205,7 +205,126 @@ runTest('SteeringWheelControl and MobileTouchControls replace arrow buttons clea
   assert.equal(worldCanvasSrc.includes('unifiedDrivingInput'), true, 'WorldCanvas must read from single unified steering state');
 });
 
-runTest('PWA icons, favicon, offline page, and secure Workbox rules are configured', () => {
+import {
+  PWAInstallStore,
+  PWA_INSTALLED_STORAGE_KEY,
+  resolvePWAInstallStatus,
+  type BeforeInstallPromptEvent,
+  type PWAStorageLike,
+} from '../src/hooks/usePWAInstall';
+
+function createMemoryStorage(): PWAStorageLike {
+  const map = new Map<string, string>();
+  return {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, val) => {
+      map.set(key, val);
+    },
+    removeItem: (key) => {
+      map.delete(key);
+    },
+  };
+}
+
+runTest('PWAInstallStore distinguishes all 5 install states, persists installation across visits, and handles standalone & iOS flows', () => {
+  assert.equal(
+    resolvePWAInstallStatus({
+      isStandalone: true,
+      persistedInstalled: false,
+      hasDeferredPrompt: true,
+      isIOS: false,
+      dismissedForSession: true,
+    }),
+    'standalone'
+  );
+  assert.equal(
+    resolvePWAInstallStatus({
+      isStandalone: false,
+      persistedInstalled: true,
+      hasDeferredPrompt: true,
+      isIOS: false,
+      dismissedForSession: false,
+    }),
+    'installed'
+  );
+
+  // Chromium browser flow: unavailable -> available -> dismissed -> installed -> persisted on next visit
+  const localStore = createMemoryStorage();
+  const sessionStore = createMemoryStorage();
+  const store = new PWAInstallStore({
+    localStorage: localStore,
+    sessionStorage: sessionStore,
+    navigator: { userAgent: 'Mozilla/5.0 Chrome/126.0' },
+  });
+
+  assert.equal(store.getSnapshot().status, 'unavailable');
+  assert.equal(store.getSnapshot().isInstalled, false);
+
+  let prevented = false;
+  const fakePromptEvent = {
+    preventDefault() {
+      prevented = true;
+    },
+    prompt: async () => {},
+    userChoice: Promise.resolve({ outcome: 'accepted' as const, platform: 'web' }),
+  } as unknown as BeforeInstallPromptEvent;
+
+  store.handleBeforeInstallPrompt(fakePromptEvent);
+  assert.equal(prevented, true);
+  assert.equal(store.getSnapshot().status, 'available');
+
+  store.dismissInstall();
+  assert.equal(store.getSnapshot().status, 'dismissed');
+  assert.equal(store.getSnapshot().dismissedForSession, true);
+
+  store.confirmInstalled('appinstalled');
+  assert.equal(store.getSnapshot().status, 'installed');
+  assert.equal(store.getSnapshot().isInstalled, true);
+  assert.equal(store.getSnapshot().deferredPrompt, null);
+  assert.ok(localStore.getItem(PWA_INSTALLED_STORAGE_KEY), 'Installed state must persist for origin');
+
+  // Subsequent visit in same browser profile stays installed even if browser fires beforeinstallprompt
+  const nextVisitStore = new PWAInstallStore({
+    localStorage: localStore,
+    sessionStorage: createMemoryStorage(),
+    navigator: { userAgent: 'Mozilla/5.0 Chrome/126.0' },
+  });
+  assert.equal(nextVisitStore.getSnapshot().status, 'installed');
+  assert.equal(nextVisitStore.getSnapshot().isInstalled, true);
+  nextVisitStore.handleBeforeInstallPrompt(fakePromptEvent);
+  assert.equal(nextVisitStore.getSnapshot().isInstalled, true);
+  assert.equal(nextVisitStore.getSnapshot().deferredPrompt, null);
+
+  // Standalone launch immediately confirms & persists installed state
+  const standaloneLocal = createMemoryStorage();
+  const standaloneStore = new PWAInstallStore({
+    localStorage: standaloneLocal,
+    sessionStorage: createMemoryStorage(),
+    matchMedia: (q) => ({ matches: q === '(display-mode: standalone)' }),
+  });
+  assert.equal(standaloneStore.getSnapshot().status, 'standalone');
+  assert.equal(standaloneStore.getSnapshot().isStandalone, true);
+  assert.equal(standaloneStore.getSnapshot().isInstalled, true);
+  assert.ok(standaloneLocal.getItem(PWA_INSTALLED_STORAGE_KEY));
+
+  // iOS Safari flow: available -> open modal -> complete flow stops repeated instructions
+  const iosLocal = createMemoryStorage();
+  const iosStore = new PWAInstallStore({
+    localStorage: iosLocal,
+    sessionStorage: createMemoryStorage(),
+    navigator: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)' },
+  });
+  assert.equal(iosStore.getSnapshot().isIOS, true);
+  assert.equal(iosStore.getSnapshot().status, 'available');
+  iosStore.setShowIOSGuide(true);
+  assert.equal(iosStore.getSnapshot().showIOSGuide, true);
+  iosStore.completeIOSInstallFlow();
+  assert.equal(iosStore.getSnapshot().status, 'installed');
+  assert.equal(iosStore.getSnapshot().isInstalled, true);
+  assert.equal(iosStore.getSnapshot().showIOSGuide, false);
+});
+
+runTest('PWA icons, favicon, offline page, prompt update flow, and secure Workbox rules are configured', () => {
   const requiredAssets = [
     'public/favicon.ico',
     'public/apple-touch-icon.png',
@@ -227,6 +346,8 @@ runTest('PWA icons, favicon, offline page, and secure Workbox rules are configur
 
   const viteCfg = fs.readFileSync(path.resolve('vite.config.ts'), 'utf8');
   assert.equal(viteCfg.includes('VitePWA'), true);
+  assert.equal(viteCfg.includes("registerType: 'prompt'"), true, 'Must use prompt mode so installed apps nudge for updates cleanly');
+  assert.equal(viteCfg.includes('skipWaiting: true'), false, 'Must not force skipWaiting: true over prompt update nudge');
   assert.equal(viteCfg.includes("display: 'standalone'"), true);
   assert.equal(viteCfg.includes("purpose: 'maskable'"), true);
   assert.equal(viteCfg.includes("handler: 'NetworkOnly'"), true, 'Private APIs & Supabase must stay NetworkOnly');
@@ -238,7 +359,7 @@ runTest('PWA icons, favicon, offline page, and secure Workbox rules are configur
   assert.equal(indexHtml.includes('name="theme-color"'), true);
 });
 
-runTest('PWAInstallButton and FloatingInstallButton use red MANIFOLD styling, exact Install MANIFOLD label, shared store, iOS guide, and guards', () => {
+runTest('PWAInstallButton, FloatingInstallButton, OfflineIndicator update nudge, and Header navigation organization meet spec', () => {
   const buttonSrc = fs.readFileSync(path.resolve('src/components/pwa/PWAInstallButton.tsx'), 'utf8');
   const floatingSrc = fs.readFileSync(path.resolve('src/components/pwa/FloatingInstallButton.tsx'), 'utf8');
   const hookSrc = fs.readFileSync(path.resolve('src/hooks/usePWAInstall.ts'), 'utf8');
@@ -247,34 +368,38 @@ runTest('PWAInstallButton and FloatingInstallButton use red MANIFOLD styling, ex
   const heroSrc = fs.readFileSync(path.resolve('src/components/Hero.tsx'), 'utf8');
   const appSrc = fs.readFileSync(path.resolve('src/App.tsx'), 'utf8');
 
-  // Exact button label & red white-text styling across all variants (header, drawer, compact + FloatingInstallButton)
+  // Exact button label & complete suppression when installed
   const labelMatches = buttonSrc.match(/<span>Install MANIFOLD<\/span>/g) ?? [];
   assert.equal(labelMatches.length, 3, 'PWAInstallButton header/drawer/compact variants must use exact label Install MANIFOLD');
   assert.equal(floatingSrc.includes('<span>Install MANIFOLD</span>'), true, 'FloatingInstallButton must use exact label Install MANIFOLD');
   assert.equal(floatingSrc.includes('fixed right-4 sm:right-5 bottom-'), true, 'FloatingInstallButton must use fixed bottom-right positioning');
-  assert.equal(buttonSrc.includes('bg-[#EF233C] hover:bg-[#d91b32] active:scale-[0.98] text-white'), true);
-  assert.equal(floatingSrc.includes('bg-[#EF233C] hover:bg-[#d91b32] active:scale-[0.98] text-white'), true);
-  assert.equal(buttonSrc.includes('App Installed'), true, 'Drawer variant must render subtle App Installed status when standalone');
-  assert.equal(buttonSrc.includes('if (!canInstall) return null'), true, 'Unavailable browsers must not render broken/inactive button');
-  assert.equal(floatingSrc.includes('isInstalled || !canInstall || dismissedForSession'), true, 'FloatingInstallButton must guard installed, unavailable, and session dismissal');
-  assert.equal(floatingSrc.includes('setShowIOSGuide(true)'), true, 'FloatingInstallButton must support opening iOS guidance modal');
-  assert.equal(buttonSrc.includes('Add to Home Screen'), true, 'iOS Safari guide must reference Share -> Add to Home Screen');
-  assert.equal(buttonSrc.includes('<strong>Share</strong>'), true);
+  assert.equal(buttonSrc.includes('if (isInstalled || !canInstall)'), true, 'Must return null everywhere once installed');
+  assert.equal(buttonSrc.includes('App Installed'), false, 'Must not show App Installed badge inside navigation');
+  assert.equal(floatingSrc.includes('isInstalled || !canInstall || dismissedForSession'), true);
+  assert.equal(buttonSrc.includes('completeIOSInstallFlow'), true);
+  assert.equal(buttonSrc.includes('Add to Home Screen'), true);
 
-  // Shared external store prevents missed beforeinstallprompt and duplicate prompts + persists session dismissal
+  // Centralized PWA store & SW update nudge without reinstall
   assert.equal(hookSrc.includes('useSyncExternalStore'), true);
   assert.equal(hookSrc.includes("window.addEventListener('beforeinstallprompt'"), true);
-  assert.equal(hookSrc.includes('e.preventDefault()'), true);
-  assert.equal(hookSrc.includes('await promptEvent.prompt()'), true);
-  assert.equal(hookSrc.includes('manifold_pwa_dismissed_session'), true);
-  assert.equal(hookSrc.includes('dismissInstall'), true);
-
-  // Global IOSInstallModal mounted inside OfflineIndicator so closing mobile drawer cannot unmount it
+  assert.equal(hookSrc.includes("window.addEventListener('appinstalled'"), true);
+  assert.equal(hookSrc.includes('(display-mode: standalone)'), true);
+  assert.equal(hookSrc.includes(PWA_INSTALLED_STORAGE_KEY), true);
   assert.equal(offlineSrc.includes('<IOSInstallModal />'), true);
+  assert.equal(offlineSrc.includes('MANIFOLD Update Ready'), true);
+  assert.equal(offlineSrc.includes('Refresh App'), true);
+  assert.equal(offlineSrc.includes('reg.update()'), true);
 
-  // Desktop Header + Mobile Drawer + Compact Mobile Homepage + Floating Public Marketplace placement
-  assert.equal(headerSrc.includes('<PWAInstallButton variant="header" />'), true);
+  // Visitor-first Header cleanup & role-aware hamburger organization
+  assert.equal(headerSrc.includes('<PWAInstallButton variant="header" />'), false, 'Desktop header must stay clean without competing install button');
   assert.equal(headerSrc.includes('variant="drawer"'), true);
+  assert.equal(headerSrc.includes('Browse Cars'), true);
+  assert.equal(headerSrc.includes('Explore'), true);
+  assert.equal(headerSrc.includes('Account Access'), true);
+  assert.equal(headerSrc.includes('Dealer Login'), true);
+  assert.equal(headerSrc.includes('Player Login'), true);
+  assert.equal(headerSrc.includes('aria-expanded={menuOpen}'), true);
+  assert.equal(headerSrc.includes('aria-controls="manifold-nav-menu"'), true);
   assert.equal(heroSrc.includes('<PWAInstallButton variant="compact" />'), true);
   assert.equal(appSrc.includes('<FloatingInstallButton />'), true);
 });

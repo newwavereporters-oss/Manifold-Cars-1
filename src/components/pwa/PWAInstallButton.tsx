@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { CheckCircle2, Download, PlusSquare, Share, X } from 'lucide-react';
+import { Download, PlusSquare, Share, X } from 'lucide-react';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { ManifoldBrandMark } from '../ManifoldBrandMark';
 import { FloatingInstallButton } from './FloatingInstallButton';
@@ -10,7 +10,7 @@ interface PWAInstallButtonProps {
 }
 
 export const IOSInstallModal: React.FC = () => {
-  const { showIOSGuide, setShowIOSGuide } = usePWAInstall();
+  const { showIOSGuide, isInstalled, setShowIOSGuide, completeIOSInstallFlow } = usePWAInstall();
 
   useEffect(() => {
     if (!showIOSGuide) return;
@@ -23,7 +23,7 @@ export const IOSInstallModal: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showIOSGuide, setShowIOSGuide]);
 
-  if (!showIOSGuide) return null;
+  if (!showIOSGuide || isInstalled) return null;
 
   return (
     <div
@@ -45,7 +45,7 @@ export const IOSInstallModal: React.FC = () => {
                 Install MANIFOLD on iOS
               </h3>
               <p className="text-[11px] text-gray-400">
-                Add MANIFOLD to your Home Screen for fast full-screen access
+                Add MANIFOLD to your Home Screen for full-screen access
               </p>
             </div>
           </div>
@@ -78,13 +78,22 @@ export const IOSInstallModal: React.FC = () => {
           </li>
         </ol>
 
-        <button
-          type="button"
-          onClick={() => setShowIOSGuide(false)}
-          className="w-full min-h-[44px] rounded-xl bg-[#EF233C] hover:bg-[#d91b32] active:scale-[0.98] text-white text-xs font-bold tracking-wide transition-all duration-150 cursor-pointer"
-        >
-          Got It
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={completeIOSInstallFlow}
+            className="w-full min-h-[44px] rounded-xl bg-[#EF233C] hover:bg-[#d91b32] active:scale-[0.98] text-white text-xs font-bold tracking-wide transition-all duration-150 cursor-pointer"
+          >
+            Done, Added to Home Screen
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowIOSGuide(false)}
+            className="w-full min-h-[38px] rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -100,23 +109,10 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
     return <FloatingInstallButton onTriggered={onTriggered} />;
   }
 
-  if (isInstalled) {
-    if (variant === 'drawer') {
-      return (
-        <div
-          className="w-full min-h-[40px] flex items-center justify-center gap-2 bg-emerald-500/10 border border-emerald-400/25 text-emerald-300 text-xs font-semibold tracking-wide py-2.5 px-4 rounded-lg"
-          role="status"
-          aria-label="App Installed"
-        >
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>App Installed</span>
-        </div>
-      );
-    }
+  // Stop showing install prompts anywhere once MANIFOLD is installed or running standalone
+  if (isInstalled || !canInstall) {
     return null;
   }
-
-  if (!canInstall) return null;
 
   const handleClick = async () => {
     await promptInstall();
